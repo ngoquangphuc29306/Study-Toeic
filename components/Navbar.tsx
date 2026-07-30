@@ -24,9 +24,18 @@ export const Navbar: React.FC<NavbarProps> = ({
     <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-white/90 border-b border-[#FCE7F3] shadow-2xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
         {/* Brand Logo */}
-        <div 
+        <div
           onClick={() => setActiveTab('dashboard')}
           className="flex items-center gap-2.5 cursor-pointer group"
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setActiveTab('dashboard');
+            }
+          }}
+          aria-label="Về trang tổng quan"
         >
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#F472B6] to-[#FFB6C1] p-0.5 shadow-md shadow-pink-100 group-hover:scale-105 transition-transform">
             <div className="w-full h-full bg-white rounded-[10px] flex items-center justify-center">

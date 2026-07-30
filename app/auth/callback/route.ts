@@ -11,7 +11,7 @@
  * Security:
  * - Validates the code parameter
  * - Only allows internal relative redirects
- * - Falls back to / on error
+ * - Falls back to /app on error
  */
 
 import { createClient } from '@/lib/supabase/server';
@@ -20,7 +20,7 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get('code');
-  const next = requestUrl.searchParams.get('next') || '/';
+  const next = requestUrl.searchParams.get('next') || '/app';
 
   if (code) {
     const supabase = await createClient();
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     if (!error) {
       // Validate next parameter - only allow internal relative paths
       const isInternalPath = next.startsWith('/') && !next.startsWith('//');
-      const redirectTo = isInternalPath ? next : '/';
+      const redirectTo = isInternalPath ? next : '/app';
 
       return NextResponse.redirect(new URL(redirectTo, request.url));
     }

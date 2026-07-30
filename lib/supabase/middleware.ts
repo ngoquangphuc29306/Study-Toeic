@@ -8,7 +8,7 @@
  * - Session validation
  * - Token refresh
  * - Cookie synchronization between request and response
- * - Route protection (Phase 2B)
+ * - Route protection (Phase 2B.5)
  * - Authenticated-user redirects from auth pages
  *
  * @param request - The incoming Next.js request
@@ -55,12 +55,15 @@ export async function updateSession(request: NextRequest) {
 
   // Public routes (no auth required)
   const isPublicRoute =
+    pathname === '/' ||
     pathname === '/login' ||
     pathname === '/signup' ||
     pathname.startsWith('/auth/');
 
-  // Protected routes require authentication
-  if (!isPublicRoute && !user) {
+  // Protected routes (/app and /app/*) require authentication
+  const isProtectedRoute = pathname === '/app' || pathname.startsWith('/app/');
+
+  if (isProtectedRoute && !user) {
     // User is not authenticated - redirect to login with next parameter
     const loginUrl = buildLoginUrl(pathname);
     const redirectResponse = NextResponse.redirect(new URL(loginUrl, request.url));
@@ -74,8 +77,8 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Authenticated users should not access auth pages
-  if (isPublicRoute && user && (pathname === '/login' || pathname === '/signup')) {
-    const redirectResponse = NextResponse.redirect(new URL('/', request.url));
+  if (user && (pathname === '/login' || pathname === '/signup')) {
+    const redirectResponse = NextResponse.redirect(new URL('/app', request.url));
 
     // CRITICAL: Copy all cookies from session refresh to redirect response
     response.cookies.getAll().forEach((cookie) => {

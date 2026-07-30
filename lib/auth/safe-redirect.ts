@@ -5,10 +5,10 @@
  * Only allows internal relative paths starting with a single slash.
  *
  * Security Rules:
- * - Accept: /dashboard, /profile, /settings
+ * - Accept: /app, /app/*, or other internal paths
  * - Reject: https://evil.com, //evil.com, javascript:alert(1)
  * - Reject: malformed URLs
- * - Default: /
+ * - Default: /app
  */
 
 /**
@@ -20,7 +20,7 @@
  */
 export function getSafeRedirectPath(
   path: string | null | undefined,
-  fallback: string = '/'
+  fallback: string = '/app'
 ): string {
   // No path provided
   if (!path) {

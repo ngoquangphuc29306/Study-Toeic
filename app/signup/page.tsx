@@ -24,7 +24,7 @@ export default function SignupPage() {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        router.replace('/');
+        router.replace('/app');
       }
     };
     checkAuth();

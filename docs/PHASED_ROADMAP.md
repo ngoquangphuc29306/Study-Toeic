@@ -182,7 +182,7 @@ lib/
 
 ## Phase 2 — Authentication and First Vertical Slice
 
-**Status**: 🔄 PENDING
+**Status**: ✅ COMPLETED
 
 **Goal**: Add `/login` and `/signup` routes, persist collections/topics/vocabularies to Supabase, verify RLS isolation.
 
@@ -191,79 +191,54 @@ lib/
 - Approved from ROUTE_CONTRACT.md Section 4 (Phase 2 routes)
 - Approved from PRODUCT_DECISIONS.md Section 2.6 (First Vertical Slice)
 
-**Scope**:
-✅ **Allowed**:
-- Create `/login` and `/signup` pages
-- Add middleware to protect `/`
-- Implement Supabase Auth (email/password)
-- Persist collections, topics, vocabularies to Supabase
-- Add RLS enforcement for these entities
-- Remove localStorage for migrated entities (collections, topics, vocabularies)
-- Keep localStorage for non-migrated entities (user_vocab_progress, sessions)
+**Completion Summary**:
+- ✅ Created `/login` and `/signup` pages
+- ✅ Added middleware to protect `/`
+- ✅ Implemented Supabase Auth (email/password)
+- ✅ Persisted collections, topics, vocabularies to Supabase
+- ✅ Added RLS enforcement for these entities
+- ✅ Removed localStorage for migrated entities
+- ✅ Verified first vertical slice with multi-user test
 
-❌ **Not Allowed**:
-- Migrate SRS progress or review logs (Phase 5)
-- Add OAuth providers (deferred)
-- Change current app structure at `/`
-- Add full routing migration (Phase 6+)
-- Add `/reset-password` (deferred)
+---
 
-**File Structure**:
+## Phase 2B.5 — Public Landing Page and Protected `/app` Route
+
+**Status**: ✅ COMPLETED
+
+**Goal**: Move authenticated application to `/app` and create public landing page at `/`.
+
+**Prerequisites**:
+- Phase 2B completed (route protection implemented)
+
+**Completion Summary**:
+- ✅ Moved authenticated app from `/` to `/app/page.tsx`
+- ✅ Created public landing page at `/`
+- ✅ Updated middleware to protect `/app` and `/app/*`
+- ✅ Kept `/` public for all visitors
+- ✅ Updated all auth redirects from `/` to `/app`
+- ✅ Updated safe redirect default from `/` to `/app`
+- ✅ Preserved all existing application behavior at `/app`
+- ✅ Updated route documentation
+
+**Landing Page Sections**:
+- Public navigation (logo, login, signup CTAs)
+- Hero section with value proposition
+- Core benefits (SRS, organization, progress tracking)
+- SRS explanation (Again/Hard/Good/Easy)
+- Organization flow (Collection → Topic → Vocabulary → Session)
+- Final CTA
+- Footer
+
+**Route Structure After Phase 2B.5**:
 ```
-app/
-  ├── (auth)/
-  │     ├── login/
-  │     │     └── page.tsx
-  │     ├── signup/
-  │     │     └── page.tsx
-  │     └── layout.tsx
-  ├── page.tsx  # Existing app (protected by middleware)
-  └── layout.tsx
-
-middleware.ts  # Protect `/`, allow `/login` and `/signup`
-
-services/
-  ├── collectionService.ts  # Migrate to Supabase
-  ├── topicService.ts       # Migrate to Supabase
-  └── vocabularyService.ts  # Migrate CRUD only (not progress)
+/              → Public landing page
+/login         → Public
+/signup        → Public
+/auth/callback → Public
+/app           → Protected authenticated application
+/app/*         → Protected
 ```
-
-**Tasks**:
-1. Create login page (`app/(auth)/login/page.tsx`)
-2. Create signup page (`app/(auth)/signup/page.tsx`)
-3. Add middleware (`middleware.ts`) to protect `/`
-4. Implement `signUp(email, password)` using Supabase Auth
-5. Implement `signIn(email, password)` using Supabase Auth
-6. Migrate `collectionService.ts` to use Supabase client
-7. Migrate `topicService.ts` to use Supabase client
-8. Migrate `vocabularyService.ts` CRUD methods to use Supabase
-9. Remove localStorage for collections, topics, vocabularies
-10. Test RLS: User A cannot see User B's data
-
-**First Vertical Slice Test** (from PRODUCT_DECISIONS.md):
-1. User signs up → creates account in auth.users
-2. User signs in → redirected to `/` (existing app)
-3. User creates collection → persists to Supabase with their user_id
-4. User creates topic → persists to Supabase with their user_id
-5. User adds vocabulary → persists to Supabase with their user_id
-6. User refreshes browser → data loads from Supabase
-7. Different user signs in → cannot see first user's data (RLS verified)
-
-**Acceptance Criteria**:
-- `/login` and `/signup` routes functional
-- Middleware protects `/` (redirects to `/login` if not authenticated)
-- Collections, topics, vocabularies persist to Supabase
-- RLS enforced (verified by multi-user test)
-- localStorage removed for migrated entities
-- Existing app at `/` works with Supabase data
-- UI unchanged (no visual changes)
-
-**Rollback**: 
-- Restore localStorage for collections/topics/vocabularies
-- Remove auth routes
-- Remove middleware
-
-**Commit Strategy**: "feat: Phase 2 — Auth routes and first vertical slice"
 
 ---
 
@@ -735,5 +710,6 @@ RETURNS JSON
 | 1.0 | 2026-07-30 | Phase 0 | Initial phased roadmap |
 | 2.0 | 2026-07-30 | Phase 0 Correction | Rewrote to align with approved decisions: Phase 1 local Supabase only (no production deployment), Phase 2 adds /login and /signup with first vertical slice, Phase 4 extracts current algorithm (no changes), Phase 5 adds atomic RPC, moved SRS algorithm enhancement to deferred section, moved full routing to deferred section, clarified localStorage removal strategy |
 | 3.0 | 2026-07-30 | Phase 0 Cloud Adaptation | Adapted Phase 1 to cloud-first development: use vocabtoeic-dev cloud project instead of local Docker, removed Docker/supabase start requirements, use npx supabase commands, added safety rules for cloud dev vs production separation, limited Phase 1 schema scope (defer user_vocab_progress and review_logs to Phase 5) |
+| 4.0 | 2026-07-30 | Phase 2B.5 | Marked Phase 2 as COMPLETED. Added Phase 2B.5 completion summary: public landing page at `/`, authenticated app at `/app`, updated all redirects, preserved existing app behavior |
 
-**Approval Status**: ✅ Phases 0-10 approved. Deferred phases require separate approval.
+**Approval Status**: ✅ Phases 0-2B.5 completed. Phase 3+ pending. Deferred phases require separate approval.

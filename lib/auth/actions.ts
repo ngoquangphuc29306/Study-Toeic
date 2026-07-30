@@ -81,7 +81,7 @@ export async function signUp(
 
   // Email confirmation disabled - session created immediately
   if (data.session) {
-    redirect('/');
+    redirect('/app');
   }
 
   return {
@@ -95,12 +95,12 @@ export async function signUp(
  *
  * @param email - User email
  * @param password - User password
- * @param redirectTo - Safe internal path to redirect after login (default: '/')
+ * @param redirectTo - Safe internal path to redirect after login (default: '/app')
  */
 export async function signIn(
   email: string,
   password: string,
-  redirectTo: string = '/'
+  redirectTo: string = '/app'
 ): Promise<AuthResult> {
   // Validate input
   const errors = validateSignIn({ email, password });
