@@ -59,7 +59,7 @@ This roadmap transforms VocabTOEIC từ Google AI Studio prototype sang producti
 
 ## Phase 1 — Cloud Development Supabase Foundation
 
-**Status**: 🔄 NEXT
+**Status**: ✅ COMPLETED
 
 **Goal**: Setup cloud development Supabase project with versioned migrations and PROPOSED schema (not production deployment yet).
 
@@ -242,9 +242,81 @@ lib/
 
 ---
 
-## Phase 3 — Remaining Vocabulary CRUD
+## Phase 2C — Collection CRUD Migration to Supabase
 
-**Status**: 🔄 PENDING
+**Status**: ✅ COMPLETED (with Phase 2C Fix applied)
+
+**Goal**: Migrate Collection CRUD operations from localStorage to Supabase while keeping Topics and Vocabularies in localStorage.
+
+**Prerequisites**:
+- Phase 2B.5 completed (public landing and protected app routes)
+
+**Completion Summary**:
+- ✅ Created `services/collectionService.ts` with Supabase browser client
+- ✅ Collections use database-generated UUIDs (not client IDs)
+- ✅ All Collection CRUD operations use authenticated session
+- ✅ RLS enforces `user_id = auth.uid()` ownership
+- ✅ Updated `services/vocabService.ts` to use Collection service
+- ✅ Removed localStorage for Collections (`LOCAL_COLS_KEY`, `DELETED_COLS_KEY`)
+- ✅ Topics and Vocabularies remain in localStorage (Phase 2D, 2E)
+- ✅ **Phase 2C Fix**: Collection deletion blocks when child Topics/Vocabularies exist
+- ✅ Collection totals computed from localStorage Topics/Vocabularies
+
+**Phase 2C Fix — Safe Collection Deletion** (2026-07-30):
+
+**Problem**: Original Phase 2C deleted Collections from Supabase and removed orphaned localStorage Topics, but did NOT handle Vocabularies that reference those Topics. This could create orphaned Vocabulary data.
+
+**Solution**: Block Collection deletion when child data exists
+- ✅ Created `CollectionHasChildrenError` for specific error handling
+- ✅ Added `getLocalStorageItem<T>` safe localStorage reader
+- ✅ Detect child Topics via `collection_id` match
+- ✅ Detect child Vocabularies via Topic ownership chain
+- ✅ Block deletion BEFORE Supabase request when children exist
+- ✅ Show clear Vietnamese error message in UI
+- ✅ Removed automatic localStorage cascade deletion
+- ✅ No orphaned data possible during transitional period
+
+**Deletion Behavior**:
+```
+Empty Collection → delete succeeds
+Collection with Topics → delete blocked, show error
+Collection with Vocabularies → delete blocked, show error
+```
+
+**Error Message**:
+```
+Không thể xóa bộ sưu tập này vì vẫn còn chủ đề hoặc từ vựng.
+Hãy xóa dữ liệu bên trong trước.
+```
+
+**Data Flow After Phase 2C + Fix**:
+```
+Collections → Supabase (user_id enforced by RLS)
+Topics → localStorage (temporary, references Supabase collection UUIDs)
+Vocabularies → localStorage (temporary)
+Progress → localStorage (temporary)
+```
+
+**Transitional Strategy**:
+- Collections source of truth: Supabase
+- Topics reference Supabase collection UUIDs via `collection_id`
+- Collection deletion blocked if any child Topics or Vocabularies exist
+- No automatic cascade deletion of localStorage child data
+- Conservative approach prevents accidental data loss
+- No bidirectional sync or conflict resolution (bounded transition)
+
+**Files Modified**:
+- Created: `services/collectionService.ts`
+- Created: `services/collectionErrors.ts` (Phase 2C Fix)
+- Modified: `services/vocabService.ts` (Collection methods replaced, safe deletion logic)
+- Modified: `app/app/page.tsx` (error state handling)
+- Modified: `components/VocabManager.tsx` (error display)
+
+---
+
+## Phase 2D — Topic CRUD Migration to Supabase
+
+**Status**: 🔄 NEXT
 
 **Goal**: Complete vocabulary features (import, export, search, filtering) using Supabase.
 

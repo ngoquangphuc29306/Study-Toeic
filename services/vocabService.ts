@@ -1,17 +1,26 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Collection, Topic, Vocabulary, UserVocabProgress, StudyStats, LearningStatus } from '../lib/types';
 import { INITIAL_COLLECTIONS, INITIAL_TOPICS, INITIAL_VOCABULARIES } from '../lib/initialData';
+import {
+  getCollections as getCollectionsFromSupabase,
+  createCollection as createCollectionInSupabase,
+  updateCollection as updateCollectionInSupabase,
+  deleteCollection as deleteCollectionInSupabase,
+} from './collectionService';
+import { CollectionHasChildrenError } from './collectionErrors';
 
 // LocalStorage keys for offline / missing table fallback
-const LOCAL_COLS_KEY = 'vocab_local_collections_v1';
 const LOCAL_TOPICS_KEY = 'vocab_local_topics_v1';
 const LOCAL_VOCABS_KEY = 'vocab_local_vocabularies_v1';
 const LOCAL_PROGRESS_KEY = 'vocab_local_progress_v1';
 const LOCAL_STUDY_DATES_KEY = 'vocab_study_dates_v1';
 
-const DELETED_COLS_KEY = 'vocab_deleted_cols_v1';
 const DELETED_TOPICS_KEY = 'vocab_deleted_topics_v1';
 const DELETED_VOCABS_KEY = 'vocab_deleted_vocabs_v1';
+
+// Phase 2C: Collections migrated to Supabase
+// Topics and Vocabularies remain in localStorage (Phase 2D, 2E)
+// localStorage is no longer used for Collections
 
 function getLocalItem<T>(key: string, defaultValue: T): T {
   if (typeof window === 'undefined') return defaultValue;
@@ -40,140 +49,77 @@ function getSupabase() {
   return supabase;
 }
 
-// --- COLLECTION METHODS ---
+// --- COLLECTION METHODS (Phase 2C: Migrated to Supabase) ---
 
+/**
+ * Get all collections from Supabase with computed totals from localStorage Topics/Vocabularies
+ * Phase 2C: Collections in Supabase, Topics/Vocabularies still in localStorage
+ */
 export async function getCollections(): Promise<Collection[]> {
-  const client = getSupabase();
-  let dbCols: Collection[] = [];
-
-  if (client) {
-    try {
-      const { data: colData, error: colErr } = await client
-        .from('collections')
-        .select('*')
-        .order('created_at', { ascending: true });
-
-      if (!colErr && colData) {
-        dbCols = colData;
-      }
-    } catch (err) {
-      console.warn('Supabase getCollections error:', err);
-    }
-  }
-
-  // If Supabase client is configured, strictly rely on DB data (+ any local session additions).
-  // Only fall back to INITIAL_COLLECTIONS if Supabase is completely unconfigured.
-  const localCols = getLocalItem<Collection[]>(LOCAL_COLS_KEY, []);
-  const baseCols = client ? dbCols : (dbCols.length > 0 ? dbCols : INITIAL_COLLECTIONS);
-
-  const colMap = new Map<string, Collection>();
-  baseCols.forEach((c) => colMap.set(c.id, c));
-  localCols.forEach((c) => colMap.set(c.id, c));
-
-  const deletedCols = getLocalItem<string[]>(DELETED_COLS_KEY, []);
-  const mergedCols = Array.from(colMap.values()).filter((c) => !deletedCols.includes(c.id));
-
-  const allTopics = await getTopics();
-  const allVocabs = await getVocabByTopic();
-
-  return mergedCols.map((col) => {
-    const colTopics = allTopics.filter((t) => t.collection_id === col.id);
-    const colTopicIds = new Set(colTopics.map((t) => t.id));
-    const colVocabs = allVocabs.filter((v) => colTopicIds.has(v.topic_id));
-
-    return {
-      ...col,
-      total_topics: colTopics.length,
-      total_words: colVocabs.length,
-    };
-  });
-}
-
-export async function addCollection(newCol: Omit<Collection, 'id'>): Promise<Collection> {
-  const colId = 'col-' + Date.now();
-  const payload = {
-    id: colId,
-    title: newCol.title,
-    description: newCol.description || '',
-    icon: newCol.icon || 'FolderKanban',
-  };
-
-  const createdItem: Collection = {
-    ...payload,
-    created_at: new Date().toISOString(),
-    total_topics: 0,
-    total_words: 0,
-  };
-
-  // Try insert into Supabase
   try {
-    const client = getSupabase();
-    if (client) {
-      const { error } = await client.from('collections').insert([payload]);
-      if (error) {
-        console.error('Supabase collection insert error:', error.message || error, error.code ? `(Code: ${error.code})` : '');
-      }
-    }
-  } catch (err) {
-    console.error('Supabase notice on addCollection:', err);
-  }
+    const collections = await getCollectionsFromSupabase();
 
-  // Save to LocalStorage fallback
-  const localCols = getLocalItem<Collection[]>(LOCAL_COLS_KEY, []);
-  if (!localCols.some((c) => c.id === colId)) {
-    localCols.push(createdItem);
-    setLocalItem(LOCAL_COLS_KEY, localCols);
-  }
+    // Compute totals from localStorage Topics/Vocabularies (still unmigrated)
+    const allTopics = await getTopics();
+    const allVocabs = await getVocabByTopic();
 
-  return createdItem;
-}
+    return collections.map((col) => {
+      const colTopics = allTopics.filter((t) => t.collection_id === col.id);
+      const colTopicIds = new Set(colTopics.map((t) => t.id));
+      const colVocabs = allVocabs.filter((v) => colTopicIds.has(v.topic_id));
 
-export async function updateCollection(colId: string, updates: Partial<Collection>): Promise<void> {
-  const localCols = getLocalItem<Collection[]>(LOCAL_COLS_KEY, []);
-  const updatedLocal = localCols.map((c) => (c.id === colId ? { ...c, ...updates } : c));
-  setLocalItem(LOCAL_COLS_KEY, updatedLocal);
-
-  try {
-    const client = getSupabase();
-    if (client) {
-      const updatePayload: Record<string, any> = {
-        updated_at: new Date().toISOString(),
+      return {
+        ...col,
+        total_topics: colTopics.length,
+        total_words: colVocabs.length,
       };
-      if (updates.title !== undefined) updatePayload.title = updates.title;
-      if (updates.description !== undefined) updatePayload.description = updates.description;
-      if (updates.icon !== undefined) updatePayload.icon = updates.icon;
-
-      const { error } = await client.from('collections').update(updatePayload).eq('id', colId);
-      if (error) {
-        console.warn('Note on Supabase updateCollection:', error.message || error);
-      }
-    }
+    });
   } catch (err) {
-    console.warn('Supabase notice on updateCollection:', err);
+    console.error('getCollections error:', err);
+    throw err;
   }
 }
 
-export async function deleteCollection(colId: string): Promise<void> {
-  // Save to deleted list
-  const deletedCols = getLocalItem<string[]>(DELETED_COLS_KEY, []);
-  if (!deletedCols.includes(colId)) {
-    deletedCols.push(colId);
-    setLocalItem(DELETED_COLS_KEY, deletedCols);
-  }
-
-  const localCols = getLocalItem<Collection[]>(LOCAL_COLS_KEY, []);
-  setLocalItem(LOCAL_COLS_KEY, localCols.filter((c) => c.id !== colId));
-
+/**
+ * Create a new collection in Supabase
+ * Database generates UUID, no client-side ID generation
+ */
+export async function addCollection(newCol: Omit<Collection, 'id'>): Promise<Collection> {
   try {
-    const client = getSupabase();
-    if (client) {
-      const { error } = await client.from('collections').delete().eq('id', colId);
-      if (error) {
-        console.warn('Note on Supabase deleteCollection:', error.message || error);
-      }
-    }
+    const created = await createCollectionInSupabase(newCol);
+    return {
+      ...created,
+      total_topics: 0,
+      total_words: 0,
+    };
   } catch (err) {
-    console.warn('Supabase notice on deleteCollection:', err);
+    console.error('addCollection error:', err);
+    throw err;
+  }
+}
+
+/**
+ * Update an existing collection in Supabase
+ */
+export async function updateCollection(colId: string, updates: Partial<Collection>): Promise<void> {
+  try {
+    await updateCollectionInSupabase(colId, updates);
+  } catch (err) {
+    console.error('updateCollection error:', err);
+    throw err;
+  }
+}
+
+/**
+ * Delete a collection from Supabase
+ * Phase 2C: Blocks deletion if Collection has any child Topics or Vocabularies in localStorage
+ */
+export async function deleteCollection(colId: string): Promise<void> {
+  try {
+    await deleteCollectionInSupabase(colId);
+  } catch (err) {
+    console.error('deleteCollection error:', err);
+    throw err;
   }
 }
 
@@ -207,10 +153,10 @@ export async function getTopics(collectionId?: string): Promise<Topic[]> {
   localTopics.forEach((t) => topicMap.set(t.id, t));
 
   const deletedTopics = getLocalItem<string[]>(DELETED_TOPICS_KEY, []);
-  const deletedCols = getLocalItem<string[]>(DELETED_COLS_KEY, []);
 
+  // Phase 2C: Collections are in Supabase now, don't filter by deleted localStorage collections
   let mergedTopics = Array.from(topicMap.values()).filter(
-    (t) => !deletedTopics.includes(t.id) && (!t.collection_id || !deletedCols.includes(t.collection_id))
+    (t) => !deletedTopics.includes(t.id)
   );
 
   if (collectionId && collectionId !== 'all') {

@@ -1,6 +1,6 @@
 # VocabTOEIC — Data Ownership Contract
 
-**Document Version**: 2.0  
+**Document Version**: 2.2  
 **Created**: 2026-07-30  
 **Updated**: 2026-07-30  
 **Status**: Product Owner Approved (with corrections)  
@@ -902,6 +902,14 @@ EXECUTE FUNCTION set_owner_from_auth();
 
 **CRITICAL**: After a domain is migrated to Supabase, localStorage must NOT be used as a silent long-term persistence fallback for that domain.
 
+**Phase 2C Status** (2026-07-30):
+- ✅ Collections: **MIGRATED** to Supabase (source of truth)
+  - **Deletion Safety**: Blocks deletion if any child Topics or Vocabularies exist in localStorage
+  - **No Auto-Cascade**: Does NOT automatically delete localStorage child data
+- 🔄 Topics: Still in localStorage (Phase 2D pending)
+- 🔄 Vocabularies: Still in localStorage (Phase 2E pending)
+- 🔄 Progress: Still in localStorage (Phase 5 pending)
+
 **Approved localStorage Uses**:
 1. **One-time migration**: Import existing data on first login
 2. **Temporary drafts**: Unsaved form input (cleared on submit)
@@ -998,5 +1006,7 @@ DELETE FROM auth.users WHERE id = '<user_id>';
 |---------|------|--------|---------|
 | 1.0 | 2026-07-30 | Phase 0 | Initial data ownership contract |
 | 2.0 | 2026-07-30 | Phase 0 Correction | Added PROPOSED label to all SQL, added composite FK requirement, clarified review_logs atomic RPC requirement, added input validation section, clarified localStorage as one-time import only, fixed soft delete policy |
+| 2.1 | 2026-07-30 | Phase 2C | Updated migration status: Collections migrated to Supabase, Topics/Vocabularies remain in localStorage |
+| 2.2 | 2026-07-30 | Phase 2C Fix | Added Collection deletion safety: blocks deletion if child Topics/Vocabularies exist in localStorage, prevents orphaned data during transitional period |
 
 **Approval**: This document defines the security model. Any deviation requires security review.

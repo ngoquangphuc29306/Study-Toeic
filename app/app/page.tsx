@@ -28,6 +28,7 @@ import {
   bulkAddVocabularies,
   deleteVocabulary
 } from '../../services/vocabService';
+import { CollectionHasChildrenError } from '../../services/collectionErrors';
 
 import { Collection, Topic, Vocabulary, StudyStats, LearningStatus } from '../../lib/types';
 
@@ -54,6 +55,7 @@ export default function AppPage() {
   const [isExcelModalOpen, setIsExcelModalOpen] = useState<boolean>(false);
   const [isSqlModalOpen, setIsSqlModalOpen] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [deleteError, setDeleteError] = useState<string>('');
 
   // Helper to re-fetch data
   const refreshAppData = useCallback(async () => {
@@ -128,8 +130,20 @@ export default function AppPage() {
   };
 
   const handleDeleteCollection = async (colId: string) => {
-    await deleteCollection(colId);
-    await refreshAppData();
+    try {
+      setDeleteError('');
+      await deleteCollection(colId);
+      await refreshAppData();
+    } catch (err) {
+      if (err instanceof CollectionHasChildrenError) {
+        setDeleteError('Không thể xóa bộ sưu tập này vì vẫn còn chủ đề hoặc từ vựng. Hãy xóa dữ liệu bên trong trước.');
+      } else if (err instanceof Error) {
+        setDeleteError(err.message);
+      } else {
+        setDeleteError('Không thể xóa bộ sưu tập. Vui lòng thử lại.');
+      }
+      throw err;
+    }
   };
 
   const handleAddTopic = async (newTopic: Omit<Topic, 'id'>) => {
@@ -256,6 +270,8 @@ export default function AppPage() {
             }}
             onOpenCollectionModal={() => setIsCollectionModalOpen(true)}
             onOpenSqlModal={() => setIsSqlModalOpen(true)}
+            deleteError={deleteError}
+            onClearDeleteError={() => setDeleteError('')}
           />
         )}
       </main>
