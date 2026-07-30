@@ -1,23 +1,24 @@
 /**
- * Supabase Session Refresh Helper
+ * Supabase Session Refresh and Route Protection Helper
  *
- * Internal helper for refreshing Supabase sessions via cookies.
- * Called by the root middleware/proxy to ensure sessions remain valid.
+ * Internal helper for refreshing Supabase sessions via cookies and protecting routes.
+ * Called by the root middleware to ensure sessions remain valid and enforce auth.
  *
  * Handles:
  * - Session validation
  * - Token refresh
  * - Cookie synchronization between request and response
- *
- * Does NOT handle route protection - that's deferred to Phase 2.
+ * - Route protection (Phase 2B)
+ * - Authenticated-user redirects from auth pages
  *
  * @param request - The incoming Next.js request
- * @returns Updated response with refreshed session cookies
+ * @returns Updated response with refreshed session cookies and redirects
  */
 
 import { createServerClient } from '@supabase/ssr';
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseEnv } from './env';
+import { buildLoginUrl } from '../auth/safe-redirect';
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({
@@ -48,8 +49,41 @@ export async function updateSession(request: NextRequest) {
   );
 
   // Validate/refresh session - triggers automatic token refresh if needed
-  // This reads the current session and refreshes the token if necessary
-  await supabase.auth.getClaims();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const pathname = request.nextUrl.pathname;
+
+  // Public routes (no auth required)
+  const isPublicRoute =
+    pathname === '/login' ||
+    pathname === '/signup' ||
+    pathname.startsWith('/auth/');
+
+  // Protected routes require authentication
+  if (!isPublicRoute && !user) {
+    // User is not authenticated - redirect to login with next parameter
+    const loginUrl = buildLoginUrl(pathname);
+    const redirectResponse = NextResponse.redirect(new URL(loginUrl, request.url));
+
+    // CRITICAL: Copy all cookies from session refresh to redirect response
+    response.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie.name, cookie.value, cookie);
+    });
+
+    return redirectResponse;
+  }
+
+  // Authenticated users should not access auth pages
+  if (isPublicRoute && user && (pathname === '/login' || pathname === '/signup')) {
+    const redirectResponse = NextResponse.redirect(new URL('/', request.url));
+
+    // CRITICAL: Copy all cookies from session refresh to redirect response
+    response.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie.name, cookie.value, cookie);
+    });
+
+    return redirectResponse;
+  }
 
   return response;
 }

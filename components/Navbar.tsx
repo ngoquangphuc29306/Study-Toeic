@@ -3,6 +3,7 @@
 import React from 'react';
 import { BookOpen, Sparkles, Database, Plus, Flame, CheckCircle2, Home, Layers, HelpCircle } from 'lucide-react';
 import { StudyStats } from '../lib/types';
+import { SignOutButton } from './auth/sign-out-button';
 
 interface NavbarProps {
   activeTab: 'dashboard' | 'flashcard' | 'quiz' | 'vocab-manager';
@@ -108,6 +109,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#FCE7F3] rounded-2xl text-xs font-bold text-gray-700">
             <CheckCircle2 className="w-4 h-4 text-[#F472B6]" />
             <span>{stats.masteredCount}/{stats.totalWords} Đã thuộc</span>
+          </div>
+
+          {/* Sign Out Button */}
+          <div className="hidden sm:block">
+            <SignOutButton variant="compact" />
           </div>
         </div>
       </div>

@@ -92,10 +92,15 @@ export async function signUp(
 
 /**
  * Sign in with email and password
+ *
+ * @param email - User email
+ * @param password - User password
+ * @param redirectTo - Safe internal path to redirect after login (default: '/')
  */
 export async function signIn(
   email: string,
-  password: string
+  password: string,
+  redirectTo: string = '/'
 ): Promise<AuthResult> {
   // Validate input
   const errors = validateSignIn({ email, password });
@@ -128,8 +133,8 @@ export async function signIn(
     };
   }
 
-  // Successful login - redirect outside try/catch
-  redirect('/');
+  // Successful login - redirect to safe path
+  redirect(redirectTo);
 }
 
 /**

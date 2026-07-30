@@ -1,58 +1,41 @@
 'use client';
 
-import React, { useState, useTransition, useEffect } from 'react';
+import React, { useState, useTransition, useMemo } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { signUp } from '@/lib/auth/actions';
-import { createClient } from '@/lib/supabase/client';
-import { Eye, EyeOff, UserPlus } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { signIn } from '@/lib/auth/actions';
+import { getSafeRedirectPath } from '@/lib/auth/safe-redirect';
+import { Eye, EyeOff, LogIn } from 'lucide-react';
 
-export default function SignupPage() {
-  const router = useRouter();
+export default function LoginForm() {
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  // Check if user is already authenticated - redirect to home
-  useEffect(() => {
-    const checkAuth = async () => {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        router.replace('/');
-      }
-    };
-    checkAuth();
-  }, [router]);
+  // Parse and validate next parameter - memoized to avoid recalculation
+  const redirectTo = useMemo(() => {
+    const nextParam = searchParams.get('next');
+    return getSafeRedirectPath(nextParam);
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setSuccessMessage(null);
 
     startTransition(async () => {
-      const result = await signUp(email, password, confirmPassword);
-
+      const result = await signIn(email, password, redirectTo);
       if (!result.success && result.error) {
         setError(result.error);
-      } else if (result.success && result.message) {
-        setSuccessMessage(result.message);
-        // Clear form on success
-        setEmail('');
-        setPassword('');
-        setConfirmPassword('');
       }
-      // If session created, signUp action will redirect
+      // If success, signIn action will redirect to redirectTo
     });
   };
 
   return (
-    <div className="min-h-screen bg-[#FFF9FA] flex items-center justify-center px-4 py-8">
+    <div className="min-h-screen bg-[#FFF9FA] flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         {/* Logo/Brand */}
         <div className="text-center mb-8">
@@ -61,11 +44,11 @@ export default function SignupPage() {
               🌸
             </div>
           </div>
-          <h1 className="text-2xl font-bold text-[#4A4A4A] mb-1">Tạo tài khoản</h1>
-          <p className="text-sm text-[#9CA3AF]">Bắt đầu học từ vựng TOEIC hiệu quả</p>
+          <h1 className="text-2xl font-bold text-[#4A4A4A] mb-1">Đăng nhập</h1>
+          <p className="text-sm text-[#9CA3AF]">Chào mừng trở lại với VocabTOEIC</p>
         </div>
 
-        {/* Signup Form Card */}
+        {/* Login Form Card */}
         <div className="bg-white rounded-3xl border border-[#FCE7F3] p-8 shadow-lg shadow-pink-100/20">
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Email Field */}
@@ -100,9 +83,8 @@ export default function SignupPage() {
                   required
                   disabled={isPending}
                   className="w-full px-4 py-3 bg-[#FFF9FA] border border-[#FCE7F3] rounded-xl text-[#4A4A4A] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#F472B6] focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed pr-12"
-                  placeholder="Tối thiểu 8 ký tự"
-                  autoComplete="new-password"
-                  aria-describedby="password-hint"
+                  placeholder="••••••••"
+                  autoComplete="current-password"
                 />
                 <button
                   type="button"
@@ -112,38 +94,6 @@ export default function SignupPage() {
                   aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
                 >
                   {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                </button>
-              </div>
-              <p id="password-hint" className="mt-1.5 text-xs text-[#9CA3AF]">
-                Tối thiểu 8 ký tự
-              </p>
-            </div>
-
-            {/* Confirm Password Field */}
-            <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-[#4A4A4A] mb-2">
-                Xác nhận mật khẩu
-              </label>
-              <div className="relative">
-                <input
-                  id="confirmPassword"
-                  type={showConfirmPassword ? 'text' : 'password'}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  disabled={isPending}
-                  className="w-full px-4 py-3 bg-[#FFF9FA] border border-[#FCE7F3] rounded-xl text-[#4A4A4A] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#F472B6] focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed pr-12"
-                  placeholder="Nhập lại mật khẩu"
-                  autoComplete="new-password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  disabled={isPending}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#F472B6] transition-colors disabled:opacity-50"
-                  aria-label={showConfirmPassword ? 'Ẩn mật khẩu xác nhận' : 'Hiện mật khẩu xác nhận'}
-                >
-                  {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
               </div>
             </div>
@@ -159,17 +109,6 @@ export default function SignupPage() {
               </div>
             )}
 
-            {/* Success Message */}
-            {successMessage && (
-              <div
-                className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-xl text-sm"
-                role="status"
-                aria-live="polite"
-              >
-                {successMessage}
-              </div>
-            )}
-
             {/* Submit Button */}
             <button
               type="submit"
@@ -179,26 +118,26 @@ export default function SignupPage() {
               {isPending ? (
                 <>
                   <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>Đang tạo tài khoản...</span>
+                  <span>Đang đăng nhập...</span>
                 </>
               ) : (
                 <>
-                  <UserPlus size={20} />
-                  <span>Đăng ký</span>
+                  <LogIn size={20} />
+                  <span>Đăng nhập</span>
                 </>
               )}
             </button>
           </form>
 
-          {/* Login Link */}
+          {/* Sign Up Link */}
           <div className="mt-6 text-center">
             <p className="text-sm text-[#6B7280]">
-              Đã có tài khoản?{' '}
+              Chưa có tài khoản?{' '}
               <Link
-                href="/login"
+                href="/signup"
                 className="text-[#F472B6] hover:text-[#EC4899] font-medium hover:underline transition-colors"
               >
-                Đăng nhập
+                Tạo tài khoản
               </Link>
             </p>
           </div>
@@ -206,7 +145,7 @@ export default function SignupPage() {
 
         {/* Footer Note */}
         <p className="text-center text-xs text-[#9CA3AF] mt-6">
-          Bằng việc đăng ký, bạn đồng ý với các điều khoản sử dụng của VocabTOEIC
+          Bằng việc đăng nhập, bạn đồng ý với các điều khoản sử dụng của VocabTOEIC
         </p>
       </div>
     </div>

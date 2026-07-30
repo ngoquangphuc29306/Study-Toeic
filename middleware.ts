@@ -1,10 +1,8 @@
 /**
  * Next.js Middleware
  *
- * Handles session refresh for all authenticated routes.
- * Phase 1B: Only refreshes sessions - no route protection yet.
- *
- * Route protection and login redirects are deferred to Phase 2.
+ * Handles session refresh and route protection for authenticated routes.
+ * Phase 2B: Protects / and redirects unauthenticated users to /login.
  */
 
 import { type NextRequest } from 'next/server';
