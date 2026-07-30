@@ -1,0 +1,156 @@
+'use client';
+
+import React from 'react';
+import { BookOpen, Sparkles, Database, Plus, Flame, CheckCircle2, Home, Layers, HelpCircle } from 'lucide-react';
+import { StudyStats } from '../lib/types';
+
+interface NavbarProps {
+  activeTab: 'dashboard' | 'flashcard' | 'quiz' | 'vocab-manager';
+  setActiveTab: (tab: 'dashboard' | 'flashcard' | 'quiz' | 'vocab-manager') => void;
+  stats: StudyStats;
+  onOpenSqlModal: () => void;
+  onOpenAddModal: () => void;
+}
+
+export const Navbar: React.FC<NavbarProps> = ({
+  activeTab,
+  setActiveTab,
+  stats,
+  onOpenSqlModal,
+  onOpenAddModal,
+}) => {
+  return (
+    <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-white/90 border-b border-[#FCE7F3] shadow-2xs">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+        {/* Brand Logo */}
+        <div 
+          onClick={() => setActiveTab('dashboard')}
+          className="flex items-center gap-2.5 cursor-pointer group"
+        >
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#F472B6] to-[#FFB6C1] p-0.5 shadow-md shadow-pink-100 group-hover:scale-105 transition-transform">
+            <div className="w-full h-full bg-white rounded-[10px] flex items-center justify-center">
+              <BookOpen className="w-5 h-5 text-[#F472B6]" />
+            </div>
+          </div>
+          <div>
+            <div className="flex items-center gap-1.5">
+              <span className="font-extrabold text-xl bg-gradient-to-r from-[#F472B6] to-[#FF85A1] bg-clip-text text-transparent">
+                VocabTOEIC
+              </span>
+              <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full bg-[#FFF1F2] text-[#F472B6]">
+                Master
+              </span>
+            </div>
+            <p className="text-xs text-gray-400 font-medium hidden sm:block">Học Từ Vựng TOEIC Thông Minh</p>
+          </div>
+        </div>
+
+        {/* Navigation Tabs */}
+        <nav className="hidden md:flex items-center gap-1.5 bg-[#FFF1F2] p-1.5 rounded-2xl border border-[#FCE7F3]">
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+              activeTab === 'dashboard'
+                ? 'bg-white text-[#F472B6] shadow-2xs'
+                : 'text-gray-500 hover:text-[#F472B6] hover:bg-white/60'
+            }`}
+          >
+            <Home className="w-4 h-4" />
+            Tổng Quan
+          </button>
+
+          <button
+            onClick={() => setActiveTab('flashcard')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+              activeTab === 'flashcard'
+                ? 'bg-white text-[#F472B6] shadow-2xs'
+                : 'text-gray-500 hover:text-[#F472B6] hover:bg-white/60'
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            Luyện Flashcards
+          </button>
+
+          <button
+            onClick={() => setActiveTab('quiz')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+              activeTab === 'quiz'
+                ? 'bg-white text-[#F472B6] shadow-2xs'
+                : 'text-gray-500 hover:text-[#F472B6] hover:bg-white/60'
+            }`}
+          >
+            <HelpCircle className="w-4 h-4" />
+            Bài Tập Quiz
+          </button>
+
+          <button
+            onClick={() => setActiveTab('vocab-manager')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+              activeTab === 'vocab-manager'
+                ? 'bg-white text-[#F472B6] shadow-2xs'
+                : 'text-gray-500 hover:text-[#F472B6] hover:bg-white/60'
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+            Quản Lý Từ Vựng
+          </button>
+        </nav>
+
+        {/* Action Badges & Buttons */}
+        <div className="flex items-center gap-2">
+          {/* Daily Streak Badge */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FFF1F2] border border-[#FCE7F3] rounded-2xl text-xs font-bold text-[#F472B6]">
+            <Flame className="w-4 h-4 text-[#F472B6] fill-[#F472B6] animate-pulse" />
+            <span>{stats.dailyStreak} Ngày Streak</span>
+          </div>
+
+          {/* Mastered Words Count Badge */}
+          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#FCE7F3] rounded-2xl text-xs font-bold text-gray-700">
+            <CheckCircle2 className="w-4 h-4 text-[#F472B6]" />
+            <span>{stats.masteredCount}/{stats.totalWords} Đã thuộc</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile Navigation Row */}
+      <div className="flex md:hidden items-center justify-around border-t border-[#FCE7F3] py-2.5 bg-white px-2 text-xs">
+        <button
+          onClick={() => setActiveTab('dashboard')}
+          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl ${
+            activeTab === 'dashboard' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
+          }`}
+        >
+          <Home className="w-4 h-4" />
+          Tổng quan
+        </button>
+        <button
+          onClick={() => setActiveTab('flashcard')}
+          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl ${
+            activeTab === 'flashcard' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
+          }`}
+        >
+          <Sparkles className="w-4 h-4" />
+          Flashcard
+        </button>
+        <button
+          onClick={() => setActiveTab('quiz')}
+          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl ${
+            activeTab === 'quiz' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
+          }`}
+        >
+          <HelpCircle className="w-4 h-4" />
+          Quiz
+        </button>
+        <button
+          onClick={() => setActiveTab('vocab-manager')}
+          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl ${
+            activeTab === 'vocab-manager' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+          Quản lý
+        </button>
+      </div>
+    </header>
+  );
+};
