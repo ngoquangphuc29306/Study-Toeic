@@ -32,18 +32,24 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import { calculateNextReview } from '@/lib/srs/scheduler';
 import type { SrsProgress } from '@/lib/srs/types';
+import {
+  getProgressForVocabularies,
+  submitVocabularyRating as submitRatingViaRpc,
+  type SrsRating as ProgressSrsRating,
+} from './progressService';
 
 // Base localStorage keys (will be scoped per user)
 // Phase 2E: LOCAL_VOCABS_KEY and DELETED_VOCABS_KEY are now INACTIVE (legacy only)
 const LOCAL_VOCABS_KEY = 'vocab_local_vocabularies_v1'; // INACTIVE after Phase 2E
-const LOCAL_PROGRESS_KEY = 'vocab_local_progress_v1';
+const LOCAL_PROGRESS_KEY = 'vocab_local_progress_v1'; // INACTIVE after Phase 5
 const LOCAL_STUDY_DATES_KEY = 'vocab_study_dates_v1';
 
 const DELETED_VOCABS_KEY = 'vocab_deleted_vocabs_v1'; // INACTIVE after Phase 2E
 
-// Phase 2E: Collections, Topics, and Vocabularies in Supabase
-// Study/SRS progress remains in user-scoped localStorage
-// Legacy localStorage Vocabulary keys (vocab_local_vocabularies_v1:<user-id>) are no longer read or written
+// Phase 5: Collections, Topics, and Vocabularies in Supabase
+// Study/SRS progress migrated to Supabase (user_vocab_progress table)
+// Rating submissions go through atomic RPC (submit_vocabulary_rating)
+// Legacy localStorage progress keys (vocab_local_progress_v1:<user-id>) are no longer written
 
 /**
  * Get authenticated user ID from Supabase
@@ -211,8 +217,8 @@ export async function deleteTopic(topicId: string): Promise<void> {
 // --- VOCABULARY METHODS (Phase 2E: Migrated to Supabase) ---
 
 /**
- * Get vocabularies from Supabase with merged study/SRS progress from localStorage
- * Phase 2E: Vocabulary domain data from Supabase, progress from user-scoped localStorage
+ * Get vocabularies from Supabase with merged study/SRS progress from Supabase
+ * Phase 5: Vocabulary domain data from Supabase, progress from Supabase user_vocab_progress
  */
 export async function getVocabByTopic(topicId?: string): Promise<Vocabulary[]> {
   const userId = await getAuthUserId();
@@ -225,24 +231,25 @@ export async function getVocabByTopic(topicId?: string): Promise<Vocabulary[]> {
     // Load vocabularies from Supabase
     const supabaseVocabs = await getVocabulariesFromSupabase(topicId);
 
-    // Load study progress from user-scoped localStorage
-    const localProgress = getUserScopedObject<Record<string, Partial<UserVocabProgress>>>(
-      LOCAL_PROGRESS_KEY,
-      userId,
-      {}
-    );
+    if (supabaseVocabs.length === 0) {
+      return [];
+    }
 
-    // Merge Supabase vocabulary data with localStorage progress
+    // Load study progress from Supabase user_vocab_progress
+    const vocabIds = supabaseVocabs.map((v) => v.id);
+    const progressMap = await getProgressForVocabularies(vocabIds);
+
+    // Merge Supabase vocabulary data with Supabase progress
     return supabaseVocabs.map((v) => {
-      const prog = localProgress[v.id];
+      const prog = progressMap.get(v.id);
       const againCount = prog?.again_count || 0;
       return {
         ...v,
         status: (prog?.status as LearningStatus) || 'new',
         review_count: prog?.review_count || 0,
-        last_reviewed_at: prog?.last_reviewed_at,
-        next_review_at: prog?.next_review_at,
-        interval_hours: prog?.interval_hours,
+        last_reviewed_at: prog?.last_reviewed_at || undefined,
+        next_review_at: prog?.next_review_at || undefined,
+        interval_hours: prog?.interval_hours || undefined,
         again_count: againCount,
         is_difficult: againCount >= 5,
       };
@@ -294,7 +301,7 @@ export async function updateVocabulary(vocabId: string, updates: Partial<Vocabul
 
 /**
  * Delete a vocabulary from Supabase
- * Phase 2E: After confirmed database deletion, cleans current-user local progress references
+ * Phase 5: After confirmed database deletion, Supabase CASCADE handles progress cleanup
  */
 export async function deleteVocabulary(vocabId: string): Promise<void> {
   const userId = await getAuthUserId();
@@ -303,16 +310,8 @@ export async function deleteVocabulary(vocabId: string): Promise<void> {
   }
 
   try {
-    // Step 1: Delete from Supabase (returns deleted ID on success)
-    const deletedId = await deleteVocabularyInSupabase(vocabId);
-
-    // Step 2: Clean current-user local progress references for this Vocabulary UUID
-    const localProgress = getUserScopedObject<Record<string, any>>(LOCAL_PROGRESS_KEY, userId, {});
-
-    if (localProgress[deletedId]) {
-      delete localProgress[deletedId];
-      setUserScopedObject(LOCAL_PROGRESS_KEY, userId, localProgress);
-    }
+    // Delete from Supabase (CASCADE to user_vocab_progress via FK)
+    await deleteVocabularyInSupabase(vocabId);
   } catch (err) {
     console.error('deleteVocabulary error:', err);
     throw err;
@@ -328,59 +327,33 @@ export async function updateUserProgress(
   status: LearningStatus,
   rating?: SrsRating
 ): Promise<void> {
-  // Phase 2E: User-scoped localStorage for study/SRS progress
-  // Phase 4: Uses pure domain scheduler for SRS calculations
+  // Phase 5: Submit rating via atomic Supabase RPC
+  // Server calculates schedule, updates progress, and inserts review log atomically
   const userId = await getAuthUserId();
   if (!userId) {
     throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
   }
 
-  const now = new Date();
-  const nowMs = now.getTime();
-  const nowIso = now.toISOString();
+  const effectiveRating: ProgressSrsRating = rating || (status === 'mastered' ? 'mastered' : 'good');
 
-  const localProgress = getUserScopedObject<Record<string, any>>(LOCAL_PROGRESS_KEY, userId, {});
-  const existingData = localProgress[vocabId];
+  // Generate idempotency key for duplicate protection
+  const idempotencyKey = crypto.randomUUID();
 
-  // Prepare current progress for scheduler
-  const currentProgress: SrsProgress = {
-    status: existingData?.status || status,
-    interval_hours: existingData?.interval_hours || 0,
-    review_count: existingData?.review_count || 0,
-    again_count: existingData?.again_count || 0,
-    last_reviewed_at: existingData?.last_reviewed_at,
-    next_review_at: existingData?.next_review_at,
-  };
+  try {
+    // Submit rating via RPC - server handles all scheduling logic
+    await submitRatingViaRpc(vocabId, effectiveRating, idempotencyKey);
 
-  // Use pure domain function to calculate schedule
-  const effectiveRating: SrsRating = rating || (status === 'mastered' ? 'mastered' : 'good');
-  const scheduleResult = calculateNextReview(currentProgress, effectiveRating, nowMs);
-
-  // Convert next_review_at from milliseconds to ISO string for storage
-  const nextReviewIso = scheduleResult.next_review_at !== null
-    ? new Date(scheduleResult.next_review_at).toISOString()
-    : undefined;
-
-  // Persist calculated schedule to user-scoped localStorage
-  const upsertPayload: Record<string, any> = {
-    vocabulary_id: vocabId,
-    status: scheduleResult.status,
-    review_count: scheduleResult.review_count,
-    last_reviewed_at: nowIso,
-    next_review_at: nextReviewIso,
-    interval_hours: scheduleResult.interval_hours,
-    again_count: scheduleResult.again_count,
-  };
-
-  localProgress[vocabId] = upsertPayload;
-  setUserScopedObject(LOCAL_PROGRESS_KEY, userId, localProgress);
-
-  // Record today in study dates history for streak calculation
-  const todayDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const studyDates = getUserScopedArray<string>(LOCAL_STUDY_DATES_KEY, userId);
-  if (!studyDates.includes(todayDateStr)) {
-    studyDates.push(todayDateStr);
-    setUserScopedArray(LOCAL_STUDY_DATES_KEY, userId, studyDates);
+    // Record today in study dates history for streak calculation
+    const now = new Date();
+    const todayDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const studyDates = getUserScopedArray<string>(LOCAL_STUDY_DATES_KEY, userId);
+    if (!studyDates.includes(todayDateStr)) {
+      studyDates.push(todayDateStr);
+      setUserScopedArray(LOCAL_STUDY_DATES_KEY, userId, studyDates);
+    }
+  } catch (err) {
+    console.error('updateUserProgress error:', err);
+    throw err;
   }
 }
 
@@ -417,7 +390,7 @@ function calculateStreak(studyDatesSet: Set<string>): number {
 }
 
 export async function getStudyStats(): Promise<StudyStats> {
-  // Phase 2E: User-scoped localStorage for study/SRS stats
+  // Phase 5: Stats computed from Supabase vocabularies + Supabase progress
   const userId = await getAuthUserId();
   if (!userId) {
     console.warn('getStudyStats: No authenticated user, returning empty stats');
@@ -474,12 +447,13 @@ export async function getStudyStats(): Promise<StudyStats> {
 }
 
 export async function resetAllProgress(): Promise<void> {
-  // Phase 2E: User-scoped localStorage for study/SRS progress
+  // Phase 5: Reset all progress via progressService
   const userId = await getAuthUserId();
   if (!userId) {
     throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
   }
 
-  setUserScopedObject(LOCAL_PROGRESS_KEY, userId, {});
+  const { resetAllProgress: resetAllProgressInSupabase } = await import('./progressService');
+  await resetAllProgressInSupabase();
 }
 

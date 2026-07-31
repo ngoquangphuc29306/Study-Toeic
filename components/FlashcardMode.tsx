@@ -318,41 +318,62 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     return '';
   };
 
+  // Submission state for atomic RPC
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+
   // Handle Progress Rating with SRS
-  const handleRating = useCallback((isMastered: boolean, rating?: SrsRating) => {
-    if (!currentVocab) return;
+  const handleRating = useCallback(async (isMastered: boolean, rating?: SrsRating) => {
+    if (!currentVocab || isSubmitting) return;
 
     const srsRating: SrsRating = rating || (isMastered ? 'mastered' : 'good');
     const newStatus = isMastered || srsRating === 'mastered' ? 'mastered' : 'learning';
-    onUpdateProgress(currentVocab.id, newStatus, srsRating);
 
-    setSessionStats((prev) => ({
-      mastered: isMastered || srsRating === 'mastered' ? prev.mastered + 1 : prev.mastered,
-      needsReview: !isMastered && srsRating !== 'mastered' ? prev.needsReview + 1 : prev.needsReview,
-    }));
+    // Disable buttons and clear previous errors
+    setIsSubmitting(true);
+    setSubmissionError(null);
 
-    // Handle 'again' re-queueing (Step 1: Show again after next card)
-    if (srsRating === 'again') {
-      const insertPos = Math.min(currentIndex + 5, activeVocabs.length);
-      activeVocabs.splice(insertPos, 0, currentVocab);
-    }
+    try {
+      // Submit rating via service (handles RPC + idempotency)
+      await onUpdateProgress(currentVocab.id, newStatus, srsRating);
 
-    if (currentIndex < activeVocabs.length - 1) {
-      setCurrentIndex((prev) => prev + 1);
-    } else {
-      setIsCompleted(true);
-      try {
-        confetti({
-          particleCount: 100,
-          spread: 70,
-          origin: { y: 0.6 },
-          colors: ['#ED4F8E', '#F472B6', '#FCE7F3', '#3B82F6', '#10B981'],
-        });
-      } catch {
-        // Fallback
+      // Update session stats on success
+      setSessionStats((prev) => ({
+        mastered: isMastered || srsRating === 'mastered' ? prev.mastered + 1 : prev.mastered,
+        needsReview: !isMastered && srsRating !== 'mastered' ? prev.needsReview + 1 : prev.needsReview,
+      }));
+
+      // Handle 'again' re-queueing (Step 1: Show again after next card)
+      if (srsRating === 'again') {
+        const insertPos = Math.min(currentIndex + 5, activeVocabs.length);
+        activeVocabs.splice(insertPos, 0, currentVocab);
       }
+
+      // Advance to next card only after confirmed success
+      if (currentIndex < activeVocabs.length - 1) {
+        setCurrentIndex((prev) => prev + 1);
+      } else {
+        setIsCompleted(true);
+        try {
+          confetti({
+            particleCount: 100,
+            spread: 70,
+            origin: { y: 0.6 },
+            colors: ['#ED4F8E', '#F472B6', '#FCE7F3', '#3B82F6', '#10B981'],
+          });
+        } catch {
+          // Fallback
+        }
+      }
+    } catch (err) {
+      // Show safe error message
+      const message = err instanceof Error ? err.message : 'Không thể lưu kết quả. Vui lòng thử lại.';
+      setSubmissionError(message);
+      console.error('handleRating error:', err);
+    } finally {
+      setIsSubmitting(false);
     }
-  }, [currentVocab, currentIndex, activeVocabs, onUpdateProgress]);
+  }, [currentVocab, currentIndex, activeVocabs, onUpdateProgress, isSubmitting]);
 
   // Handle Rating Selection from 4 evaluation buttons
   const handleSelectSrsRating = useCallback((srsRating: SrsRating) => {
@@ -1194,14 +1215,39 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
       </div>
 
-      {/* BOTTOM RESPONSE ACTION BUTTONS (Đã thuộc / Chưa nhớ & 4 Rating Buttons) */}
+        {/* BOTTOM RESPONSE ACTION BUTTONS (Đã thuộc / Chưa nhớ & 4 Rating Buttons) */}
       <div className="space-y-3">
+        {/* Error banner */}
+        {submissionError && (
+          <div className="p-3.5 rounded-2xl bg-[#FFE4E6] border border-[#E11D48] text-[#E11D48] text-xs font-bold flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              <span>{submissionError}</span>
+            </div>
+            <button
+              onClick={() => setSubmissionError(null)}
+              className="text-[#E11D48] hover:text-[#BE123C] cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Loading indicator */}
+        {isSubmitting && (
+          <div className="p-3.5 rounded-2xl bg-[#F0F9FF] border border-[#0284C7] text-[#0284C7] text-xs font-bold flex items-center justify-center gap-2">
+            <RefreshCw className="w-4 h-4 animate-spin" />
+            <span>Đang lưu kết quả...</span>
+          </div>
+        )}
+
         {!showRatingButtons ? (
           /* Initial 2 Buttons: "Đã thuộc" (triggers 4 rating buttons) & "Chưa nhớ" (transitions exercise) */
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={() => setShowRatingButtons(true)}
-              className="py-3.5 px-4 rounded-2xl bg-white border-2 border-[#059669] text-[#059669] hover:bg-[#D1FAE5]/40 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-2xs"
+              disabled={isSubmitting}
+              className="py-3.5 px-4 rounded-2xl bg-white border-2 border-[#059669] text-[#059669] hover:bg-[#D1FAE5]/40 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Check className="w-4 h-4 text-[#059669]" />
               <span>Đã thuộc</span>
@@ -1209,7 +1255,8 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
             <button
               onClick={handleNotRemembered}
-              className="py-3.5 px-4 rounded-2xl bg-[#0284C7] hover:bg-[#0369A1] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-2xs"
+              disabled={isSubmitting}
+              className="py-3.5 px-4 rounded-2xl bg-[#0284C7] hover:bg-[#0369A1] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <span>Chưa nhớ</span>
             </button>
@@ -1229,7 +1276,8 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               <button
                 onClick={() => handleSelectSrsRating('again')}
-                className="p-3.5 rounded-2xl bg-[#EF4444] text-white font-bold text-xs flex flex-col items-center justify-center gap-0.5 hover:opacity-90 transition-all cursor-pointer shadow-xs"
+                disabled={isSubmitting}
+                className="p-3.5 rounded-2xl bg-[#EF4444] text-white font-bold text-xs flex flex-col items-center justify-center gap-0.5 hover:opacity-90 transition-all cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span>Học lại</span>
                 <span className="text-[10px] font-normal opacity-90">
@@ -1239,7 +1287,8 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
               <button
                 onClick={() => handleSelectSrsRating('hard')}
-                className="p-3.5 rounded-2xl bg-[#D97706] text-white font-bold text-xs flex flex-col items-center justify-center gap-0.5 hover:opacity-90 transition-all cursor-pointer shadow-xs"
+                disabled={isSubmitting}
+                className="p-3.5 rounded-2xl bg-[#D97706] text-white font-bold text-xs flex flex-col items-center justify-center gap-0.5 hover:opacity-90 transition-all cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span>Khó</span>
                 <span className="text-[10px] font-normal opacity-90">
@@ -1249,7 +1298,8 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
               <button
                 onClick={() => handleSelectSrsRating('good')}
-                className="p-3.5 rounded-2xl bg-[#059669] text-white font-bold text-xs flex flex-col items-center justify-center gap-0.5 hover:opacity-90 transition-all cursor-pointer shadow-xs"
+                disabled={isSubmitting}
+                className="p-3.5 rounded-2xl bg-[#059669] text-white font-bold text-xs flex flex-col items-center justify-center gap-0.5 hover:opacity-90 transition-all cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span>Tốt</span>
                 <span className="text-[10px] font-normal opacity-90">
@@ -1259,7 +1309,8 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
               <button
                 onClick={() => handleSelectSrsRating('easy')}
-                className="p-3.5 rounded-2xl bg-[#0284C7] text-white font-bold text-xs flex flex-col items-center justify-center gap-0.5 hover:opacity-90 transition-all cursor-pointer shadow-xs"
+                disabled={isSubmitting}
+                className="p-3.5 rounded-2xl bg-[#0284C7] text-white font-bold text-xs flex flex-col items-center justify-center gap-0.5 hover:opacity-90 transition-all cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span>Dễ</span>
                 <span className="text-[10px] font-normal opacity-90">

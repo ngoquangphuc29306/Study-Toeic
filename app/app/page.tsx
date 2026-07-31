@@ -147,7 +147,8 @@ export default function AppPage() {
   }, []);
 
   // Handle Updates & Actions
-  const handleUpdateProgress = async (vocabId: string, status: LearningStatus, rating?: SrsRating) => {
+  // Phase 5: handleUpdateProgress now throws errors for FlashcardMode to handle
+  const handleUpdateProgress = async (vocabId: string, status: LearningStatus, rating?: SrsRating): Promise<void> => {
     await updateUserProgress(vocabId, status, rating);
     await refreshAppData();
   };
