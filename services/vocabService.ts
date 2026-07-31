@@ -30,6 +30,8 @@ import {
   setUserScopedObject,
 } from './localStorageHelpers';
 import { createClient } from '@/lib/supabase/client';
+import { calculateNextReview } from '@/lib/srs/scheduler';
+import type { SrsProgress } from '@/lib/srs/types';
 
 // Base localStorage keys (will be scoped per user)
 // Phase 2E: LOCAL_VOCABS_KEY and DELETED_VOCABS_KEY are now INACTIVE (legacy only)
@@ -327,60 +329,47 @@ export async function updateUserProgress(
   rating?: SrsRating
 ): Promise<void> {
   // Phase 2E: User-scoped localStorage for study/SRS progress
+  // Phase 4: Uses pure domain scheduler for SRS calculations
   const userId = await getAuthUserId();
   if (!userId) {
     throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
   }
 
   const now = new Date();
+  const nowMs = now.getTime();
   const nowIso = now.toISOString();
 
   const localProgress = getUserScopedObject<Record<string, any>>(LOCAL_PROGRESS_KEY, userId, {});
   const existingData = localProgress[vocabId];
 
-  const currentCount = existingData?.review_count || 0;
-  const currentIntervalHours = existingData?.interval_hours || 0;
-  let currentAgainCount = existingData?.again_count || 0;
+  // Prepare current progress for scheduler
+  const currentProgress: SrsProgress = {
+    status: existingData?.status || status,
+    interval_hours: existingData?.interval_hours || 0,
+    review_count: existingData?.review_count || 0,
+    again_count: existingData?.again_count || 0,
+    last_reviewed_at: existingData?.last_reviewed_at,
+    next_review_at: existingData?.next_review_at,
+  };
 
-  let nextReviewIso: string | undefined = undefined;
-  let newIntervalHours = currentIntervalHours;
-  let newStatus: LearningStatus = status;
+  // Use pure domain function to calculate schedule
+  const effectiveRating: SrsRating = rating || (status === 'mastered' ? 'mastered' : 'good');
+  const scheduleResult = calculateNextReview(currentProgress, effectiveRating, nowMs);
 
-  if (status === 'mastered' || rating === 'mastered') {
-    newStatus = 'mastered';
-    nextReviewIso = undefined;
-  } else if (rating === 'again') {
-    newStatus = 'learning';
-    currentAgainCount += 1;
-    newIntervalHours = 0.0833; // 5 phút
-    nextReviewIso = new Date(now.getTime() + 5 * 60 * 1000).toISOString();
-  } else if (rating === 'hard') {
-    newStatus = 'learning';
-    newIntervalHours = currentIntervalHours > 0 ? currentIntervalHours * 2 : 6;
-    nextReviewIso = new Date(now.getTime() + newIntervalHours * 3600 * 1000).toISOString();
-  } else if (rating === 'good') {
-    newStatus = 'learning';
-    newIntervalHours = currentIntervalHours > 0 ? currentIntervalHours * 3 : 24;
-    nextReviewIso = new Date(now.getTime() + newIntervalHours * 3600 * 1000).toISOString();
-  } else if (rating === 'easy') {
-    newStatus = 'learning';
-    newIntervalHours = currentIntervalHours > 0 ? currentIntervalHours * 4 : 72;
-    nextReviewIso = new Date(now.getTime() + newIntervalHours * 3600 * 1000).toISOString();
-  } else {
-    if (newStatus === 'learning' && !existingData?.next_review_at) {
-      newIntervalHours = 24;
-      nextReviewIso = new Date(now.getTime() + 24 * 3600 * 1000).toISOString();
-    }
-  }
+  // Convert next_review_at from milliseconds to ISO string for storage
+  const nextReviewIso = scheduleResult.next_review_at !== null
+    ? new Date(scheduleResult.next_review_at).toISOString()
+    : undefined;
 
+  // Persist calculated schedule to user-scoped localStorage
   const upsertPayload: Record<string, any> = {
     vocabulary_id: vocabId,
-    status: newStatus,
-    review_count: currentCount + 1,
+    status: scheduleResult.status,
+    review_count: scheduleResult.review_count,
     last_reviewed_at: nowIso,
     next_review_at: nextReviewIso,
-    interval_hours: newIntervalHours,
-    again_count: currentAgainCount,
+    interval_hours: scheduleResult.interval_hours,
+    again_count: scheduleResult.again_count,
   };
 
   localProgress[vocabId] = upsertPayload;

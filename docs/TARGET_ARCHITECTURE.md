@@ -108,7 +108,7 @@ export function Flashcard({ word, meaning, isFlipped, onFlip, onRate, isLoading 
 export function Flashcard({ vocab }: { vocab: Vocabulary }) {
   const handleRate = async (rating: SrsRating) => {
     // ❌ Business logic trong component
-    const interval = rating === 'again' ? 0.0833 : vocab.interval_hours * 3;
+    const interval = rating === 'again' ? 1 / 60 : vocab.interval_hours * 3;
     const nextReview = new Date(Date.now() + interval * 3600 * 1000);
     
     // ❌ Direct Supabase call từ component
@@ -240,7 +240,7 @@ export function calculateNextReview(
   // APPROVED MVP ALGORITHM (current behaviour)
   switch (rating) {
     case 'again':
-      newIntervalHours = 0.0833; // 5 minutes
+      newIntervalHours = 1 / 60; // 1 minute
       againCount += 1;
       break;
     case 'hard':
@@ -746,7 +746,7 @@ import { describe, test, expect } from 'vitest';
 import { calculateNextReview } from './scheduler';
 
 describe('SRS Scheduler', () => {
-  test('Again rating resets interval to 5 minutes', () => {
+  test('Again rating resets interval to 1 minute', () => {
     const now = new Date('2026-07-30T10:00:00Z').getTime();
     const progress = {
       status: 'learning' as const,
@@ -756,10 +756,10 @@ describe('SRS Scheduler', () => {
     
     const result = calculateNextReview(progress, 'again', now);
     
-    expect(result.intervalHours).toBe(0.0833); // 5 min
+    expect(result.intervalHours).toBe(1 / 60); // 1 min
     expect(result.againCount).toBe(2);
     expect(result.status).toBe('learning');
-    expect(result.nextReviewMs).toBe(now + 5 * 60 * 1000);
+    expect(result.nextReviewMs).toBe(now + 60 * 1000);
   });
 });
 ```
@@ -998,5 +998,6 @@ Supabase
 |---------|------|--------|---------|
 | 1.0 | 2026-07-30 | Phase 0 | Initial target architecture |
 | 2.0 | 2026-07-30 | Phase 0 Correction | Replaced Modified SM-2 algorithm examples with current-algorithm-neutral examples (Again=5min, Hard=6h/×2, Good=24h/×3, Easy=72h/×4), removed ease_factor/lapseCount fields, updated to againCount field, updated test examples with fixed timestamps, clarified repository interfaces not required for MVP (introduce abstractions incrementally) |
+| 2.1 | 2026-07-31 | Parameter Update | Updated Again interval from 5 minutes to 1 minute in all examples (Again=1min, Hard/Good/Easy unchanged). Product parameter change only, not algorithm redesign. |
 
 **Approval**: This document defines target architecture. Incremental migration plan requires approval before execution.

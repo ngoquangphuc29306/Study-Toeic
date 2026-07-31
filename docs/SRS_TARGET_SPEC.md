@@ -37,7 +37,7 @@ type SrsRating = 'again' | 'hard' | 'good' | 'easy' | 'mastered';
 ```
 
 **Rating Definitions**:
-1. **'again'**: Forgot → Reset to 5 minutes
+1. **'again'**: Forgot → Reset to 1 minute
 2. **'hard'**: Difficult → Initial 6 hours or ×2 current interval
 3. **'good'**: Good → Initial 24 hours or ×3 current interval
 4. **'easy'**: Easy → Initial 72 hours or ×4 current interval
@@ -52,8 +52,8 @@ type SrsRating = 'again' | 'hard' | 'good' | 'easy' | 'mastered';
 if (rating === 'again') {
   newStatus = 'learning';
   currentAgainCount += 1;
-  newIntervalHours = 0.0833; // 5 minutes
-  nextReviewIso = new Date(now.getTime() + 5 * 60 * 1000).toISOString();
+  newIntervalHours = 1 / 60; // 1 minute
+  nextReviewIso = new Date(now.getTime() + 60 * 1000).toISOString();
 }
 else if (rating === 'hard') {
   newStatus = 'learning';
@@ -77,13 +77,13 @@ else if (status === 'mastered' || rating === 'mastered') {
 ```
 
 **Initial Intervals** (when `currentIntervalHours = 0`):
-- Again: 5 minutes (0.0833 hours)
+- Again: 1 minute (1/60 hours)
 - Hard: 6 hours
 - Good: 24 hours
 - Easy: 72 hours
 
 **Subsequent Intervals** (when `currentIntervalHours > 0`):
-- Again: Reset to 5 minutes (ignores previous interval)
+- Again: Reset to 1 minute (ignores previous interval)
 - Hard: `currentIntervalHours × 2`
 - Good: `currentIntervalHours × 3`
 - Easy: `currentIntervalHours × 4`
@@ -131,7 +131,7 @@ interface UserVocabProgress {
 **MVP Target**: Keep the current algorithm as-is with the following enhancements for reliability only:
 
 **Behaviour** (unchanged from current):
-- Again: 5 minutes
+- Again: 1 minute
 - Hard: initial 6 hours, then ×2
 - Good: initial 24 hours, then ×3
 - Easy: initial 72 hours, then ×4
@@ -259,8 +259,8 @@ BEGIN
 
   -- Calculate new interval using APPROVED ALGORITHM (current behaviour)
   IF p_rating = 'again' THEN
-    v_new_interval_hours := 0.0833; -- 5 minutes
-    v_next_review_at := v_reviewed_at + INTERVAL '5 minutes';
+    v_new_interval_hours := 1 / 60.0; -- 1 minute
+    v_next_review_at := v_reviewed_at + INTERVAL '1 minute';
     v_new_status := 'learning';
     v_again_count := COALESCE(v_current_progress.again_count, 0) + 1;
   ELSIF p_rating = 'hard' THEN
@@ -444,7 +444,7 @@ All SRS domain functions must have:
 
 **Example Test**:
 ```typescript
-test('again rating resets interval to 5 minutes', () => {
+test('again rating resets interval to 1 minute', () => {
   const now = new Date('2026-07-30T10:00:00Z'); // Fixed timestamp
   const progress = {
     interval_hours: 24,
@@ -454,8 +454,8 @@ test('again rating resets interval to 5 minutes', () => {
   
   const result = calculateNextReview('again', progress, now);
   
-  expect(result.intervalHours).toBe(0.0833);
-  expect(result.nextReviewAt).toEqual(new Date('2026-07-30T10:05:00Z'));
+  expect(result.intervalHours).toBe(1 / 60);
+  expect(result.nextReviewAt).toEqual(new Date('2026-07-30T10:01:00Z'));
   expect(result.status).toBe('learning');
   expect(result.againCount).toBe(2);
 });
@@ -588,11 +588,11 @@ test('again rating resets interval to 5 minutes', () => {
 |--------|--------|-------------------|--------------|----------------|-------------|
 | 1 | Good | 0 hours | 24 hours | 2026-07-31T10:00:00Z | 0 |
 | 2 | Good | 24 hours | 72 hours | 2026-08-03T10:00:00Z | 0 |
-| 3 | Again | 72 hours | 0.0833 hours (5 min) | 2026-08-03T10:05:00Z | 1 |
-| 4 | Hard | 0.0833 hours | 6 hours | 2026-08-03T16:05:00Z | 1 |
-| 5 | Good | 6 hours | 18 hours (6×3) | 2026-08-04T10:05:00Z | 1 |
+| 3 | Again | 72 hours | 1/60 hours (1 min) | 2026-08-03T10:01:00Z | 1 |
+| 4 | Hard | 1/60 hours | 6 hours | 2026-08-03T16:01:00Z | 1 |
+| 5 | Good | 6 hours | 18 hours (6×3) | 2026-08-04T10:01:00Z | 1 |
 
-**Note**: Current algorithm does NOT have special lapse handling. "Again" simply resets to 5 minutes.
+**Note**: Current algorithm does NOT have special lapse handling. "Again" simply resets to 1 minute.
 
 ### 6.3. Manual Mastery
 

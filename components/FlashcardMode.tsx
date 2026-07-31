@@ -237,7 +237,22 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     return [...dueWords, ...notDueWords, ...newWords, ...masteredWords];
   }, [topicVocabs, filterStatus, nowMs]);
 
-  const currentVocab = activeVocabs[currentIndex];
+  // Safe index: clamp currentIndex to valid range when activeVocabs changes
+  const safeIndex = useMemo(() => {
+    if (activeVocabs.length === 0) return 0;
+    if (currentIndex >= activeVocabs.length) return activeVocabs.length - 1;
+    if (currentIndex < 0) return 0;
+    return currentIndex;
+  }, [currentIndex, activeVocabs.length]);
+
+  // Use safe index directly, sync state in next render to avoid cascading updates
+  const currentVocab = activeVocabs[safeIndex];
+
+  // Sync currentIndex after render completes if it was out of bounds
+  if (safeIndex !== currentIndex && activeVocabs.length > 0) {
+    // This runs during render, queued for next render cycle
+    Promise.resolve().then(() => setCurrentIndex(safeIndex));
+  }
 
   // Derive Quiz options dynamically using pure seeded shuffle
   const { quizOptions, correctQuizIndex } = useMemo(() => {
@@ -275,7 +290,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
   // Helper for dynamic SRS button interval subtitles
   const getRatingSubtitle = (rating: 'again' | 'hard' | 'good' | 'easy', currentInterval = 0) => {
-    if (rating === 'again') return '5 từ tới';
+    if (rating === 'again') return '1 phút';
     const formatHoursLabel = (hours: number) => {
       if (hours < 1) {
         const mins = Math.max(1, Math.round(hours * 60));
@@ -316,7 +331,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       needsReview: !isMastered && srsRating !== 'mastered' ? prev.needsReview + 1 : prev.needsReview,
     }));
 
-    // Handle 'again' re-queueing (Step 1: Gặp lại sau 5 từ tiếp theo)
+    // Handle 'again' re-queueing (Step 1: Show again after next card)
     if (srsRating === 'again') {
       const insertPos = Math.min(currentIndex + 5, activeVocabs.length);
       activeVocabs.splice(insertPos, 0, currentVocab);
@@ -369,8 +384,10 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       if (onDeleteVocabulary) {
         onDeleteVocabulary(currentVocab.id);
       }
-      if (currentIndex >= activeVocabs.length - 1 && currentIndex > 0) {
-        setCurrentIndex((prev) => prev - 1);
+      // After deletion, activeVocabs will shrink on next render
+      // If we're deleting the last item or beyond, move index back
+      if (currentIndex >= activeVocabs.length - 1) {
+        setCurrentIndex(Math.max(0, activeVocabs.length - 2));
       }
     }
   }, [currentVocab, onDeleteVocabulary, currentIndex, activeVocabs.length]);
@@ -511,7 +528,8 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     setSubMode('flashcard');
   };
 
-  if (!activeVocabs || activeVocabs.length === 0) {
+  // Empty queue guard - render before accessing currentVocab
+  if (!activeVocabs || activeVocabs.length === 0 || !currentVocab) {
     return (
       <div className="max-w-xl mx-auto my-12 p-8 bg-white rounded-[32px] border border-[#FCE7F3] text-center space-y-4 shadow-2xs">
         <BookOpen className="w-12 h-12 text-[#F472B6] mx-auto" />

@@ -35,7 +35,7 @@
 The MVP SRS algorithm **preserves current behaviour** exactly as implemented in `services/vocabService.ts` lines 557-656.
 
 **Rating System**: Four buttons
-- **Again** (Quên): 5 minutes
+- **Again** (Quên): 1 minute
 - **Hard** (Khó): initial 6 hours if first review, then ×2 current interval
 - **Good** (Được): initial 24 hours if first review, then ×3 current interval  
 - **Easy** (Dễ): initial 72 hours if first review, then ×4 current interval
@@ -53,7 +53,7 @@ The MVP SRS algorithm **preserves current behaviour** exactly as implemented in 
 **Behaviour**:
 - First review: uses initial intervals (6h, 24h, 72h)
 - Subsequent reviews: multiplies current `interval_hours` (×2, ×3, ×4)
-- Again: resets to 5 minutes, increments `again_count`
+- Again: resets to 1 minute, increments `again_count`
 - No automatic mastery promotion
 - No interval cap
 - No ease factors
@@ -250,7 +250,7 @@ These behaviours are verified from current codebase and must be preserved unless
 
 ### 3.1. SRS Scheduling
 From `services/vocabService.ts`:
-- Again: 5 minutes (`0.0833 hours`)
+- Again: 1 minute (`1 / 60 hours`)
 - Hard: `currentInterval > 0 ? currentInterval * 2 : 6` hours
 - Good: `currentInterval > 0 ? currentInterval * 3 : 24` hours
 - Easy: `currentInterval > 0 ? currentInterval * 4 : 72` hours

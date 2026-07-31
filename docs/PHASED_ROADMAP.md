@@ -726,7 +726,7 @@ vocab_study_dates_v1:<user-id>            # Study date history for streak calcul
 - Verify behavior unchanged (same inputs → same outputs)
 
 ❌ **Not Allowed**:
-- Change algorithm multipliers (keep Again=5min, Hard=6h/×2, Good=24h/×3, Easy=72h/×4)
+- Change algorithm multipliers (keep Again=1min, Hard=6h/×2, Good=24h/×3, Easy=72h/×4)
 - Add ease_factor, relearning steps, interval cap
 - Change states (keep 'new', 'learning', 'mastered' only)
 - Add auto-mastery
