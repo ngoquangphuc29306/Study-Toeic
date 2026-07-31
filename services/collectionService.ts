@@ -4,42 +4,19 @@
  * Handles all Collection operations with Supabase as the source of truth.
  * Uses browser client with authenticated session and RLS enforcement.
  *
- * Phase 2C: Collections migrated to Supabase
- * Topics and Vocabularies remain in localStorage (Phase 2D, 2E)
+ * Phase 2E: Collections in Supabase, Vocabularies in Supabase
+ *
+ * Data Ownership After Phase 2E:
+ * - Collections: Supabase (Phase 2C)
+ * - Topics: Supabase (Phase 2D)
+ * - Vocabularies: Supabase (Phase 2E)
+ * - Study/SRS data: user-scoped localStorage
  */
 
 import { createClient } from '@/lib/supabase/client';
-import { Collection, Topic, Vocabulary } from '@/lib/types';
+import { Collection } from '@/lib/types';
 import { CollectionHasChildrenError } from './collectionErrors';
 
-// LocalStorage keys (read-only during Phase 2C transitional period)
-const LOCAL_TOPICS_KEY = 'vocab_local_topics_v1';
-const LOCAL_VOCABS_KEY = 'vocab_local_vocabularies_v1';
-
-/**
- * Safe localStorage reader for server-side and client-side environments
- * Returns empty array if:
- * - Running server-side
- * - Key doesn't exist
- * - JSON parsing fails
- * - Result is not an array
- */
-function safeGetLocalStorageArray<T>(key: string): T[] {
-  if (typeof window === 'undefined') return [];
-
-  try {
-    const item = localStorage.getItem(key);
-    if (!item) return [];
-
-    const parsed = JSON.parse(item);
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed as T[];
-  } catch (err) {
-    console.warn(`Failed to read localStorage key "${key}":`, err);
-    return [];
-  }
-}
 
 /**
  * Get all collections for the authenticated user
@@ -187,60 +164,60 @@ export async function updateCollection(
  * Delete a collection
  * RLS enforces user can only delete their own collections
  *
- * Phase 2C Safety: Blocks deletion if Collection has any child Topics or Vocabularies
- * in localStorage to prevent orphaned data during the transitional period.
+ * Phase 2E Safety: Blocks deletion if Collection has any Topics in Supabase
+ * (Topics already block deletion if they have Vocabularies in Supabase)
  *
  * Safe deletion order:
- * 1. Validate collection ID
- * 2. Read local Topics belonging to this Collection
- * 3. Build Set of Topic IDs
- * 4. Read local Vocabularies belonging to those Topics
- * 5. Reject if any child Topics or Vocabularies exist
- * 6. Validate authenticated user
- * 7. Execute Supabase DELETE with .select('id')
- * 8. Verify at least one row was deleted
+ * 1. Get authenticated user ID
+ * 2. Query Supabase Topics belonging to this Collection
+ * 3. Reject if any Topics exist
+ * 4. Execute Supabase DELETE with .select('id')
+ * 5. Verify at least one row was deleted
+ *
+ * @param collectionId - Collection UUID
  */
 export async function deleteCollection(collectionId: string): Promise<void> {
   const supabase = createClient();
 
   try {
-    // Step 1 & 2: Read local Topics that belong to this Collection
-    const localTopics = safeGetLocalStorageArray<Topic>(LOCAL_TOPICS_KEY);
-    const childTopics = localTopics.filter((t) => t.collection_id === collectionId);
-
-    // Step 3: Build Set of child Topic IDs
-    const childTopicIds = new Set(childTopics.map((t) => t.id));
-
-    // Step 4: Read local Vocabularies that belong to child Topics
-    const localVocabs = safeGetLocalStorageArray<Vocabulary>(LOCAL_VOCABS_KEY);
-    const childVocabs = localVocabs.filter((v) => childTopicIds.has(v.topic_id));
-
-    // Step 5: Block deletion if any child Topics or Vocabularies exist
-    if (childTopics.length > 0 || childVocabs.length > 0) {
-      throw new CollectionHasChildrenError();
-    }
-
-    // Step 6: Validate authenticated user
+    // Step 1: Get authenticated user ID
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
       throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
     }
 
-    // Step 7: Execute Supabase DELETE with .select('id') to verify row was deleted
+    // Step 2: Query Supabase Topics belonging to this Collection
+    const { data: childTopics, error: topicError } = await supabase
+      .from('topics')
+      .select('id')
+      .eq('collection_id', collectionId)
+      .limit(1);
+
+    if (topicError) {
+      console.error('Supabase deleteCollection topic check error:', topicError.message);
+      throw new Error('Không thể kiểm tra học phần trong bộ sưu tập.');
+    }
+
+    // Step 3: Block deletion if any Topics exist
+    if (childTopics && childTopics.length > 0) {
+      throw new CollectionHasChildrenError();
+    }
+
+    // Step 4: Execute Supabase DELETE with .select('id') to verify row was deleted
     const { data, error } = await supabase
       .from('collections')
       .delete()
       .eq('id', collectionId)
       .select('id');
 
-    // Step 8: Handle database errors
+    // Step 5: Handle database errors
     if (error) {
       console.error('Supabase deleteCollection error:', error.message);
       throw new Error('Không thể xóa bộ sưu tập.');
     }
 
-    // Step 9: Verify at least one row was deleted
+    // Verify at least one row was deleted
     if (!data || data.length === 0) {
       throw new Error('Không tìm thấy bộ sưu tập hoặc bạn không có quyền xóa.');
     }

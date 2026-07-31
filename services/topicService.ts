@@ -4,30 +4,25 @@
  * Handles all Topic operations with Supabase as the source of truth.
  * Uses browser client with authenticated session and RLS enforcement.
  *
- * Phase 2D: Topics migrated to Supabase
- * Vocabularies remain in user-scoped localStorage
+ * Phase 2E: Topics in Supabase, Vocabularies in Supabase
  *
- * Data Ownership After Phase 2D:
+ * Data Ownership After Phase 2E:
  * - Collections: Supabase (Phase 2C)
  * - Topics: Supabase (Phase 2D)
- * - Vocabularies: user-scoped localStorage (migrated in Phase 2E)
+ * - Vocabularies: Supabase (Phase 2E)
  * - Study/SRS data: user-scoped localStorage
  */
 
 import { createClient } from '@/lib/supabase/client';
-import { Topic, Vocabulary } from '@/lib/types';
+import { Topic } from '@/lib/types';
 import { TopicHasVocabulariesError } from './topicErrors';
-import { getUserScopedArray } from './localStorageHelpers';
-
-// Base localStorage keys for Vocabularies (still unmigrated in Phase 2D)
-const LOCAL_VOCABS_KEY = 'vocab_local_vocabularies_v1';
 
 /**
  * Get all topics for the authenticated user
  * RLS enforces user_id = auth.uid()
  *
  * @param collectionId - Optional collection filter
- * @returns Array of Topics with computed vocabulary counts
+ * @returns Array of Topics with computed vocabulary counts from Supabase
  */
 export async function getTopics(collectionId?: string): Promise<Topic[]> {
   const supabase = createClient();
@@ -59,20 +54,49 @@ export async function getTopics(collectionId?: string): Promise<Topic[]> {
 
     const topics = data || [];
 
-    // Compute vocabulary counts from user-scoped localStorage
-    const localVocabs = getUserScopedArray<Vocabulary>(LOCAL_VOCABS_KEY, user.id);
+    // Compute vocabulary counts from Supabase
+    // Use a single query to count vocabularies for all topics
+    const topicIds = topics.map(t => t.id);
+
+    if (topicIds.length === 0) {
+      return topics.map(topic => ({
+        ...topic,
+        total_words: 0,
+        mastered_words: 0,
+        learning_words: 0,
+      }));
+    }
+
+    const { data: vocabData, error: vocabError } = await supabase
+      .from('vocabularies')
+      .select('id, topic_id')
+      .in('topic_id', topicIds);
+
+    if (vocabError) {
+      console.error('Supabase vocabulary count error:', vocabError.message);
+      // Return topics with zero counts if vocabulary query fails
+      return topics.map(topic => ({
+        ...topic,
+        total_words: 0,
+        mastered_words: 0,
+        learning_words: 0,
+      }));
+    }
+
+    // Count vocabularies per topic
+    const vocabCounts = new Map<string, number>();
+    (vocabData || []).forEach(v => {
+      vocabCounts.set(v.topic_id, (vocabCounts.get(v.topic_id) || 0) + 1);
+    });
 
     return topics.map((topic) => {
-      const topicVocabs = localVocabs.filter((v) => v.topic_id === topic.id);
-      const total = topicVocabs.length;
-      const mastered = topicVocabs.filter((v) => v.status === 'mastered').length;
-      const learning = topicVocabs.filter((v) => v.status === 'learning').length;
+      const total = vocabCounts.get(topic.id) || 0;
 
       return {
         ...topic,
         total_words: total,
-        mastered_words: mastered,
-        learning_words: learning,
+        mastered_words: 0, // Progress computed separately in vocabService
+        learning_words: 0, // Progress computed separately in vocabService
       };
     });
   } catch (err) {
@@ -222,12 +246,11 @@ export async function updateTopic(
  * Delete a topic
  * RLS enforces user can only delete their own topics
  *
- * Phase 2D Safety: Blocks deletion if Topic has any Vocabularies
- * in user-scoped localStorage to prevent orphaned data during the transitional period.
+ * Phase 2E Safety: Blocks deletion if Topic has any Vocabularies in Supabase
  *
  * Safe deletion order:
  * 1. Get authenticated user ID
- * 2. Read user-scoped local Vocabularies belonging to this Topic
+ * 2. Query Supabase Vocabularies belonging to this Topic
  * 3. Reject if any Vocabularies exist
  * 4. Execute Supabase DELETE with .select('id')
  * 5. Verify at least one row was deleted
@@ -245,12 +268,20 @@ export async function deleteTopic(topicId: string): Promise<void> {
       throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
     }
 
-    // Step 2: Read user-scoped local Vocabularies belonging to this Topic
-    const localVocabs = getUserScopedArray<Vocabulary>(LOCAL_VOCABS_KEY, user.id);
-    const topicVocabs = localVocabs.filter((v) => v.topic_id === topicId);
+    // Step 2: Query Supabase Vocabularies belonging to this Topic
+    const { data: topicVocabs, error: vocabError } = await supabase
+      .from('vocabularies')
+      .select('id')
+      .eq('topic_id', topicId)
+      .limit(1);
+
+    if (vocabError) {
+      console.error('Supabase deleteTopic vocabulary check error:', vocabError.message);
+      throw new Error('Không thể kiểm tra từ vựng trong học phần.');
+    }
 
     // Step 3: Block deletion if any Vocabularies exist
-    if (topicVocabs.length > 0) {
+    if (topicVocabs && topicVocabs.length > 0) {
       throw new TopicHasVocabulariesError();
     }
 

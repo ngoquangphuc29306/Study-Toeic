@@ -1,9 +1,9 @@
 # VocabTOEIC — Data Ownership Contract
 
-**Document Version**: 2.2  
-**Created**: 2026-07-30  
-**Updated**: 2026-07-30  
-**Status**: Product Owner Approved (with corrections)  
+**Document Version**: 2.5
+**Created**: 2026-07-30
+**Updated**: 2026-07-31
+**Status**: Product Owner Approved (Phase 2E Complete)
 **Authority**: Zero Trust — Server enforces all ownership rules
 
 **IMPORTANT**: All SQL examples in this document are **PROPOSED architectural drafts** and are **NOT migration-ready**. They require validation, testing, and adjustment before deployment to Supabase.
@@ -902,13 +902,21 @@ EXECUTE FUNCTION set_owner_from_auth();
 
 **CRITICAL**: After a domain is migrated to Supabase, localStorage must NOT be used as a silent long-term persistence fallback for that domain.
 
-**Phase 2C Status** (2026-07-30):
+**Phase 2D Status** (2026-07-31):
 - ✅ Collections: **MIGRATED** to Supabase (source of truth)
-  - **Deletion Safety**: Blocks deletion if any child Topics or Vocabularies exist in localStorage
-  - **No Auto-Cascade**: Does NOT automatically delete localStorage child data
-- 🔄 Topics: Still in localStorage (Phase 2D pending)
-- 🔄 Vocabularies: Still in localStorage (Phase 2E pending)
-- 🔄 Progress: Still in localStorage (Phase 5 pending)
+  - **Deletion Safety**: Blocks deletion if Supabase Topics exist
+  - **No Auto-Cascade**: Does NOT automatically delete database child data
+- ✅ Topics: **MIGRATED** to Supabase (source of truth)
+  - **Deletion Safety**: Blocks deletion if Supabase Vocabularies exist
+  - **No Auto-Cascade**: Does NOT automatically delete Supabase child data
+  - **Legacy Keys**: localStorage Topic keys (vocab_local_topics_v1:<user-id>) are no longer read or written
+- ✅ Vocabularies: **MIGRATED** to Supabase (Phase 2E complete)
+  - **Topic Validation**: Must reference valid Supabase Topic UUIDs
+  - **Database UUIDs**: Vocabularies use database-generated UUIDs
+  - **Legacy Keys**: localStorage Vocabulary keys (vocab_local_vocabularies_v1:<user-id>) are no longer read or written for domain data
+- 🔄 Progress: Still in user-scoped localStorage (Phase 2E+)
+  - **Progress References**: localStorage progress references Supabase Vocabulary UUIDs
+  - **Deletion Cleanup**: Deleting a Vocabulary cleans its localStorage progress references
 
 **Approved localStorage Uses**:
 1. **One-time migration**: Import existing data on first login
@@ -1000,7 +1008,287 @@ DELETE FROM auth.users WHERE id = '<user_id>';
 
 ---
 
-## Document Change Log
+## 8. Phase 2D — Topic Migration to Supabase
+
+**Status**: Implemented in Phase 2D (2026-07-30)
+
+### Problem
+Topics remained in user-scoped localStorage during Phase 2C. This required:
+- Complex localStorage management for Topic CRUD
+- Manual Topic ID generation (client-side timestamps)
+- Inconsistent data sources (Collections in Supabase, Topics in localStorage)
+- Potential data loss if localStorage is cleared
+
+### Solution
+Migrate Topics to Supabase `public.topics` table with:
+- Database-generated UUIDs for Topic IDs
+- RLS policies enforcing ownership (`user_id = auth.uid()`)
+- Composite foreign key enforcing parent Collection ownership
+- Deletion protection when localStorage Vocabularies exist
+
+### Topic ID Transition
+
+**Before Phase 2D**: Client-generated IDs
+```
+topic-1723456789
+```
+
+**After Phase 2D**: Database-generated UUIDs
+```
+550e8400-e29b-41d4-a716-446655440000
+```
+
+### Vocabulary Compatibility Strategy
+
+**Chosen Strategy**: Fresh Start (Strategy A)
+
+Users recreate Topics in Supabase after Phase 2D deployment. Legacy localStorage Topics (if any) are not automatically migrated.
+
+**Behavior**:
+- Existing localStorage Vocabularies with legacy Topic IDs are filtered out (not shown)
+- New Vocabularies must reference valid Supabase Topic UUIDs
+- Vocabulary create/update validates Topic exists in Supabase
+- Legacy Topic data remains in localStorage but is inactive
+
+**User-Facing Impact**:
+- Users may see empty Topic list after Phase 2D if they have legacy Topics
+- Users recreate Topics via "Tạo Section Bài Học" modal
+- Existing Vocabularies with legacy Topic IDs will not appear until explicit migration
+
+### Legacy localStorage Keys (Inactive)
+
+These keys are no longer read or written after Phase 2D:
+```
+vocab_local_topics_v1:<user-id>        # Topics now in Supabase
+vocab_deleted_topics_v1:<user-id>      # Topic deletes now in Supabase
+```
+
+Data in these keys remains untouched but is not used by the application.
+
+### Topic Deletion Safety
+
+**Phase 2E Behavior**: Block Topic deletion if any Supabase Vocabularies reference that Topic UUID
+
+**Error Message**:
+```
+Không thể xóa học phần này vì vẫn còn từ vựng. Hãy xóa từ vựng bên trong trước.
+```
+
+**Implementation**: `TopicHasVocabulariesError` thrown by `topicService.deleteTopic()`
+
+### Collection Deletion After Phase 2E
+
+**Updated Behavior**: Block Collection deletion if any Supabase Topics exist
+
+**Implementation**: `collectionService.deleteCollection()` queries Supabase Topics
+
+### Files Changed
+
+**New Files**:
+- `services/topicService.ts` — Topic CRUD with Supabase
+- `services/topicErrors.ts` — `TopicHasVocabulariesError`
+
+**Modified Files**:
+- `services/vocabService.ts` — Delegate Topic CRUD to topicService, validate Topic UUIDs for Vocabulary operations
+- `app/app/page.tsx` — Import and handle `TopicHasVocabulariesError`
+- `docs/DATA_OWNERSHIP_CONTRACT.md` — Updated ownership matrix and migration status
+
+### Security Requirements
+
+1. Topic `user_id` obtained from authenticated Supabase session only
+2. RLS policies enforce `user_id = auth.uid()` on all Topic operations
+3. Composite FK `(collection_id, user_id) → collections(id, user_id)` enforces parent ownership
+4. Topic UUID validation before Vocabulary create/update
+5. Vocabularies filtered by valid Supabase Topic UUIDs only
+
+---
+
+## 9. Phase 2C Fix — User-Scoped localStorage
+
+**Status**: Implemented in Phase 2C Fix (2026-07-30)
+
+### Problem
+Topics and Vocabularies remain in localStorage during Phase 2C transitional period. The original global localStorage keys caused critical cross-user data leakage:
+
+```
+vocab_local_topics_v1       // Shared by all users in same browser
+vocab_local_vocabs_v1       // Shared by all users in same browser
+```
+
+**Impact**: Alice and Bob could see and delete each other's Topics and Vocabularies when using the same browser.
+
+### Solution
+Implement user-scoped localStorage keys that namespace data per authenticated user:
+
+```
+Storage Key Format:
+vocab_local_topics_v1:<user-id>
+vocab_local_vocabs_v1:<user-id>
+vocab_local_progress_v1:<user-id>
+vocab_study_dates_v1:<user-id>
+vocab_deleted_topics_v1:<user-id>
+vocab_deleted_vocabs_v1:<user-id>
+
+Example:
+vocab_local_topics_v1:550e8400-e29b-41d4-a716-446655440000
+vocab_local_vocabs_v1:550e8400-e29b-41d4-a716-446655440000
+```
+
+### Implementation
+**File**: `services/localStorageHelpers.ts` (new)
+
+Helper functions:
+- `getUserStorageKey(baseKey, userId)` — Build user-scoped key
+- `getUserScopedArray<T>(baseKey, userId)` — Read user-scoped array
+- `setUserScopedArray<T>(baseKey, userId, value)` — Write user-scoped array
+- `getUserScopedObject<T>(baseKey, userId, defaultValue)` — Read user-scoped object
+- `setUserScopedObject<T>(baseKey, userId, value)` — Write user-scoped object
+
+All Topic and Vocabulary CRUD operations updated to use user-scoped helpers.
+
+### Legacy Global Keys
+Legacy unscoped keys are **no longer read** after Phase 2C Fix:
+```
+vocab_local_topics_v1       // Not read, left untouched
+vocab_local_vocabs_v1       // Not read, left untouched
+```
+
+**Migration Strategy**: No automatic migration. Legacy data is left untouched for manual cleanup or future explicit migration if needed.
+
+### Security Requirements
+1. User ID **must** come from authenticated Supabase session only (`auth.getUser()`)
+2. Never accept user ID from form input or client state
+3. Missing authentication returns empty arrays, not global fallback keys
+4. All localStorage operations validate userId before proceeding
+5. Authentication state change clears in-memory state and reloads new user's data
+
+### Icon Defaults
+Icon selection UI removed from Collection and Section forms.
+
+**Default Icons**:
+- Collection: `FolderKanban`
+- Topic/Section: `BookOpen`
+
+Icons are set internally during create operations. Existing icons are preserved during updates.
+
+---
+
+## 10. Phase 2E — Vocabulary Migration to Supabase
+
+**Status**: Implemented in Phase 2E (2026-07-31)
+
+### Problem
+Vocabularies remained in user-scoped localStorage during Phase 2D. This required:
+- Complex localStorage management for Vocabulary CRUD
+- Manual Vocabulary ID generation (client-side timestamps)
+- Inconsistent data sources (Collections and Topics in Supabase, Vocabularies in localStorage)
+- Potential data loss if localStorage is cleared
+- Complex validation logic to filter Vocabularies by valid Supabase Topic UUIDs
+
+### Solution
+Migrate Vocabularies to Supabase `public.vocabularies` table with:
+- Database-generated UUIDs for Vocabulary IDs
+- RLS policies enforcing ownership (`user_id = auth.uid()`)
+- Composite foreign key enforcing parent Topic ownership
+- Study/SRS progress remains in user-scoped localStorage
+- Vocabulary deletion cleans localStorage progress references
+
+### Vocabulary ID Transition
+
+**Before Phase 2E**: Client-generated IDs
+```
+vocab-1723456789-abc123
+```
+
+**After Phase 2E**: Database-generated UUIDs
+```
+7c9e6679-7425-40de-944b-e07fc1f90ae7
+```
+
+### Study/SRS Progress Strategy
+
+**Chosen Strategy**: Keep progress in user-scoped localStorage
+
+Study/SRS data (status, review_count, last_reviewed_at, next_review_at, interval_hours, again_count) remains in localStorage using the new Supabase Vocabulary UUIDs as keys.
+
+**localStorage Keys (Active)**:
+```
+vocab_local_progress_v1:<user-id>      # Progress data keyed by Vocabulary UUID
+vocab_study_dates_v1:<user-id>         # Study date history for streak calculation
+```
+
+**Behavior**:
+- `getVocabByTopic()` loads Vocabularies from Supabase, merges progress from localStorage
+- `updateUserProgress()` writes progress to localStorage using Vocabulary UUID
+- `deleteVocabulary()` removes Vocabulary from Supabase, then cleans localStorage progress reference
+- `getStudyStats()` computes stats from Supabase Vocabularies + localStorage progress
+
+### Legacy localStorage Keys (Inactive)
+
+These keys are no longer read or written after Phase 2E:
+```
+vocab_local_vocabularies_v1:<user-id>  # Vocabularies now in Supabase
+vocab_deleted_vocabs_v1:<user-id>      # Vocabulary deletes now in Supabase
+```
+
+Data in these keys remains untouched but is not used by the application.
+
+### Vocabulary Deletion Safety
+
+**Phase 2E Behavior**: Delete Vocabulary from Supabase, then clean localStorage progress references
+
+**Implementation**: 
+1. `vocabularyService.deleteVocabulary()` deletes from Supabase, returns deleted ID
+2. `vocabService.deleteVocabulary()` calls vocabularyService, then cleans localStorage progress
+
+**Error Handling**: If Supabase deletion fails, no localStorage cleanup occurs (safe)
+
+### Topic Deletion After Phase 2E
+
+**Updated Behavior**: Block Topic deletion if any Supabase Vocabularies exist (replaced Phase 2D's localStorage-based check)
+
+**Implementation**: `topicService.deleteTopic()` now queries Supabase Vocabularies instead of localStorage
+
+### Files Changed
+
+**New Files**:
+- `services/vocabularyService.ts` — Vocabulary CRUD with Supabase
+- `services/vocabularyErrors.ts` — `VocabularyValidationError`
+
+**Modified Files**:
+- `services/vocabService.ts` — Delegate Vocabulary CRUD to vocabularyService, merge Supabase data with localStorage progress
+- `services/topicService.ts` — Query Supabase Vocabularies for deletion safety check
+- `app/app/page.tsx` — Import `VocabularyValidationError`
+- `docs/DATA_OWNERSHIP_CONTRACT.md` — Updated ownership matrix and migration status
+
+### Security Requirements
+
+1. Vocabulary `user_id` obtained from authenticated Supabase session only
+2. RLS policies enforce `user_id = auth.uid()` on all Vocabulary operations
+3. Composite FK `(topic_id, user_id) → topics(id, user_id)` enforces parent ownership
+4. Foreign key violation (23503) handled gracefully with user-friendly error
+5. Study/SRS progress stored in user-scoped localStorage only
+6. Progress cleanup occurs only after confirmed Supabase deletion
+
+### Fresh Start Strategy
+
+**Migration Strategy**: Fresh Start (Strategy A)
+
+Users recreate Vocabularies in Supabase after Phase 2E deployment. Legacy localStorage Vocabularies (if any) are not automatically migrated.
+
+**Behavior**:
+- Existing localStorage Vocabularies with legacy IDs are not shown
+- New Vocabularies must be created via UI (single or bulk import)
+- Legacy Vocabulary data remains in localStorage but is inactive
+- Users can recreate their vocabulary lists via Excel import or manual entry
+
+**User-Facing Impact**:
+- Users may see empty Vocabulary lists after Phase 2E if they have legacy data
+- Users recreate Vocabularies via "Thêm Từ Vựng" or "Nhập từ Excel"
+- Study progress resets to "new" for recreated Vocabularies
+
+---
+
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
@@ -1008,5 +1296,8 @@ DELETE FROM auth.users WHERE id = '<user_id>';
 | 2.0 | 2026-07-30 | Phase 0 Correction | Added PROPOSED label to all SQL, added composite FK requirement, clarified review_logs atomic RPC requirement, added input validation section, clarified localStorage as one-time import only, fixed soft delete policy |
 | 2.1 | 2026-07-30 | Phase 2C | Updated migration status: Collections migrated to Supabase, Topics/Vocabularies remain in localStorage |
 | 2.2 | 2026-07-30 | Phase 2C Fix | Added Collection deletion safety: blocks deletion if child Topics/Vocabularies exist in localStorage, prevents orphaned data during transitional period |
+| 2.3 | 2026-07-30 | Phase 2C Fix | Added user-scoped localStorage: Topics/Vocabularies namespaced per authenticated user (vocab_local_topics_v1:<user-id>), prevents cross-user data leakage, legacy global keys no longer read, auth state reset clears data on account change, icon defaults documented |
+| 2.4 | 2026-07-30 | Phase 2D | Topics migrated to Supabase with database UUIDs, RLS policies enforce ownership, composite FK enforces parent Collection ownership, Topic delete blocks when localStorage Vocabularies exist, Vocabulary create/update validates Topic UUID, legacy localStorage Topic keys inactive, Collection delete checks Supabase Topics instead of localStorage |
+| 2.5 | 2026-07-31 | Phase 2E | Vocabularies migrated to Supabase with database UUIDs, RLS policies enforce ownership, composite FK enforces parent Topic ownership, Vocabulary delete cleans localStorage progress references, Topic delete blocks when Supabase Vocabularies exist, legacy localStorage Vocabulary keys inactive for domain data, study/SRS progress remains in user-scoped localStorage referencing Supabase Vocabulary UUIDs |
 
 **Approval**: This document defines the security model. Any deviation requires security review.

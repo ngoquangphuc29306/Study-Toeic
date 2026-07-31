@@ -1,45 +1,55 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, FolderPlus, FolderKanban, Briefcase, BookOpen, Layers, Award, Sparkles, FileText, Plane, CreditCard, TrendingUp } from 'lucide-react';
+import { X, FolderPlus, FolderKanban } from 'lucide-react';
 import { Collection, Topic } from '../lib/types';
+
+type CreateMode = 'collection' | 'section';
 
 interface CollectionModalProps {
   isOpen: boolean;
   onClose: () => void;
+  mode: CreateMode;
   collections: Collection[];
+  defaultCollectionId?: string;
   onAddCollection: (col: Omit<Collection, 'id'>) => Promise<Collection>;
   onAddTopic: (topic: Omit<Topic, 'id'>) => Promise<Topic>;
 }
 
+const DEFAULT_COLLECTION_ICON = 'FolderKanban';
+const DEFAULT_TOPIC_ICON = 'BookOpen';
+
 export const CollectionModal: React.FC<CollectionModalProps> = ({
   isOpen,
   onClose,
+  mode,
   collections,
+  defaultCollectionId,
   onAddCollection,
   onAddTopic,
 }) => {
-  const [activeTab, setActiveTab] = useState<'collection' | 'section'>('collection');
-
   // Collection form state
   const [colTitle, setColTitle] = useState('');
   const [colDesc, setColDesc] = useState('');
-  const [colIcon, setColIcon] = useState('FolderKanban');
 
   // Section form state
-  const [secColId, setSecColId] = useState(collections[0]?.id || '');
   const [secTitle, setSecTitle] = useState('');
   const [secDesc, setSecDesc] = useState('');
   const [secCategory, setSecCategory] = useState('Business');
-  const [secIcon, setSecIcon] = useState('FileText');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Derive effective collection ID without effect
-  const effectiveColId = (secColId && collections.some((c) => c.id === secColId))
-    ? secColId
-    : (collections[0]?.id || '');
+  // Derive effective collection ID from props
+  const effectiveColId = defaultCollectionId || collections[0]?.id || '';
+
+  // Debug log to verify mode prop
+  useEffect(() => {
+    if (isOpen) {
+      console.log('CollectionModal opened with mode:', mode);
+      console.log('CollectionModal defaultCollectionId:', defaultCollectionId);
+    }
+  }, [isOpen, mode, defaultCollectionId]);
 
   if (!isOpen) return null;
 
@@ -56,7 +66,7 @@ export const CollectionModal: React.FC<CollectionModalProps> = ({
       await onAddCollection({
         title: colTitle.trim(),
         description: colDesc.trim() || 'Bộ sưu tập từ vựng tùy chỉnh',
-        icon: colIcon,
+        icon: DEFAULT_COLLECTION_ICON,
       });
       setColTitle('');
       setColDesc('');
@@ -88,7 +98,7 @@ export const CollectionModal: React.FC<CollectionModalProps> = ({
         title: secTitle.trim(),
         description: secDesc.trim() || 'Section bài học từ vựng mới',
         category: secCategory,
-        icon: secIcon,
+        icon: DEFAULT_TOPIC_ICON,
       });
       setSecTitle('');
       setSecDesc('');
@@ -101,19 +111,6 @@ export const CollectionModal: React.FC<CollectionModalProps> = ({
     }
   };
 
-  const iconOptions = [
-    { name: 'FolderKanban', icon: FolderKanban },
-    { name: 'Briefcase', icon: Briefcase },
-    { name: 'BookOpen', icon: BookOpen },
-    { name: 'FileText', icon: FileText },
-    { name: 'Plane', icon: Plane },
-    { name: 'CreditCard', icon: CreditCard },
-    { name: 'TrendingUp', icon: TrendingUp },
-    { name: 'Layers', icon: Layers },
-    { name: 'Award', icon: Award },
-    { name: 'Sparkles', icon: Sparkles },
-  ];
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fadeIn">
       <div className="relative w-full max-w-lg bg-white rounded-[32px] border border-[#FCE7F3] shadow-2xl p-6 sm:p-8 space-y-6">
@@ -124,8 +121,14 @@ export const CollectionModal: React.FC<CollectionModalProps> = ({
               <FolderPlus className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-xl font-extrabold text-gray-800">Tạo Mới Danh Mục</h3>
-              <p className="text-xs text-gray-500">Tạo Bộ Sưu Tập hoặc Section bài học mới</p>
+              <h3 className="text-xl font-extrabold text-gray-800">
+                {mode === 'collection' ? 'Tạo Bộ Sưu Tập' : 'Tạo Section Bài Học'}
+              </h3>
+              <p className="text-xs text-gray-500">
+                {mode === 'collection'
+                  ? 'Tạo bộ sưu tập từ vựng mới'
+                  : 'Tạo section bài học mới'}
+              </p>
             </div>
           </div>
 
@@ -137,38 +140,6 @@ export const CollectionModal: React.FC<CollectionModalProps> = ({
           </button>
         </div>
 
-        {/* Tab Switcher */}
-        <div className="flex p-1 bg-[#FFF1F2] rounded-2xl border border-[#FCE7F3] text-xs font-bold">
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('collection');
-              setError(null);
-            }}
-            className={`flex-1 py-2.5 rounded-xl transition-all cursor-pointer text-center ${
-              activeTab === 'collection'
-                ? 'bg-white text-[#F472B6] shadow-xs'
-                : 'text-gray-500 hover:text-gray-800'
-            }`}
-          >
-            📦 Tạo Collection (Bộ Sưu Tập)
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('section');
-              setError(null);
-            }}
-            className={`flex-1 py-2.5 rounded-xl transition-all cursor-pointer text-center ${
-              activeTab === 'section'
-                ? 'bg-white text-[#F472B6] shadow-xs'
-                : 'text-gray-500 hover:text-gray-800'
-            }`}
-          >
-            📂 Tạo Section (Bài Học)
-          </button>
-        </div>
-
         {error && (
           <div className="p-3 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl text-xs font-bold">
             {error}
@@ -176,7 +147,7 @@ export const CollectionModal: React.FC<CollectionModalProps> = ({
         )}
 
         {/* Form: Collection */}
-        {activeTab === 'collection' && (
+        {mode === 'collection' && (
           <form onSubmit={handleCollectionSubmit} className="space-y-4 text-xs font-bold">
             <div>
               <label className="block text-gray-700 mb-1">
@@ -203,30 +174,6 @@ export const CollectionModal: React.FC<CollectionModalProps> = ({
               />
             </div>
 
-            <div>
-              <label className="block text-gray-700 mb-2">Chọn Icon đại diện</label>
-              <div className="flex flex-wrap gap-2">
-                {iconOptions.slice(0, 5).map((opt) => {
-                  const IconComp = opt.icon;
-                  const isSelected = colIcon === opt.name;
-                  return (
-                    <button
-                      key={opt.name}
-                      type="button"
-                      onClick={() => setColIcon(opt.name)}
-                      className={`p-2.5 rounded-2xl border transition-all cursor-pointer ${
-                        isSelected
-                          ? 'bg-[#FFF1F2] border-[#F472B6] text-[#F472B6]'
-                          : 'bg-white border-gray-200 text-gray-400 hover:text-gray-600'
-                      }`}
-                    >
-                      <IconComp className="w-5 h-5" />
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
             <div className="pt-2 flex justify-end gap-2">
               <button
                 type="button"
@@ -247,7 +194,7 @@ export const CollectionModal: React.FC<CollectionModalProps> = ({
         )}
 
         {/* Form: Section */}
-        {activeTab === 'section' && (
+        {mode === 'section' && (
           <form onSubmit={handleSectionSubmit} className="space-y-4 text-xs font-bold">
             <div>
               <label className="block text-gray-700 mb-1">
@@ -255,8 +202,11 @@ export const CollectionModal: React.FC<CollectionModalProps> = ({
               </label>
               <select
                 value={effectiveColId}
-                onChange={(e) => setSecColId(e.target.value)}
-                className="w-full p-3 bg-[#FFF9FA] border border-[#FCE7F3] rounded-2xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
+                onChange={(e) => {
+                  // Section form uses derived effectiveColId, no local state needed
+                }}
+                disabled
+                className="w-full p-3 bg-[#FFF9FA] border border-[#FCE7F3] rounded-2xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6] opacity-75"
               >
                 {collections.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -280,41 +230,15 @@ export const CollectionModal: React.FC<CollectionModalProps> = ({
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-gray-700 mb-1">Phân Loại (Category)</label>
-                <input
-                  type="text"
-                  placeholder="Business, Travel, Finance..."
-                  value={secCategory}
-                  onChange={(e) => setSecCategory(e.target.value)}
-                  className="w-full p-3 bg-[#FFF9FA] border border-[#FCE7F3] rounded-2xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-gray-700 mb-2">Chọn Icon</label>
-                <div className="flex gap-1.5 overflow-x-auto pb-1">
-                  {iconOptions.slice(3).map((opt) => {
-                    const IconComp = opt.icon;
-                    const isSelected = secIcon === opt.name;
-                    return (
-                      <button
-                        key={opt.name}
-                        type="button"
-                        onClick={() => setSecIcon(opt.name)}
-                        className={`p-2 rounded-xl border transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-[#FFF1F2] border-[#F472B6] text-[#F472B6]'
-                            : 'bg-white border-gray-200 text-gray-400 hover:text-gray-600'
-                        }`}
-                      >
-                        <IconComp className="w-4 h-4" />
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+            <div>
+              <label className="block text-gray-700 mb-1">Phân Loại (Category)</label>
+              <input
+                type="text"
+                placeholder="Business, Travel, Finance..."
+                value={secCategory}
+                onChange={(e) => setSecCategory(e.target.value)}
+                className="w-full p-3 bg-[#FFF9FA] border border-[#FCE7F3] rounded-2xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
+              />
             </div>
 
             <div>

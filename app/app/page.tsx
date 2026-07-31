@@ -29,8 +29,13 @@ import {
   deleteVocabulary
 } from '../../services/vocabService';
 import { CollectionHasChildrenError } from '../../services/collectionErrors';
+import { TopicHasVocabulariesError } from '../../services/topicErrors';
+import { VocabularyValidationError } from '../../services/vocabularyErrors';
+import { createClient } from '@/lib/supabase/client';
 
 import { Collection, Topic, Vocabulary, StudyStats, LearningStatus } from '../../lib/types';
+
+type CreateModalMode = 'collection' | 'section';
 
 export default function AppPage() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'flashcard' | 'quiz' | 'vocab-manager'>('dashboard');
@@ -52,6 +57,8 @@ export default function AppPage() {
 
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [isCollectionModalOpen, setIsCollectionModalOpen] = useState<boolean>(false);
+  const [collectionModalMode, setCollectionModalMode] = useState<CreateModalMode>('collection');
+  const [collectionModalDefaultId, setCollectionModalDefaultId] = useState<string | undefined>(undefined);
   const [isExcelModalOpen, setIsExcelModalOpen] = useState<boolean>(false);
   const [isSqlModalOpen, setIsSqlModalOpen] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -74,6 +81,40 @@ export default function AppPage() {
       console.error('Error refreshing VocabTOEIC data:', err);
     }
   }, []);
+
+  // Phase 2C Fix: Auth state change listener
+  // Clear all state when user changes, then reload new user's data
+  useEffect(() => {
+    const supabase = createClient();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
+        // Clear all state immediately
+        setCollections([]);
+        setTopics([]);
+        setVocabularies([]);
+        setStats({
+          totalWords: 0,
+          masteredCount: 0,
+          learningCount: 0,
+          newCount: 0,
+          dailyStreak: 0,
+          todayStudiedCount: 0,
+        });
+        setSelectedTopicId('all');
+        setDeleteError('');
+
+        // Reload data for new user if authenticated
+        if (session?.user) {
+          refreshAppData();
+        }
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [refreshAppData]);
 
   // Initial Data Load
   useEffect(() => {
@@ -153,8 +194,20 @@ export default function AppPage() {
   };
 
   const handleDeleteTopic = async (topicId: string) => {
-    await deleteTopic(topicId);
-    await refreshAppData();
+    try {
+      setDeleteError('');
+      await deleteTopic(topicId);
+      await refreshAppData();
+    } catch (err) {
+      if (err instanceof TopicHasVocabulariesError) {
+        setDeleteError('Không thể xóa học phần này vì vẫn còn từ vựng. Hãy xóa từ vựng bên trong trước.');
+      } else if (err instanceof Error) {
+        setDeleteError(err.message);
+      } else {
+        setDeleteError('Không thể xóa học phần. Vui lòng thử lại.');
+      }
+      throw err;
+    }
   };
 
   const handleAddVocabulary = async (newVocab: Omit<Vocabulary, 'id'>) => {
@@ -268,7 +321,16 @@ export default function AppPage() {
               setDefaultModalTopicId(topicId);
               setIsExcelModalOpen(true);
             }}
-            onOpenCollectionModal={() => setIsCollectionModalOpen(true)}
+            onOpenCollectionModal={() => {
+              setCollectionModalMode('collection');
+              setCollectionModalDefaultId(undefined);
+              setIsCollectionModalOpen(true);
+            }}
+            onOpenSectionModal={(collectionId) => {
+              setCollectionModalMode('section');
+              setCollectionModalDefaultId(collectionId);
+              setIsCollectionModalOpen(true);
+            }}
             onOpenSqlModal={() => setIsSqlModalOpen(true)}
             deleteError={deleteError}
             onClearDeleteError={() => setDeleteError('')}
@@ -290,7 +352,9 @@ export default function AppPage() {
       <CollectionModal
         isOpen={isCollectionModalOpen}
         onClose={() => setIsCollectionModalOpen(false)}
+        mode={collectionModalMode}
         collections={collections}
+        defaultCollectionId={collectionModalDefaultId}
         onAddCollection={handleAddCollection}
         onAddTopic={handleAddTopic}
       />

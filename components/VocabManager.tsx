@@ -41,6 +41,7 @@ interface VocabManagerProps {
   onOpenAddModalWithTopic?: (topicId?: string) => void;
   onOpenExcelModalWithTopic?: (topicId?: string) => void;
   onOpenCollectionModal: () => void;
+  onOpenSectionModal: (collectionId: string) => void;
   onOpenSqlModal: () => void;
   deleteError?: string;
   onClearDeleteError?: () => void;
@@ -61,6 +62,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
   onOpenAddModalWithTopic,
   onOpenExcelModalWithTopic,
   onOpenCollectionModal,
+  onOpenSectionModal,
   onOpenSqlModal,
   deleteError,
   onClearDeleteError,
@@ -338,7 +340,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                       <button
                         onClick={() => {
                           setActiveCollectionMenu(null);
-                          onOpenCollectionModal();
+                          onOpenSectionModal(col.id);
                         }}
                         className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-[#FFF1F2] text-gray-700 cursor-pointer"
                       >
@@ -531,7 +533,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
 
                 {/* "+ Thêm học phần" Card */}
                 <button
-                  onClick={() => onOpenCollectionModal()}
+                  onClick={() => onOpenSectionModal(col.id)}
                   className="min-h-[180px] border-2 border-dashed border-[#FCE7F3] hover:border-[#F472B6] rounded-2xl p-6 flex flex-col items-center justify-center text-center space-y-2 bg-[#FFF5F7]/30 hover:bg-[#FFF1F2] transition-all cursor-pointer group"
                 >
                   <div className="w-10 h-10 rounded-full bg-[#FFF1F2] text-[#F472B6] group-hover:bg-[#F472B6] group-hover:text-white flex items-center justify-center transition-all">

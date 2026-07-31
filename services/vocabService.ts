@@ -7,21 +7,59 @@ import {
   updateCollection as updateCollectionInSupabase,
   deleteCollection as deleteCollectionInSupabase,
 } from './collectionService';
+import {
+  getTopics as getTopicsFromSupabase,
+  createTopic as createTopicInSupabase,
+  updateTopic as updateTopicInSupabase,
+  deleteTopic as deleteTopicInSupabase,
+} from './topicService';
+import {
+  getVocabularies as getVocabulariesFromSupabase,
+  createVocabulary as createVocabularyInSupabase,
+  bulkCreateVocabularies as bulkCreateVocabulariesInSupabase,
+  updateVocabulary as updateVocabularyInSupabase,
+  deleteVocabulary as deleteVocabularyInSupabase,
+} from './vocabularyService';
 import { CollectionHasChildrenError } from './collectionErrors';
+import { TopicHasVocabulariesError } from './topicErrors';
+import { VocabularyValidationError } from './vocabularyErrors';
+import {
+  getUserScopedArray,
+  setUserScopedArray,
+  getUserScopedObject,
+  setUserScopedObject,
+} from './localStorageHelpers';
+import { createClient } from '@/lib/supabase/client';
 
-// LocalStorage keys for offline / missing table fallback
-const LOCAL_TOPICS_KEY = 'vocab_local_topics_v1';
-const LOCAL_VOCABS_KEY = 'vocab_local_vocabularies_v1';
+// Base localStorage keys (will be scoped per user)
+// Phase 2E: LOCAL_VOCABS_KEY and DELETED_VOCABS_KEY are now INACTIVE (legacy only)
+const LOCAL_VOCABS_KEY = 'vocab_local_vocabularies_v1'; // INACTIVE after Phase 2E
 const LOCAL_PROGRESS_KEY = 'vocab_local_progress_v1';
 const LOCAL_STUDY_DATES_KEY = 'vocab_study_dates_v1';
 
-const DELETED_TOPICS_KEY = 'vocab_deleted_topics_v1';
-const DELETED_VOCABS_KEY = 'vocab_deleted_vocabs_v1';
+const DELETED_VOCABS_KEY = 'vocab_deleted_vocabs_v1'; // INACTIVE after Phase 2E
 
-// Phase 2C: Collections migrated to Supabase
-// Topics and Vocabularies remain in localStorage (Phase 2D, 2E)
-// localStorage is no longer used for Collections
+// Phase 2E: Collections, Topics, and Vocabularies in Supabase
+// Study/SRS progress remains in user-scoped localStorage
+// Legacy localStorage Vocabulary keys (vocab_local_vocabularies_v1:<user-id>) are no longer read or written
 
+/**
+ * Get authenticated user ID from Supabase
+ * Returns null if not authenticated or error occurs
+ */
+async function getAuthUserId(): Promise<string | null> {
+  try {
+    const supabase = createClient();
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) return null;
+    return user.id;
+  } catch (err) {
+    console.warn('getAuthUserId error:', err);
+    return null;
+  }
+}
+
+// Legacy helpers (deprecated, keep for DELETED_* keys only)
 function getLocalItem<T>(key: string, defaultValue: T): T {
   if (typeof window === 'undefined') return defaultValue;
   try {
@@ -52,14 +90,14 @@ function getSupabase() {
 // --- COLLECTION METHODS (Phase 2C: Migrated to Supabase) ---
 
 /**
- * Get all collections from Supabase with computed totals from localStorage Topics/Vocabularies
- * Phase 2C: Collections in Supabase, Topics/Vocabularies still in localStorage
+ * Get all collections from Supabase with computed totals
+ * Phase 2E: Collections, Topics, and Vocabularies in Supabase
  */
 export async function getCollections(): Promise<Collection[]> {
   try {
     const collections = await getCollectionsFromSupabase();
 
-    // Compute totals from localStorage Topics/Vocabularies (still unmigrated)
+    // Compute totals from Supabase Topics and Vocabularies
     const allTopics = await getTopics();
     const allVocabs = await getVocabByTopic();
 
@@ -112,10 +150,17 @@ export async function updateCollection(colId: string, updates: Partial<Collectio
 
 /**
  * Delete a collection from Supabase
- * Phase 2C: Blocks deletion if Collection has any child Topics or Vocabularies in localStorage
+ * Phase 2E: Blocks deletion if Collection has any Topics in Supabase
  */
 export async function deleteCollection(colId: string): Promise<void> {
   try {
+    // Check for Supabase Topics belonging to this Collection
+    const allTopics = await getTopics(colId);
+
+    if (allTopics.length > 0) {
+      throw new CollectionHasChildrenError();
+    }
+
     await deleteCollectionInSupabase(colId);
   } catch (err) {
     console.error('deleteCollection error:', err);
@@ -123,376 +168,152 @@ export async function deleteCollection(colId: string): Promise<void> {
   }
 }
 
-// --- TOPIC / SECTION METHODS ---
+// --- TOPIC / SECTION METHODS (Phase 2D: Migrated to Supabase) ---
 
 export async function getTopics(collectionId?: string): Promise<Topic[]> {
-  const client = getSupabase();
-  let dbTopics: Topic[] = [];
-
-  if (client) {
-    try {
-      let query = client.from('topics').select('*').order('created_at', { ascending: true });
-      if (collectionId && collectionId !== 'all') {
-        query = query.eq('collection_id', collectionId);
-      }
-
-      const { data, error } = await query;
-      if (!error && data) {
-        dbTopics = data;
-      }
-    } catch (err) {
-      console.warn('Supabase getTopics error:', err);
-    }
+  try {
+    return await getTopicsFromSupabase(collectionId);
+  } catch (err) {
+    console.error('getTopics error:', err);
+    throw err;
   }
-
-  const baseTopics = client ? dbTopics : (dbTopics.length > 0 ? dbTopics : INITIAL_TOPICS);
-  const localTopics = getLocalItem<Topic[]>(LOCAL_TOPICS_KEY, []);
-
-  const topicMap = new Map<string, Topic>();
-  baseTopics.forEach((t) => topicMap.set(t.id, t));
-  localTopics.forEach((t) => topicMap.set(t.id, t));
-
-  const deletedTopics = getLocalItem<string[]>(DELETED_TOPICS_KEY, []);
-
-  // Phase 2C: Collections are in Supabase now, don't filter by deleted localStorage collections
-  let mergedTopics = Array.from(topicMap.values()).filter(
-    (t) => !deletedTopics.includes(t.id)
-  );
-
-  if (collectionId && collectionId !== 'all') {
-    mergedTopics = mergedTopics.filter((t) => t.collection_id === collectionId);
-  }
-
-  const allVocabs = await getVocabByTopic();
-
-  return mergedTopics.map((topic) => {
-    const topicVocabs = allVocabs.filter((v) => v.topic_id === topic.id);
-    const total = topicVocabs.length;
-    const mastered = topicVocabs.filter((v) => v.status === 'mastered').length;
-    const learning = topicVocabs.filter((v) => v.status === 'learning').length;
-
-    return {
-      ...topic,
-      collection_id: topic.collection_id || undefined,
-      total_words: total,
-      mastered_words: mastered,
-      learning_words: learning,
-    };
-  });
 }
 
 export async function addTopic(newTopic: Omit<Topic, 'id'>): Promise<Topic> {
-  const topicId = 'topic-' + Date.now();
-  const collectionId = newTopic.collection_id || undefined;
-  const payload = {
-    id: topicId,
-    collection_id: collectionId || null,
-    title: newTopic.title,
-    description: newTopic.description || '',
-    icon: newTopic.icon || 'BookOpen',
-    category: newTopic.category || 'General',
-  };
-
-  const createdItem: Topic = {
-    id: topicId,
-    collection_id: collectionId,
-    title: newTopic.title,
-    description: newTopic.description || '',
-    icon: newTopic.icon || 'BookOpen',
-    category: newTopic.category || 'General',
-    created_at: new Date().toISOString(),
-    total_words: 0,
-    mastered_words: 0,
-    learning_words: 0,
-  };
-
   try {
-    const client = getSupabase();
-    if (client) {
-      const { error } = await client.from('topics').insert([payload]);
-      if (error) {
-        console.warn('Note on Supabase addTopic insert:', error.message || error);
-      }
-    }
+    return await createTopicInSupabase(newTopic);
   } catch (err) {
-    console.warn('Supabase notice on addTopic:', err);
+    console.error('addTopic error:', err);
+    throw err;
   }
-
-  const localTopics = getLocalItem<Topic[]>(LOCAL_TOPICS_KEY, []);
-  if (!localTopics.some((t) => t.id === topicId)) {
-    localTopics.push(createdItem);
-    setLocalItem(LOCAL_TOPICS_KEY, localTopics);
-  }
-
-  return createdItem;
 }
 
 export async function updateTopic(topicId: string, updates: Partial<Topic>): Promise<void> {
-  const localTopics = getLocalItem<Topic[]>(LOCAL_TOPICS_KEY, []);
-  const updatedLocal = localTopics.map((t) => (t.id === topicId ? { ...t, ...updates } : t));
-  setLocalItem(LOCAL_TOPICS_KEY, updatedLocal);
-
   try {
-    const client = getSupabase();
-    if (client) {
-      const updatePayload: Record<string, any> = {
-        updated_at: new Date().toISOString(),
-      };
-      if (updates.title !== undefined) updatePayload.title = updates.title;
-      if (updates.description !== undefined) updatePayload.description = updates.description;
-      if (updates.icon !== undefined) updatePayload.icon = updates.icon;
-      if (updates.category !== undefined) updatePayload.category = updates.category;
-      if (updates.collection_id !== undefined) updatePayload.collection_id = updates.collection_id;
-
-      const { error } = await client.from('topics').update(updatePayload).eq('id', topicId);
-      if (error) {
-        console.warn('Note on Supabase updateTopic:', error.message || error);
-      }
-    }
+    await updateTopicInSupabase(topicId, updates);
   } catch (err) {
-    console.warn('Supabase notice on updateTopic:', err);
+    console.error('updateTopic error:', err);
+    throw err;
   }
 }
 
 export async function deleteTopic(topicId: string): Promise<void> {
-  const deletedTopics = getLocalItem<string[]>(DELETED_TOPICS_KEY, []);
-  if (!deletedTopics.includes(topicId)) {
-    deletedTopics.push(topicId);
-    setLocalItem(DELETED_TOPICS_KEY, deletedTopics);
-  }
-
-  const localTopics = getLocalItem<Topic[]>(LOCAL_TOPICS_KEY, []);
-  setLocalItem(LOCAL_TOPICS_KEY, localTopics.filter((t) => t.id !== topicId));
-
   try {
-    const client = getSupabase();
-    if (client) {
-      const { error } = await client.from('topics').delete().eq('id', topicId);
-      if (error) {
-        console.warn('Note on Supabase deleteTopic:', error.message || error);
-      }
-    }
+    await deleteTopicInSupabase(topicId);
   } catch (err) {
-    console.warn('Supabase notice on deleteTopic:', err);
+    console.error('deleteTopic error:', err);
+    throw err;
   }
 }
 
-// --- VOCABULARY METHODS ---
+// --- VOCABULARY METHODS (Phase 2E: Migrated to Supabase) ---
 
+/**
+ * Get vocabularies from Supabase with merged study/SRS progress from localStorage
+ * Phase 2E: Vocabulary domain data from Supabase, progress from user-scoped localStorage
+ */
 export async function getVocabByTopic(topicId?: string): Promise<Vocabulary[]> {
-  const client = getSupabase();
-  let dbVocabs: Vocabulary[] = [];
-  let progressMap: Record<string, UserVocabProgress> = {};
-
-  if (client) {
-    try {
-      let query = client.from('vocabularies').select('*').order('created_at', { ascending: true });
-      if (topicId && topicId !== 'all') {
-        query = query.eq('topic_id', topicId);
-      }
-
-      const { data: vocabData, error: vocabErr } = await query;
-      if (!vocabErr && vocabData) {
-        dbVocabs = vocabData;
-      }
-
-      const { data: progressData } = await client.from('user_vocab_progress').select('*');
-      if (progressData) {
-        progressData.forEach((p) => {
-          progressMap[p.vocabulary_id] = p;
-        });
-      }
-    } catch (err) {
-      console.warn('Supabase getVocabByTopic error:', err);
-    }
+  const userId = await getAuthUserId();
+  if (!userId) {
+    console.warn('getVocabByTopic: No authenticated user, returning empty array');
+    return [];
   }
-
-  const localProgress = getLocalItem<Record<string, Partial<UserVocabProgress>>>(LOCAL_PROGRESS_KEY, {});
-
-  const baseVocabs = client ? dbVocabs : (dbVocabs.length > 0 ? dbVocabs : INITIAL_VOCABULARIES);
-  const localVocabs = getLocalItem<Vocabulary[]>(LOCAL_VOCABS_KEY, []);
-
-  const vocabMap = new Map<string, Vocabulary>();
-  baseVocabs.forEach((v) => vocabMap.set(v.id, v));
-  localVocabs.forEach((v) => vocabMap.set(v.id, v));
-
-  const deletedVocabs = getLocalItem<string[]>(DELETED_VOCABS_KEY, []);
-  const deletedTopics = getLocalItem<string[]>(DELETED_TOPICS_KEY, []);
-
-  let mergedVocabs = Array.from(vocabMap.values()).filter(
-    (v) => !deletedVocabs.includes(v.id) && (!v.topic_id || !deletedTopics.includes(v.topic_id))
-  );
-
-  if (topicId && topicId !== 'all') {
-    mergedVocabs = mergedVocabs.filter((v) => v.topic_id === topicId);
-  }
-
-  return mergedVocabs.map((v) => {
-    const prog = progressMap[v.id] || localProgress[v.id];
-    const againCount = prog?.again_count || 0;
-    return {
-      ...v,
-      status: (prog?.status as LearningStatus) || v.status || 'new',
-      review_count: prog?.review_count || v.review_count || 0,
-      last_reviewed_at: prog?.last_reviewed_at || v.last_reviewed_at,
-      next_review_at: prog?.next_review_at || v.next_review_at,
-      interval_hours: prog?.interval_hours || v.interval_hours,
-      again_count: againCount,
-      is_difficult: againCount >= 5,
-    };
-  });
-}
-
-export async function addVocabulary(newVocab: Omit<Vocabulary, 'id'>): Promise<Vocabulary> {
-  const vocabId = 'vocab-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
-  const payload = {
-    id: vocabId,
-    topic_id: newVocab.topic_id,
-    word: newVocab.word,
-    phonetic_uk: newVocab.phonetic_uk || '',
-    phonetic_us: newVocab.phonetic_us || '',
-    part_of_speech: newVocab.part_of_speech || 'noun',
-    meaning: newVocab.meaning,
-    example: newVocab.example || '',
-    example_translation: newVocab.example_translation || '',
-    synonyms: newVocab.synonyms || '',
-    collocations: newVocab.collocations || '',
-    note: newVocab.note || '',
-  };
-
-  const createdItem: Vocabulary = {
-    ...payload,
-    created_at: new Date().toISOString(),
-    status: 'new',
-    review_count: 0,
-  };
 
   try {
-    const client = getSupabase();
-    if (client) {
-      const { error } = await client.from('vocabularies').insert([payload]);
-      if (error) {
-        console.error('Supabase addVocabulary error:', error.message || error, error.code ? `(Code: ${error.code})` : '');
-      }
-    }
-  } catch (err) {
-    console.error('Supabase notice on addVocabulary:', err);
-  }
+    // Load vocabularies from Supabase
+    const supabaseVocabs = await getVocabulariesFromSupabase(topicId);
 
-  const localVocabs = getLocalItem<Vocabulary[]>(LOCAL_VOCABS_KEY, []);
-  if (!localVocabs.some((v) => v.id === vocabId)) {
-    localVocabs.push(createdItem);
-    setLocalItem(LOCAL_VOCABS_KEY, localVocabs);
-  }
+    // Load study progress from user-scoped localStorage
+    const localProgress = getUserScopedObject<Record<string, Partial<UserVocabProgress>>>(
+      LOCAL_PROGRESS_KEY,
+      userId,
+      {}
+    );
 
-  return createdItem;
-}
-
-export async function bulkAddVocabularies(items: Omit<Vocabulary, 'id'>[]): Promise<Vocabulary[]> {
-  const createdList: Vocabulary[] = [];
-  const dbPayloads: any[] = [];
-
-  items.forEach((item, index) => {
-    const vocabId = 'vocab-' + Date.now() + '-' + index + '-' + Math.random().toString(36).substring(2, 6);
-    const payload = {
-      id: vocabId,
-      topic_id: item.topic_id,
-      word: item.word,
-      phonetic_uk: item.phonetic_uk || '',
-      phonetic_us: item.phonetic_us || '',
-      part_of_speech: item.part_of_speech || 'noun',
-      meaning: item.meaning,
-      example: item.example || '',
-      example_translation: item.example_translation || '',
-      synonyms: item.synonyms || '',
-      collocations: item.collocations || '',
-      note: item.note || '',
-    };
-    dbPayloads.push(payload);
-    createdList.push({
-      ...payload,
-      created_at: new Date().toISOString(),
-      status: 'new',
-      review_count: 0,
+    // Merge Supabase vocabulary data with localStorage progress
+    return supabaseVocabs.map((v) => {
+      const prog = localProgress[v.id];
+      const againCount = prog?.again_count || 0;
+      return {
+        ...v,
+        status: (prog?.status as LearningStatus) || 'new',
+        review_count: prog?.review_count || 0,
+        last_reviewed_at: prog?.last_reviewed_at,
+        next_review_at: prog?.next_review_at,
+        interval_hours: prog?.interval_hours,
+        again_count: againCount,
+        is_difficult: againCount >= 5,
+      };
     });
-  });
-
-  if (dbPayloads.length > 0) {
-    try {
-      const client = getSupabase();
-      if (client) {
-        const { error } = await client.from('vocabularies').insert(dbPayloads);
-        if (error) {
-          console.error('Supabase bulk insert error:', error.message || error, error.code ? `(Code: ${error.code})` : '');
-        }
-      }
-    } catch (err) {
-      console.error('Supabase notice on bulkAddVocabularies:', err);
-    }
+  } catch (err) {
+    console.error('getVocabByTopic error:', err);
+    throw err;
   }
-
-  const localVocabs = getLocalItem<Vocabulary[]>(LOCAL_VOCABS_KEY, []);
-  createdList.forEach((item) => {
-    if (!localVocabs.some((v) => v.id === item.id)) {
-      localVocabs.push(item);
-    }
-  });
-  setLocalItem(LOCAL_VOCABS_KEY, localVocabs);
-
-  return createdList;
 }
 
+/**
+ * Create a vocabulary in Supabase
+ * Phase 2E: Delegates to vocabularyService
+ */
+export async function addVocabulary(newVocab: Omit<Vocabulary, 'id'>): Promise<Vocabulary> {
+  try {
+    return await createVocabularyInSupabase(newVocab);
+  } catch (err) {
+    console.error('addVocabulary error:', err);
+    throw err;
+  }
+}
+
+/**
+ * Bulk create vocabularies in Supabase
+ * Phase 2E: Delegates to vocabularyService
+ */
+export async function bulkAddVocabularies(items: Omit<Vocabulary, 'id'>[]): Promise<Vocabulary[]> {
+  try {
+    return await bulkCreateVocabulariesInSupabase(items);
+  } catch (err) {
+    console.error('bulkAddVocabularies error:', err);
+    throw err;
+  }
+}
+
+/**
+ * Update a vocabulary in Supabase
+ * Phase 2E: Delegates to vocabularyService
+ */
 export async function updateVocabulary(vocabId: string, updates: Partial<Vocabulary>): Promise<void> {
-  const localVocabs = getLocalItem<Vocabulary[]>(LOCAL_VOCABS_KEY, []);
-  const updatedLocal = localVocabs.map((v) => (v.id === vocabId ? { ...v, ...updates } : v));
-  setLocalItem(LOCAL_VOCABS_KEY, updatedLocal);
-
   try {
-    const client = getSupabase();
-    if (client) {
-      const updatePayload: Record<string, any> = {};
-      if (updates.word !== undefined) updatePayload.word = updates.word;
-      if (updates.phonetic_uk !== undefined) updatePayload.phonetic_uk = updates.phonetic_uk;
-      if (updates.phonetic_us !== undefined) updatePayload.phonetic_us = updates.phonetic_us;
-      if (updates.part_of_speech !== undefined) updatePayload.part_of_speech = updates.part_of_speech;
-      if (updates.meaning !== undefined) updatePayload.meaning = updates.meaning;
-      if (updates.example !== undefined) updatePayload.example = updates.example;
-      if (updates.example_translation !== undefined) updatePayload.example_translation = updates.example_translation;
-      if (updates.synonyms !== undefined) updatePayload.synonyms = updates.synonyms;
-      if (updates.collocations !== undefined) updatePayload.collocations = updates.collocations;
-      if (updates.note !== undefined) updatePayload.note = updates.note;
-      if (updates.topic_id !== undefined) updatePayload.topic_id = updates.topic_id;
-
-      const { error } = await client.from('vocabularies').update(updatePayload).eq('id', vocabId);
-      if (error) {
-        console.warn('Note on Supabase updateVocabulary:', error.message || error);
-      }
-    }
+    await updateVocabularyInSupabase(vocabId, updates);
   } catch (err) {
-    console.warn('Supabase notice on updateVocabulary:', err);
+    console.error('updateVocabulary error:', err);
+    throw err;
   }
 }
 
+/**
+ * Delete a vocabulary from Supabase
+ * Phase 2E: After confirmed database deletion, cleans current-user local progress references
+ */
 export async function deleteVocabulary(vocabId: string): Promise<void> {
-  const deletedVocabs = getLocalItem<string[]>(DELETED_VOCABS_KEY, []);
-  if (!deletedVocabs.includes(vocabId)) {
-    deletedVocabs.push(vocabId);
-    setLocalItem(DELETED_VOCABS_KEY, deletedVocabs);
+  const userId = await getAuthUserId();
+  if (!userId) {
+    throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
   }
 
-  const localVocabs = getLocalItem<Vocabulary[]>(LOCAL_VOCABS_KEY, []);
-  setLocalItem(LOCAL_VOCABS_KEY, localVocabs.filter((v) => v.id !== vocabId));
-
   try {
-    const client = getSupabase();
-    if (client) {
-      const { error } = await client.from('vocabularies').delete().eq('id', vocabId);
-      if (error) {
-        console.warn('Note on Supabase deleteVocabulary:', error.message || error);
-      }
+    // Step 1: Delete from Supabase (returns deleted ID on success)
+    const deletedId = await deleteVocabularyInSupabase(vocabId);
+
+    // Step 2: Clean current-user local progress references for this Vocabulary UUID
+    const localProgress = getUserScopedObject<Record<string, any>>(LOCAL_PROGRESS_KEY, userId, {});
+
+    if (localProgress[deletedId]) {
+      delete localProgress[deletedId];
+      setUserScopedObject(LOCAL_PROGRESS_KEY, userId, localProgress);
     }
   } catch (err) {
-    console.warn('Supabase notice on deleteVocabulary:', err);
+    console.error('deleteVocabulary error:', err);
+    throw err;
   }
 }
 
@@ -505,29 +326,17 @@ export async function updateUserProgress(
   status: LearningStatus,
   rating?: SrsRating
 ): Promise<void> {
+  // Phase 2E: User-scoped localStorage for study/SRS progress
+  const userId = await getAuthUserId();
+  if (!userId) {
+    throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+  }
+
   const now = new Date();
   const nowIso = now.toISOString();
 
-  let existingData: any = null;
-
-  try {
-    const client = getSupabase();
-    if (client) {
-      const { data } = await client
-        .from('user_vocab_progress')
-        .select('*')
-        .eq('vocabulary_id', vocabId)
-        .maybeSingle();
-      existingData = data;
-    }
-  } catch (err) {
-    console.warn('Supabase notice on fetch progress:', err);
-  }
-
-  const localProgress = getLocalItem<Record<string, any>>(LOCAL_PROGRESS_KEY, {});
-  if (!existingData && localProgress[vocabId]) {
-    existingData = localProgress[vocabId];
-  }
+  const localProgress = getUserScopedObject<Record<string, any>>(LOCAL_PROGRESS_KEY, userId, {});
+  const existingData = localProgress[vocabId];
 
   const currentCount = existingData?.review_count || 0;
   const currentIntervalHours = existingData?.interval_hours || 0;
@@ -543,7 +352,7 @@ export async function updateUserProgress(
   } else if (rating === 'again') {
     newStatus = 'learning';
     currentAgainCount += 1;
-    newIntervalHours = 0.0833; // 5 phút (5 từ tiếp theo)
+    newIntervalHours = 0.0833; // 5 phút
     nextReviewIso = new Date(now.getTime() + 5 * 60 * 1000).toISOString();
   } else if (rating === 'hard') {
     newStatus = 'learning';
@@ -575,29 +384,14 @@ export async function updateUserProgress(
   };
 
   localProgress[vocabId] = upsertPayload;
-  setLocalItem(LOCAL_PROGRESS_KEY, localProgress);
+  setUserScopedObject(LOCAL_PROGRESS_KEY, userId, localProgress);
 
   // Record today in study dates history for streak calculation
   const todayDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const studyDates = getLocalItem<string[]>(LOCAL_STUDY_DATES_KEY, []);
+  const studyDates = getUserScopedArray<string>(LOCAL_STUDY_DATES_KEY, userId);
   if (!studyDates.includes(todayDateStr)) {
     studyDates.push(todayDateStr);
-    setLocalItem(LOCAL_STUDY_DATES_KEY, studyDates);
-  }
-
-  try {
-    const client = getSupabase();
-    if (client) {
-      const { error } = await client
-        .from('user_vocab_progress')
-        .upsert(upsertPayload, { onConflict: 'vocabulary_id' });
-
-      if (error) {
-        console.warn('Note on Supabase progress upsert:', error.message || error);
-      }
-    }
-  } catch (err) {
-    console.warn('Supabase notice on progress upsert:', err);
+    setUserScopedArray(LOCAL_STUDY_DATES_KEY, userId, studyDates);
   }
 }
 
@@ -634,6 +428,20 @@ function calculateStreak(studyDatesSet: Set<string>): number {
 }
 
 export async function getStudyStats(): Promise<StudyStats> {
+  // Phase 2E: User-scoped localStorage for study/SRS stats
+  const userId = await getAuthUserId();
+  if (!userId) {
+    console.warn('getStudyStats: No authenticated user, returning empty stats');
+    return {
+      totalWords: 0,
+      masteredCount: 0,
+      learningCount: 0,
+      newCount: 0,
+      dailyStreak: 0,
+      todayStudiedCount: 0,
+    };
+  }
+
   const allVocabs = await getVocabByTopic();
   const totalWords = allVocabs.length;
 
@@ -644,7 +452,7 @@ export async function getStudyStats(): Promise<StudyStats> {
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
-  const storedDates = getLocalItem<string[]>(LOCAL_STUDY_DATES_KEY, []);
+  const storedDates = getUserScopedArray<string>(LOCAL_STUDY_DATES_KEY, userId);
   const studyDatesSet = new Set<string>(storedDates);
 
   allVocabs.forEach((v) => {
@@ -677,18 +485,12 @@ export async function getStudyStats(): Promise<StudyStats> {
 }
 
 export async function resetAllProgress(): Promise<void> {
-  setLocalItem(LOCAL_PROGRESS_KEY, {});
-
-  try {
-    const client = getSupabase();
-    if (client) {
-      const { error } = await client.from('user_vocab_progress').delete().neq('vocabulary_id', '');
-      if (error) {
-        console.warn('Note on Supabase progress reset:', error.message || error);
-      }
-    }
-  } catch (err) {
-    console.warn('Supabase notice on resetAllProgress:', err);
+  // Phase 2E: User-scoped localStorage for study/SRS progress
+  const userId = await getAuthUserId();
+  if (!userId) {
+    throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
   }
+
+  setUserScopedObject(LOCAL_PROGRESS_KEY, userId, {});
 }
 
