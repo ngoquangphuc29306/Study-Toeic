@@ -79,40 +79,76 @@ export const Dashboard: React.FC<DashboardProps> = ({
   // Removed internal state and useEffect for getDashboardMetrics/getWeekActivity
   // Parent owns single source of truth and refreshes metrics with vocabulary changes
 
-  // Daily Goal Settings State (localStorage only for user preference)
+  // Phase 9.10A.3: Get user ID for user-scoped localStorage
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadUser = async () => {
+      if (typeof window === 'undefined') return;
+      const { createClient } = await import('@/lib/supabase/client');
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      setUserId(user?.id || null);
+    };
+    loadUser();
+  }, []);
+
+  // Daily Goal Settings State (user-scoped localStorage)
   const [dailyGoal, setDailyGoal] = useState<number>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('vocab_daily_goal');
-      if (saved) return parseInt(saved, 10) || 20;
-    }
+    if (typeof window === 'undefined') return 20;
+    // Will be updated by effect when userId loads
     return 20;
   });
-
+  const [dailyReviewLimit, setDailyReviewLimit] = useState<number>(() => {
+    if (typeof window === 'undefined') return 20;
+    return 20;
+  });
   const [unlimitedReview, setUnlimitedReview] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('vocab_unlimited_review');
-      if (saved !== null) return saved === 'true';
-    }
+    if (typeof window === 'undefined') return true;
     return true;
   });
+
+  // Load user-scoped settings when userId becomes available
+  useEffect(() => {
+    if (!userId || typeof window === 'undefined') return;
+
+    const savedGoal = localStorage.getItem(`vocab_daily_goal:${userId}`);
+    const savedLimit = localStorage.getItem(`vocab_daily_review_limit:${userId}`);
+    const savedUnlimited = localStorage.getItem(`vocab_unlimited_review:${userId}`);
+
+    const newGoal = savedGoal ? parseInt(savedGoal, 10) || 20 : 20;
+    const newLimit = savedLimit ? parseInt(savedLimit, 10) || 20 : 20;
+    const newUnlimited = savedUnlimited !== null ? savedUnlimited === 'true' : true;
+
+    // Sync with localStorage - this is the intended use case for setState in effect
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDailyGoal(prev => prev !== newGoal ? newGoal : prev);
+    setDailyReviewLimit(prev => prev !== newLimit ? newLimit : prev);
+    setUnlimitedReview(prev => prev !== newUnlimited ? newUnlimited : prev);
+  }, [userId]);
 
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
   const [tempGoal, setTempGoal] = useState<number>(20);
   const [tempUnlimited, setTempUnlimited] = useState<boolean>(true);
+  const [tempReviewLimit, setTempReviewLimit] = useState<number>(20);
 
   const handleOpenGoalModal = () => {
     setTempGoal(dailyGoal);
     setTempUnlimited(unlimitedReview);
+    setTempReviewLimit(dailyReviewLimit);
     setIsGoalModalOpen(true);
   };
 
   const handleSaveGoalSettings = () => {
     const validGoal = Math.min(100, Math.max(1, tempGoal || 20));
+    const validReviewLimit = Math.min(999, Math.max(1, tempReviewLimit || 20));
     setDailyGoal(validGoal);
+    setDailyReviewLimit(validReviewLimit);
     setUnlimitedReview(tempUnlimited);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('vocab_daily_goal', validGoal.toString());
-      localStorage.setItem('vocab_unlimited_review', tempUnlimited.toString());
+    if (typeof window !== 'undefined' && userId) {
+      localStorage.setItem(`vocab_daily_goal:${userId}`, validGoal.toString());
+      localStorage.setItem(`vocab_daily_review_limit:${userId}`, validReviewLimit.toString());
+      localStorage.setItem(`vocab_unlimited_review:${userId}`, tempUnlimited.toString());
     }
     setIsGoalModalOpen(false);
   };
@@ -222,7 +258,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   );
 
   // Phase 7: Compute New Words Progress from real metrics
-  const newWordsCount = dashboardMetrics?.uniqueVocabularyStudiedToday || 0;
+  // Phase 9.10A.4 Fix: Use newVocabularyStudiedToday for "Từ mới" display
+  const newWordsCount = dashboardMetrics?.newVocabularyStudiedToday || 0;
   const newWordsPercent = Math.min(100, Math.round((newWordsCount / dailyGoal) * 100));
 
   // Phase 7: Compute Week Days from real Supabase review_logs data
@@ -435,10 +472,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
               <div className="text-center py-1 sm:py-2 space-y-1">
                 <div className="text-2xl sm:text-4xl font-extrabold text-gray-900">
-                  {isLoadingMetrics ? '...' : (dashboardMetrics?.dueVocabulary || 0)} <span className="text-xs sm:text-sm font-semibold text-gray-500">từ</span>
+                  {isLoadingMetrics ? '...' : unlimitedReview
+                    ? `${dashboardMetrics?.uniqueVocabularyStudiedToday || 0}`
+                    : `${dashboardMetrics?.uniqueVocabularyStudiedToday || 0} / ${dailyReviewLimit}`
+                  } <span className="text-xs sm:text-sm font-semibold text-gray-500">{unlimitedReview ? 'từ' : ''}</span>
                 </div>
                 <div className="text-[10px] sm:text-xs text-[#ED4F8E] font-medium">
-                  {unlimitedReview ? 'Không giới hạn' : 'Đã đến hạn ôn tập'}
+                  {unlimitedReview ? 'Không giới hạn' : 'Đã ôn hôm nay'}
                 </div>
               </div>
             </div>
@@ -966,6 +1006,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     {tempUnlimited ? 'Không giới hạn số từ ôn tập' : 'Có giới hạn số từ ôn tập'}
                   </span>
                 </div>
+
+                {/* Daily Review Limit Input (shown when limited mode is active) */}
+                {!tempUnlimited && (
+                  <div className="mt-3 space-y-2">
+                    <label htmlFor="daily-review-limit-input" className="block text-[11px] font-semibold text-gray-700">
+                      Số từ ôn tập tối đa mỗi ngày
+                    </label>
+                    <input
+                      id="daily-review-limit-input"
+                      type="number"
+                      min={1}
+                      max={999}
+                      value={tempReviewLimit}
+                      onChange={(e) => setTempReviewLimit(parseInt(e.target.value, 10) || 0)}
+                      className="w-full p-2.5 sm:p-3 bg-[#FFF5F7] border border-[#FCE7F3] rounded-xl font-bold text-gray-900 text-base sm:text-xs focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
+                      placeholder="20"
+                    />
+                    <p className="text-[10px] text-gray-400">Giới hạn 1-999 từ</p>
+                  </div>
+                )}
               </div>
             </div>
 

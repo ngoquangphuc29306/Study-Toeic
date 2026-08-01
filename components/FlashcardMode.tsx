@@ -555,17 +555,32 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   // Handle "Chưa nhớ" -> Immediately transition to next exercise step
   const handleNotRemembered = useCallback(() => {
     setShowRatingButtons(false);
+
+    // Phase 9.10A.4: Special case for pronunciation mode
+    // "Chưa nhớ" should NOT create rating or requeue card
+    // Just return to flashcard mode with same word
+    if (subMode === 'pronounce') {
+      // Reset pronunciation state
+      setIsRecording(false);
+      setTranscriptText('');
+      setPronounceSubmitted(false);
+      setIsPronounceCorrect(null);
+
+      // Return to flashcard, same word, front side
+      setIsFlipped(false);
+      setSubMode('flashcard');
+      return; // Early return - no rating, no queue change
+    }
+
+    // Normal flow for other modes: cycle through exercise types
     if (subMode === 'flashcard') {
       setSubMode('quiz');
     } else if (subMode === 'quiz') {
       setSubMode('typing');
     } else if (subMode === 'typing') {
       setSubMode('pronounce');
-    } else if (subMode === 'pronounce') {
-      handleRating(false, 'again');
-      setSubMode('flashcard');
     }
-  }, [subMode, handleRating]);
+  }, [subMode]);
 
   // Handle Delete current vocabulary item
   const handleDeleteCurrentVocab = useCallback(() => {

@@ -16,9 +16,10 @@ export interface DashboardMetrics {
   newVocabulary: number;
   learningVocabulary: number;
   masteredVocabulary: number;
-  dueVocabulary: number;
-  reviewsToday: number;
-  uniqueVocabularyStudiedToday: number;
+  dueVocabulary: number; // Current count of words due for review
+  reviewsToday: number; // Total review actions today (includes duplicates)
+  uniqueVocabularyStudiedToday: number; // Unique due words reviewed today (previous_interval_hours > 0)
+  newVocabularyStudiedToday: number; // Unique new words studied today (previous_interval_hours = 0)
   studyStreak: number;
   difficultVocabulary: number;
 }
@@ -106,18 +107,37 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     const totalWithProgress = learningCount + masteredCount;
     const newCount = Math.max(0, (totalCount || 0) - totalWithProgress);
 
-    // Query 3: Today's reviews (count and unique vocabulary)
+    // Query 3: Today's DUE reviews (exclude new word first studies)
+    // Phase 9.10A.4: Filter by previous_interval_hours > 0 to count only reviews
+    // previous_interval_hours = 0 means new word (first study, not a review)
+    // previous_interval_hours > 0 means word was already studied before (actual review)
     const { data: todayReviews, error: todayError } = await supabase
       .from('review_logs')
       .select('id, vocabulary_id')
       .gte('reviewed_at', startOfToday.toISOString())
-      .lte('reviewed_at', endOfToday.toISOString());
+      .lte('reviewed_at', endOfToday.toISOString())
+      .gt('previous_interval_hours', 0);
 
     if (todayError) throw todayError;
 
     const reviewsToday = todayReviews?.length || 0;
     const uniqueVocabToday = todayReviews
       ? new Set(todayReviews.map(r => r.vocabulary_id)).size
+      : 0;
+
+    // Query 3b: Today's NEW word studies (first-time studies only)
+    // Phase 9.10A.4 Fix: Count unique new words studied today for "Từ mới" display
+    const { data: todayNewWords, error: newWordsError } = await supabase
+      .from('review_logs')
+      .select('id, vocabulary_id')
+      .gte('reviewed_at', startOfToday.toISOString())
+      .lte('reviewed_at', endOfToday.toISOString())
+      .eq('previous_interval_hours', 0);
+
+    if (newWordsError) throw newWordsError;
+
+    const newWordsStudiedToday = todayNewWords
+      ? new Set(todayNewWords.map(r => r.vocabulary_id)).size
       : 0;
 
     // Query 4: Study streak (consecutive days with reviews)
@@ -131,6 +151,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
       dueVocabulary: dueCount,
       reviewsToday,
       uniqueVocabularyStudiedToday: uniqueVocabToday,
+      newVocabularyStudiedToday: newWordsStudiedToday,
       studyStreak: streak,
       difficultVocabulary: difficultCount,
     };
