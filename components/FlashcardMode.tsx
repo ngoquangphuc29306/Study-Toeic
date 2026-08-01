@@ -27,6 +27,10 @@ import {
 import confetti from 'canvas-confetti';
 import { Vocabulary, Topic } from '../lib/types';
 import { SrsRating } from '../services/vocabService';
+import { saveStudySession, loadStudySession, clearStudySession } from '../lib/session/storage';
+import { applyRatingToQueue } from '../lib/session/queueTransition';
+import type { StudySessionSnapshot } from '../lib/session/types';
+import { createClient } from '@/lib/supabase/client';
 
 interface FlashcardModeProps {
   vocabularies: Vocabulary[];
@@ -72,8 +76,23 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   const [subMode, setSubMode] = useState<StudySubMode>('flashcard');
   const [currentIndex, setCurrentIndex] = useState<number>(0);
 
+  // Phase 6: State-based study queue (vocabulary IDs)
+  const [studyQueue, setStudyQueue] = useState<string[]>([]);
+  const [isSessionRestored, setIsSessionRestored] = useState<boolean>(false);
+
   const [isFlipped, setIsFlipped] = useState<boolean>(false);
   const [isCompleted, setIsCompleted] = useState<boolean>(false);
+
+  // Phase 6: Helper to get authenticated user ID
+  const getUserId = useCallback(async (): Promise<string | null> => {
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      return user?.id || null;
+    } catch {
+      return null;
+    }
+  }, []);
 
   // Track prop changes to reset filterTopic and default filterStatus
   const [prevSelectedTopic, setPrevSelectedTopic] = useState<string>(selectedTopicId);
@@ -88,6 +107,15 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     setIsFlipped(false);
     setIsCompleted(false);
     setSubMode('flashcard');
+    // Phase 6 Fix: Clear session on explicit topic/status change
+    setStudyQueue([]);
+    setIsSessionRestored(false);
+    // Clear persisted session when user changes topic/status
+    getUserId().then(userId => {
+      if (userId) {
+        clearStudySession(userId);
+      }
+    });
   }
 
   // Track previous index & subMode for state reset during render
@@ -188,6 +216,15 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
   // Filter & sort list based on topic and status
   const activeVocabs = useMemo(() => {
+    // Phase 6: If session restored and queue exists, use queue order
+    if (isSessionRestored && studyQueue.length > 0) {
+      const vocabMap = new Map(topicVocabs.map(v => [v.id, v]));
+      return studyQueue
+        .map(id => vocabMap.get(id))
+        .filter((v): v is Vocabulary => v !== undefined);
+    }
+
+    // Initial queue building (no session restore)
     if (filterStatus === 'new') {
       return topicVocabs.filter((v) => !v.status || v.status === 'new');
     }
@@ -235,7 +272,53 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     });
 
     return [...dueWords, ...notDueWords, ...newWords, ...masteredWords];
-  }, [topicVocabs, filterStatus, nowMs]);
+  }, [topicVocabs, filterStatus, nowMs, isSessionRestored, studyQueue]);
+
+  // Phase 6: Session restore on mount
+  useEffect(() => {
+    if (isSessionRestored) return;
+    if (activeVocabs.length === 0) return;
+
+    const restoreSession = async () => {
+      const userId = await getUserId();
+      if (!userId) {
+        // No user, initialize queue from activeVocabs
+        setStudyQueue(activeVocabs.map(v => v.id));
+        setIsSessionRestored(true);
+        return;
+      }
+
+      const snapshot = loadStudySession(userId);
+
+      // Check if snapshot matches current session context
+      if (
+        snapshot &&
+        snapshot.selectedTopicId === filterTopic &&
+        snapshot.initialStatus === filterStatus
+      ) {
+        // Validate vocabulary IDs still exist
+        const vocabMap = new Map(topicVocabs.map(v => [v.id, v]));
+        const validIds = snapshot.vocabularyIds.filter(id => vocabMap.has(id));
+
+        if (validIds.length > 0) {
+          setStudyQueue(validIds);
+          setCurrentIndex(Math.min(snapshot.currentIndex, validIds.length - 1));
+          setIsSessionRestored(true);
+          return;
+        }
+      }
+
+      // No valid snapshot, initialize from activeVocabs
+      setStudyQueue(activeVocabs.map(v => v.id));
+      setIsSessionRestored(true);
+    };
+
+    restoreSession();
+  }, [activeVocabs, filterTopic, filterStatus, isSessionRestored, getUserId, topicVocabs]);
+
+  // Phase 6 Fix: Clear session only on explicit completion, not unmount
+  // sessionStorage naturally handles tab lifecycle
+  // Unmount cleanup removed to allow refresh recovery
 
   // Safe index: clamp currentIndex to valid range when activeVocabs changes
   const safeIndex = useMemo(() => {
@@ -290,7 +373,8 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
   // Helper for dynamic SRS button interval subtitles
   const getRatingSubtitle = (rating: 'again' | 'hard' | 'good' | 'easy', currentInterval = 0) => {
-    if (rating === 'again') return '1 phút';
+    // Phase 6: Again now shows queue-based relearning message
+    if (rating === 'again') return 'Sau 5 thẻ';
     const formatHoursLabel = (hours: number) => {
       if (hours < 1) {
         const mins = Math.max(1, Math.round(hours * 60));
@@ -343,17 +427,28 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
         needsReview: !isMastered && srsRating !== 'mastered' ? prev.needsReview + 1 : prev.needsReview,
       }));
 
-      // Handle 'again' re-queueing (Step 1: Show again after next card)
-      if (srsRating === 'again') {
-        const insertPos = Math.min(currentIndex + 5, activeVocabs.length);
-        activeVocabs.splice(insertPos, 0, currentVocab);
-      }
+      // Phase 6 Fix: Calculate queue transition ONCE, use for both state and snapshot
+      const isLastCard = currentIndex >= activeVocabs.length - 1;
+      const transition = applyRatingToQueue(
+        srsRating,
+        studyQueue,
+        currentIndex,
+        currentVocab.id,
+        isLastCard
+      );
 
-      // Advance to next card only after confirmed success
-      if (currentIndex < activeVocabs.length - 1) {
-        setCurrentIndex((prev) => prev + 1);
-      } else {
+      // Apply transition to React state
+      setStudyQueue(transition.queue);
+      setCurrentIndex(transition.currentIndex);
+
+      // Check if session is completed
+      if (isLastCard) {
         setIsCompleted(true);
+        // Phase 6 Fix: Clear session on completion
+        const userId = await getUserId();
+        if (userId) {
+          clearStudySession(userId);
+        }
         try {
           confetti({
             particleCount: 100,
@@ -364,6 +459,23 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
         } catch {
           // Fallback
         }
+      } else {
+        // Phase 6 Fix: Save session AFTER RPC success with exact transition result
+        const userId = await getUserId();
+        if (userId && transition.queue.length > 0) {
+          const snapshot: StudySessionSnapshot = {
+            version: 1,
+            userId,
+            mode: filterStatus === 'new' ? 'new' : 'review',
+            vocabularyIds: transition.queue,
+            currentIndex: transition.currentIndex,
+            selectedTopicId: filterTopic,
+            initialStatus: filterStatus,
+            startedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          saveStudySession(snapshot);
+        }
       }
     } catch (err) {
       // Show safe error message
@@ -373,7 +485,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     } finally {
       setIsSubmitting(false);
     }
-  }, [currentVocab, currentIndex, activeVocabs, onUpdateProgress, isSubmitting]);
+  }, [currentVocab, currentIndex, activeVocabs, onUpdateProgress, isSubmitting, studyQueue, filterTopic, filterStatus, getUserId]);
 
   // Handle Rating Selection from 4 evaluation buttons
   const handleSelectSrsRating = useCallback((srsRating: SrsRating) => {
@@ -541,12 +653,20 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     handleQuizSelect
   ]);
 
-  const restartSession = () => {
+  const restartSession = async () => {
     setCurrentIndex(0);
     setIsFlipped(false);
     setIsCompleted(false);
     setSessionStats({ mastered: 0, needsReview: 0 });
     setSubMode('flashcard');
+    // Phase 6 Fix: Clear session on explicit restart
+    const userId = await getUserId();
+    if (userId) {
+      clearStudySession(userId);
+    }
+    // Reinitialize queue
+    setStudyQueue([]);
+    setIsSessionRestored(false);
   };
 
   // Empty queue guard - render before accessing currentVocab

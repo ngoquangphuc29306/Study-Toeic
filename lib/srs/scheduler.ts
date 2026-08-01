@@ -2,23 +2,23 @@
  * SRS Scheduler — Pure Domain Functions
  *
  * Phase 4: Extracted from services/vocabService.ts
+ * Phase 6: Updated Again behavior to queue-based relearning
  *
- * APPROVED ALGORITHM (MVP):
- * - Again: 1 minute (1/60 hours)
+ * APPROVED ALGORITHM:
+ * - Again: 0 hours, no next_review_at (queue-based relearning)
  * - Hard: initial 6 hours, then ×2
  * - Good: initial 24 hours, then ×3
  * - Easy: initial 72 hours, then ×4
  * - Mastered: no next review
  *
- * This implementation preserves exact current behavior.
- * No algorithm changes, no new multipliers, no ease factors.
+ * Phase 6 Change: Again rating now sets interval=0 and next_review=null.
+ * Card reappears after 5 other cards in active study session (client-side queue).
  */
 
 import type { SrsRating, LearningStatus, SrsProgress, SrsScheduleResult } from './types';
 
 // Time constants (explicit units)
-const MINUTE_MS = 60_000;
-const HOUR_MS = 60 * MINUTE_MS;
+const HOUR_MS = 60 * 60_000;
 
 /**
  * Calculate next review schedule based on user rating
@@ -49,12 +49,12 @@ export function calculateNextReview(
     nextReviewMs = null;
     newIntervalHours = currentIntervalHours; // Preserve interval but don't use it
   }
-  // Again: reset to 1 minute, increment again_count
+  // Again: Phase 6 queue-based relearning (no global scheduling)
   else if (rating === 'again') {
     newStatus = 'learning';
     currentAgainCount += 1;
-    newIntervalHours = 1 / 60; // 1 minute in hours
-    nextReviewMs = nowMs + MINUTE_MS;
+    newIntervalHours = 0; // Queue-based relearning, not time-based
+    nextReviewMs = null; // Not scheduled globally, handled by session queue
   }
   // Hard: initial 6 hours or ×2 current interval
   else if (rating === 'hard') {

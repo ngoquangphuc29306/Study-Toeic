@@ -32,6 +32,7 @@ import { CollectionHasChildrenError } from '../../services/collectionErrors';
 import { TopicHasVocabulariesError } from '../../services/topicErrors';
 import { VocabularyValidationError } from '../../services/vocabularyErrors';
 import { createClient } from '@/lib/supabase/client';
+import { clearStudySession } from '@/lib/session/storage';
 
 import { Collection, Topic, Vocabulary, StudyStats, LearningStatus } from '../../lib/types';
 
@@ -83,12 +84,22 @@ export default function AppPage() {
   }, []);
 
   // Phase 2C Fix: Auth state change listener
-  // Clear all state when user changes, then reload new user's data
+  // Phase 6 Fix: Track user identity to detect actual user switches
+  const previousUserIdRef = React.useRef<string | null>(null);
+
   useEffect(() => {
     const supabase = createClient();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
+      const currentUserId = session?.user?.id || null;
+      const previousUserId = previousUserIdRef.current;
+
+      if (event === 'SIGNED_OUT') {
+        // Clear the outgoing user's session
+        if (previousUserId) {
+          clearStudySession(previousUserId);
+        }
+
         // Clear all state immediately
         setCollections([]);
         setTopics([]);
@@ -104,7 +115,37 @@ export default function AppPage() {
         setSelectedTopicId('all');
         setDeleteError('');
 
-        // Reload data for new user if authenticated
+        previousUserIdRef.current = null;
+      } else if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+        // Detect actual user identity change (Alice → Bob)
+        const userChanged = previousUserId !== null && previousUserId !== currentUserId;
+
+        if (userChanged && previousUserId) {
+          // Clear the previous user's session
+          clearStudySession(previousUserId);
+        }
+
+        // Clear all state on user change or initial sign-in
+        if (userChanged || previousUserId === null) {
+          setCollections([]);
+          setTopics([]);
+          setVocabularies([]);
+          setStats({
+            totalWords: 0,
+            masteredCount: 0,
+            learningCount: 0,
+            newCount: 0,
+            dailyStreak: 0,
+            todayStudiedCount: 0,
+          });
+          setSelectedTopicId('all');
+          setDeleteError('');
+        }
+
+        // Update tracked user ID
+        previousUserIdRef.current = currentUserId;
+
+        // Reload data for authenticated user
         if (session?.user) {
           refreshAppData();
         }
