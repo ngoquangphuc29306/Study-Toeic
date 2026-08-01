@@ -100,7 +100,7 @@ export default function AppPage() {
   useEffect(() => {
     const supabase = createClient();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       const currentUserId = session?.user?.id || null;
       const previousUserId = previousUserIdRef.current;
 
@@ -132,6 +132,9 @@ export default function AppPage() {
         setDeleteError('');
 
         previousUserIdRef.current = null;
+
+        // Navbar will clear its profile state on next render
+        // No need to call getCurrentProfile() after sign out
       } else if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
         // Detect actual user identity change (Alice → Bob)
         const userChanged = previousUserId !== null && previousUserId !== currentUserId;

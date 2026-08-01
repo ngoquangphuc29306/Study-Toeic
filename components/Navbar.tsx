@@ -1,10 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BookOpen, Sparkles, Database, Plus, Flame, CheckCircle2, Home, Layers, HelpCircle, User } from 'lucide-react';
 import { StudyStats } from '../lib/types';
 import { SignOutButton } from './auth/sign-out-button';
 import { AccountSettings } from './AccountSettings';
+import { getCurrentProfile } from '@/services/profileService';
+import type { UserProfile } from '@/services/profileService';
 
 interface NavbarProps {
   activeTab: 'dashboard' | 'flashcard' | 'quiz' | 'vocab-manager';
@@ -22,6 +24,47 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAddModal,
 }) => {
   const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(false);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+
+  // Load profile on mount
+  useEffect(() => {
+    let isActive = true;
+
+    const loadProfile = async () => {
+      try {
+        const profileData = await getCurrentProfile();
+        if (isActive) {
+          setProfile(profileData);
+          setIsLoadingProfile(false);
+        }
+      } catch (err) {
+        console.error('Load profile error:', err);
+        if (isActive) {
+          setIsLoadingProfile(false);
+        }
+      }
+    };
+
+    loadProfile();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  // Reload profile when AccountSettings closes
+  const handleCloseAccountSettings = async () => {
+    setIsAccountSettingsOpen(false);
+
+    // Reload profile to reflect any changes
+    try {
+      const profileData = await getCurrentProfile();
+      setProfile(profileData);
+    } catch (err) {
+      console.error('Reload profile error:', err);
+    }
+  };
 
   return (
     <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-white/90 border-b border-[#FCE7F3] shadow-2xs">
@@ -125,14 +168,30 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Account & Sign Out Buttons */}
           <div className="hidden sm:flex items-center gap-2">
-            {/* Account Settings Button */}
+            {/* Profile Avatar/Icon Button */}
             <button
               onClick={() => setIsAccountSettingsOpen(true)}
-              className="p-2 text-gray-500 hover:text-[#F472B6] hover:bg-[#FFF1F2] rounded-xl transition-all"
+              className="flex items-center gap-2 p-1.5 pr-3 text-gray-700 hover:text-[#F472B6] hover:bg-[#FFF1F2] rounded-full transition-all group"
               aria-label="Cài đặt tài khoản"
               title="Cài đặt tài khoản"
             >
-              <User className="w-4 h-4" />
+              {isLoadingProfile ? (
+                <div className="w-8 h-8 rounded-full bg-gray-200 animate-pulse" />
+              ) : profile?.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={profile.avatarUrl}
+                  alt="Avatar"
+                  className="w-8 h-8 rounded-full object-cover border-2 border-[#FCE7F3] group-hover:border-[#F472B6] transition-colors"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#F472B6] to-[#FFB6C1] flex items-center justify-center text-white text-sm font-bold border-2 border-[#FCE7F3] group-hover:border-[#F472B6] transition-colors">
+                  {profile?.displayName?.[0]?.toUpperCase() || profile?.email?.[0]?.toUpperCase() || 'U'}
+                </div>
+              )}
+              <span className="text-sm font-medium hidden lg:block max-w-[120px] truncate">
+                {profile?.displayName || profile?.email?.split('@')[0] || 'Tài khoản'}
+              </span>
             </button>
 
             {/* Sign Out Button */}
@@ -183,7 +242,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Account Settings Modal */}
       {isAccountSettingsOpen && (
-        <AccountSettings onClose={() => setIsAccountSettingsOpen(false)} />
+        <AccountSettings onClose={handleCloseAccountSettings} />
       )}
     </header>
   );
