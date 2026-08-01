@@ -12,6 +12,7 @@
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@hookform/resolvers": "^5.2.1",
+    "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.111.0",
     "@types/canvas-confetti": "^1.9.0",
     "autoprefixer": "^10.4.21",

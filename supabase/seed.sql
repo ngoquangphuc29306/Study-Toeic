@@ -1,0 +1,19 @@
+-- =====================================================================
+-- VOCABTOEIC - DEVELOPMENT SEED FILE
+-- =====================================================================
+-- Phase 1 intentionally does not seed user-owned data.
+--
+-- Collections, topics, and vocabularies require real authenticated users
+-- because ownership is enforced through auth.uid(), Row Level Security,
+-- and composite parent-child ownership constraints.
+--
+-- Test data will be created through authenticated application flows in
+-- Phase 2 using two separate test accounts.
+--
+-- Do not add production data to this file.
+-- Do not add hard-coded auth.users UUID values.
+-- Do not run this file manually in the Supabase SQL Editor.
+--
+-- This file is kept as a placeholder for optional non-user-owned
+-- development seed data that may be introduced in a future phase.
+-- =====================================================================
