@@ -9,6 +9,7 @@ import { Eye, EyeOff, UserPlus } from 'lucide-react';
 
 export default function SignupPage() {
   const router = useRouter();
+  const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -36,13 +37,14 @@ export default function SignupPage() {
     setSuccessMessage(null);
 
     startTransition(async () => {
-      const result = await signUp(email, password, confirmPassword);
+      const result = await signUp(displayName, email, password, confirmPassword);
 
       if (!result.success && result.error) {
         setError(result.error);
       } else if (result.success && result.message) {
         setSuccessMessage(result.message);
         // Clear form on success
+        setDisplayName('');
         setEmail('');
         setPassword('');
         setConfirmPassword('');
@@ -68,6 +70,25 @@ export default function SignupPage() {
         {/* Signup Form Card */}
         <div className="bg-white rounded-3xl border border-[#FCE7F3] p-8 shadow-lg shadow-pink-100/20">
           <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Display Name Field */}
+            <div>
+              <label htmlFor="displayName" className="block text-sm font-medium text-[#4A4A4A] mb-2">
+                Tên hiển thị
+              </label>
+              <input
+                id="displayName"
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                required
+                disabled={isPending}
+                className="w-full px-4 py-3 bg-[#FFF9FA] border border-[#FCE7F3] rounded-xl text-[#4A4A4A] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#F472B6] focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                placeholder="Nhập tên của bạn"
+                autoComplete="name"
+                maxLength={80}
+              />
+            </div>
+
             {/* Email Field */}
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-[#4A4A4A] mb-2">

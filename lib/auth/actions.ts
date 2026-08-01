@@ -31,12 +31,13 @@ export interface AuthResult {
  * - Confirmation disabled: Creates session, redirects to /
  */
 export async function signUp(
+  displayName: string,
   email: string,
   password: string,
   confirmPassword: string
 ): Promise<AuthResult> {
   // Validate input
-  const errors = validateSignUp({ email, password, confirmPassword });
+  const errors = validateSignUp({ displayName, email, password, confirmPassword });
   if (errors.length > 0) {
     return {
       success: false,
@@ -46,12 +47,15 @@ export async function signUp(
 
   const supabase = await createClient();
 
-  // Attempt sign up
+  // Attempt sign up with display name in user metadata
   const { data, error } = await supabase.auth.signUp({
     email: email.trim(),
     password,
     options: {
       emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/auth/callback`,
+      data: {
+        display_name: displayName.trim(),
+      },
     },
   });
 

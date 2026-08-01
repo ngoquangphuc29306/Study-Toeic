@@ -8,9 +8,11 @@
  * - Email: required, valid format, trimmed
  * - Password: minimum 8 characters
  * - Password confirmation: must match password
+ * - Display name: required, 1-80 characters, Unicode supported
  */
 
 export interface SignUpInput {
+  displayName: string;
   email: string;
   password: string;
   confirmPassword: string;
@@ -39,6 +41,14 @@ function isValidEmail(email: string): boolean {
  */
 export function validateSignUp(input: SignUpInput): ValidationError[] {
   const errors: ValidationError[] = [];
+
+  // Display name validation
+  const displayName = input.displayName.trim();
+  if (!displayName) {
+    errors.push({ field: 'displayName', message: 'Vui lòng nhập tên hiển thị.' });
+  } else if (displayName.length > 80) {
+    errors.push({ field: 'displayName', message: 'Tên hiển thị không được vượt quá 80 ký tự.' });
+  }
 
   // Email validation
   const email = input.email.trim();
