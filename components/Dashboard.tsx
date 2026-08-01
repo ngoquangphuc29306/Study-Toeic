@@ -260,92 +260,93 @@ export const Dashboard: React.FC<DashboardProps> = ({
   });
 
   return (
-    <div className="space-y-8 pb-12">
+    <div className="space-y-5 sm:space-y-8 pb-8 sm:pb-12">
       {/* Hero Welcome Banner */}
-      <div className="relative overflow-hidden rounded-[36px] bg-gradient-to-r from-[#F472B6] via-[#FF85A1] to-[#FFB6C1] p-8 sm:p-10 text-white shadow-lg shadow-pink-100">
+      <div className="relative overflow-hidden rounded-[20px] sm:rounded-[36px] bg-gradient-to-r from-[#F472B6] via-[#FF85A1] to-[#FFB6C1] p-5 sm:p-8 lg:p-10 text-white shadow-lg shadow-pink-100">
         <div className="absolute top-10 left-10 w-32 h-32 bg-white/20 rounded-full blur-2xl pointer-events-none" />
         <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-white/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="relative z-10 max-w-3xl space-y-3">
+        <div className="relative z-10 max-w-3xl space-y-2 sm:space-y-3">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/20 backdrop-blur-md text-xs font-bold tracking-wider uppercase">
             <Sparkles className="w-3.5 h-3.5 text-yellow-100" />
             <span>Học Từ Vựng Mỗi Ngày</span>
           </div>
-          <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight">
+          <h1 className="text-xl sm:text-4xl font-extrabold tracking-tight">
             Chào mừng bạn trở lại! 🌸
           </h1>
-          <p className="text-pink-50 sm:text-base font-medium leading-relaxed">
+          <p className="text-sm sm:text-base text-pink-50 font-medium leading-relaxed">
             Học từ vựng TOEIC chuẩn hóa với Spaced Repetition, Flashcards tương tác và bài kiểm tra phản xạ nhanh.
           </p>
         </div>
 
         {/* Quick Launch Action Cards */}
-        <div className="relative z-10 mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="relative z-10 mt-5 sm:mt-8 grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
           <button
             onClick={() => onSelectTopicForFlashcard('all')}
-            className="flex items-center justify-between p-4 rounded-2xl bg-white/95 hover:bg-white text-gray-800 font-semibold text-sm shadow-xs transition-all hover:scale-[1.01] cursor-pointer group"
+            className="flex items-center justify-between p-3 sm:p-4 rounded-2xl bg-white/95 hover:bg-white text-gray-800 font-semibold text-sm shadow-xs transition-all hover:scale-[1.01] cursor-pointer group"
           >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-[#FFF1F2] flex items-center justify-center text-[#F472B6]">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#FFF1F2] flex items-center justify-center text-[#F472B6] shrink-0">
                 <Play className="w-4 h-4 fill-[#F472B6]" />
               </div>
-              <span className="text-gray-800 font-bold">Luyện Tất Cả Từ</span>
+              <span className="text-gray-800 font-bold text-xs sm:text-sm">Luyện Tất Cả Từ</span>
             </div>
-            <ArrowRight className="w-4 h-4 text-[#F472B6] group-hover:translate-x-1 transition-transform" />
+            <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#F472B6] group-hover:translate-x-1 transition-transform shrink-0" />
           </button>
 
           <button
             onClick={() => onSelectTopicForQuiz('all')}
-            className="flex items-center justify-between p-4 rounded-2xl bg-white/95 hover:bg-white text-gray-800 font-semibold text-sm shadow-xs transition-all hover:scale-[1.01] cursor-pointer group"
+            className="flex items-center justify-between p-3 sm:p-4 rounded-2xl bg-white/95 hover:bg-white text-gray-800 font-semibold text-sm shadow-xs transition-all hover:scale-[1.01] cursor-pointer group"
           >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-[#FFF1F2] flex items-center justify-center text-[#F472B6]">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#FFF1F2] flex items-center justify-center text-[#F472B6] shrink-0">
                 <HelpCircle className="w-4 h-4 text-[#F472B6]" />
               </div>
-              <span className="text-gray-800 font-bold">Quiz Tổng Hợp</span>
+              <span className="text-gray-800 font-bold text-xs sm:text-sm">Quiz Tổng Hợp</span>
             </div>
-            <ArrowRight className="w-4 h-4 text-[#F472B6] group-hover:translate-x-1 transition-transform" />
+            <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#F472B6] group-hover:translate-x-1 transition-transform shrink-0" />
           </button>
 
           <button
             onClick={onOpenAddModal}
-            className="flex items-center justify-between p-4 rounded-2xl bg-black/10 hover:bg-black/15 backdrop-blur-md text-white font-semibold text-sm shadow-xs transition-all hover:scale-[1.01] cursor-pointer"
+            className="col-span-2 sm:col-span-1 flex items-center justify-between p-3 sm:p-4 rounded-2xl bg-black/10 hover:bg-black/15 backdrop-blur-md text-white font-semibold text-sm shadow-xs transition-all hover:scale-[1.01] cursor-pointer"
           >
-            <div className="flex items-center gap-3">
-              <PlusCircle className="w-5 h-5 text-pink-100" />
-              <span>Thêm Bài Học Mới</span>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <PlusCircle className="w-4 h-4 sm:w-5 sm:h-5 text-pink-100 shrink-0" />
+              <span className="text-xs sm:text-sm">Thêm Bài Học Mới</span>
             </div>
           </button>
         </div>
       </div>
 
       {/* Top Interactive Dashboard Cards: Streak & Daily Goals */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+
         {/* Card 1: Chuỗi Ngày Học Tập (Streak Tracker) */}
-        <div className="p-6 rounded-[32px] bg-white border border-[#FCE7F3] shadow-2xs space-y-5 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5 text-gray-900 font-extrabold text-lg sm:text-xl">
-              <div className="w-9 h-9 rounded-2xl bg-orange-100 flex items-center justify-center text-orange-500 shadow-2xs">
-                <Flame className="w-5 h-5 fill-orange-500 text-orange-500 animate-pulse" />
+        <div className="p-4 sm:p-6 rounded-[20px] sm:rounded-[32px] bg-white border border-[#FCE7F3] shadow-2xs space-y-4 sm:space-y-5 flex flex-col justify-between">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 sm:gap-2.5 text-gray-900 font-extrabold text-base sm:text-xl">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl sm:rounded-2xl bg-orange-100 flex items-center justify-center text-orange-500 shadow-2xs shrink-0">
+                <Flame className="w-4 h-4 sm:w-5 sm:h-5 fill-orange-500 text-orange-500 animate-pulse" />
               </div>
-              <span>Chuỗi ngày học tập</span>
+              <span className="hidden sm:inline">Chuỗi ngày học tập</span>
+              <span className="sm:hidden">Chuỗi học tập</span>
             </div>
-            <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${
+            <span className={`inline-flex items-center gap-1 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-bold border whitespace-nowrap ${
               (dashboardMetrics?.studyStreak || 0) > 0
                 ? 'bg-orange-50 text-orange-600 border-orange-200'
                 : 'bg-gray-50 text-gray-500 border-gray-200'
             }`}>
-              {(dashboardMetrics?.studyStreak || 0) > 0 ? '🔥 Chuỗi đang hoạt động' : '❄️ Bắt đầu chuỗi ngay'}
+              {(dashboardMetrics?.studyStreak || 0) > 0 ? '🔥 Hoạt động' : '❄️ Bắt đầu'}
             </span>
           </div>
 
           <div className="flex items-baseline justify-between py-1">
             <div className="space-y-1">
               <div className="flex items-baseline gap-2">
-                <span className="text-4xl sm:text-5xl font-black text-gray-900 tracking-tight">
+                <span className="text-3xl sm:text-5xl font-black text-gray-900 tracking-tight">
                   {isLoadingMetrics ? '...' : (dashboardMetrics?.studyStreak || 0)}
                 </span>
-                <span className="text-lg font-bold text-gray-500">ngày liên tiếp</span>
+                <span className="text-base sm:text-lg font-bold text-gray-500">ngày liên tiếp</span>
               </div>
               <p className="text-xs text-gray-500 font-medium leading-relaxed">
                 {(dashboardMetrics?.studyStreak || 0) > 0
@@ -357,15 +358,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
           {/* Weekly Tracker Strip (Mon -> Sun) */}
           <div className="pt-3 border-t border-[#FCE7F3]">
-            <div className="flex items-center justify-between text-xs font-bold text-gray-400 mb-2.5">
-              <span>Lịch học tuần này</span>
-              <span className="text-[#ED4F8E] font-semibold">{studiedDaysThisWeekCount}/7 ngày hoàn thành</span>
+            <div className="flex items-center justify-between text-[10px] sm:text-xs font-bold text-gray-400 mb-2">
+              <span>Lịch tuần này</span>
+              <span className="text-[#ED4F8E] font-semibold">{studiedDaysThisWeekCount}/7</span>
             </div>
-            <div className="grid grid-cols-7 gap-1.5 text-center">
+            <div className="grid grid-cols-7 gap-1 sm:gap-1.5 text-center">
               {weekDays.map((day) => (
                 <div
                   key={day.dateStr}
-                  className={`p-2 rounded-2xl flex flex-col items-center justify-between gap-1 transition-all ${
+                  className={`p-1.5 sm:p-2 rounded-xl sm:rounded-2xl flex flex-col items-center justify-between gap-0.5 sm:gap-1 transition-all ${
                     day.isStudied
                       ? 'bg-gradient-to-b from-orange-400 to-[#ED4F8E] text-white shadow-xs font-bold'
                       : day.isToday
@@ -373,14 +374,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       : 'bg-gray-50 text-gray-400 font-medium'
                   }`}
                 >
-                  <span className="text-[10px] tracking-wider uppercase opacity-80">{day.label}</span>
+                  <span className="text-[9px] sm:text-[10px] tracking-wider uppercase opacity-80">{day.label}</span>
                   <div className="my-0.5 flex items-center justify-center">
                     {day.isStudied ? (
-                      <Flame className="w-4 h-4 fill-white text-white" />
+                      <Flame className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-white text-white" />
                     ) : day.isToday ? (
-                      <span className="w-2 h-2 rounded-full bg-[#ED4F8E] animate-ping" />
+                      <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-[#ED4F8E] animate-ping" />
                     ) : (
-                      <span className="text-xs">{day.dayNum}</span>
+                      <span className="text-[10px] sm:text-xs">{day.dayNum}</span>
                     )}
                   </div>
                 </div>
@@ -390,66 +391,67 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         {/* Card 2: Mục Tiêu Hôm Nay Section */}
-        <div className="p-6 rounded-[32px] bg-white border border-[#FCE7F3] shadow-2xs space-y-5 flex flex-col justify-between">
+        <div className="p-4 sm:p-6 rounded-[20px] sm:rounded-[32px] bg-white border border-[#FCE7F3] shadow-2xs space-y-4 sm:space-y-5 flex flex-col justify-between">
           {/* Card Header */}
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5 text-gray-900 font-extrabold text-lg sm:text-xl">
-              <Target className="w-5 h-5 text-[#ED4F8E]" />
+            <div className="flex items-center gap-2 sm:gap-2.5 text-gray-900 font-extrabold text-base sm:text-xl">
+              <Target className="w-4 h-4 sm:w-5 sm:h-5 text-[#ED4F8E]" />
               <span>Mục tiêu hôm nay</span>
             </div>
             <button
               onClick={handleOpenGoalModal}
               title="Cài đặt mục tiêu hàng ngày"
-              className="p-2 rounded-xl text-gray-400 hover:text-[#ED4F8E] hover:bg-[#FFF1F2] transition-colors cursor-pointer"
+              aria-label="Cài đặt mục tiêu hàng ngày"
+              className="p-1.5 sm:p-2 rounded-xl text-gray-400 hover:text-[#ED4F8E] hover:bg-[#FFF1F2] transition-colors cursor-pointer"
             >
-              <Settings className="w-5 h-5" />
+              <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           </div>
 
           {/* 2 Main Sub-cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             {/* Ôn tập */}
             <div
               onClick={() => onSelectTopicForFlashcard('all', 'learning')}
-              className="p-5 rounded-2xl bg-[#FFF5F7] border border-[#FCE7F3] flex flex-col justify-between space-y-3 cursor-pointer hover:border-[#F472B6]/60 transition-all group"
+              className="p-4 sm:p-5 rounded-xl sm:rounded-2xl bg-[#FFF5F7] border border-[#FCE7F3] flex flex-col justify-between space-y-2 sm:space-y-3 cursor-pointer hover:border-[#F472B6]/60 transition-all group"
             >
               <div className="flex items-center gap-2 text-xs font-bold text-gray-700">
-                <Clock className="w-4 h-4 text-[#ED4F8E]" />
+                <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#ED4F8E]" />
                 <span className="group-hover:text-[#ED4F8E] transition-colors">Ôn tập</span>
               </div>
 
-              <div className="text-center py-2 space-y-1">
-                <div className="text-3xl sm:text-4xl font-extrabold text-gray-900">
-                  {isLoadingMetrics ? '...' : (dashboardMetrics?.dueVocabulary || 0)} <span className="text-sm font-semibold text-gray-500">từ</span>
+              <div className="text-center py-1 sm:py-2 space-y-1">
+                <div className="text-2xl sm:text-4xl font-extrabold text-gray-900">
+                  {isLoadingMetrics ? '...' : (dashboardMetrics?.dueVocabulary || 0)} <span className="text-xs sm:text-sm font-semibold text-gray-500">từ</span>
                 </div>
-                <div className="text-xs text-[#ED4F8E] font-medium">
+                <div className="text-[10px] sm:text-xs text-[#ED4F8E] font-medium">
                   {unlimitedReview ? 'Không giới hạn' : 'Đã đến hạn ôn tập'}
                 </div>
               </div>
             </div>
 
             {/* Từ mới */}
-            <div className="p-5 rounded-2xl bg-[#FFF1F2]/60 border border-[#FCE7F3] flex flex-col justify-between space-y-3">
+            <div className="p-4 sm:p-5 rounded-xl sm:rounded-2xl bg-[#FFF1F2]/60 border border-[#FCE7F3] flex flex-col justify-between space-y-2 sm:space-y-3">
               <div className="flex items-center gap-2 text-xs font-bold text-gray-700">
-                <BookOpen className="w-4 h-4 text-[#ED4F8E]" />
+                <BookOpen className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#ED4F8E]" />
                 <span>Từ mới</span>
               </div>
 
-              <div className="text-center py-2 space-y-2">
-                <div className="text-3xl sm:text-4xl font-extrabold text-gray-900">
+              <div className="text-center py-1 sm:py-2 space-y-1.5 sm:space-y-2">
+                <div className="text-2xl sm:text-4xl font-extrabold text-gray-900">
                   {newWordsCount}
-                  <span className="text-base sm:text-lg font-bold text-gray-400">/{dailyGoal} từ</span>
+                  <span className="text-sm sm:text-lg font-bold text-gray-400">/{dailyGoal}</span>
                 </div>
 
                 {/* Progress Bar */}
-                <div className="w-full h-2 bg-[#FCE7F3] rounded-full overflow-hidden max-w-xs mx-auto">
+                <div className="w-full h-1.5 sm:h-2 bg-[#FCE7F3] rounded-full overflow-hidden max-w-xs mx-auto">
                   <div
                     style={{ width: `${newWordsPercent}%` }}
                     className="h-full bg-gradient-to-r from-[#ED4F8E] to-[#F472B6] rounded-full transition-all duration-500"
                   />
                 </div>
 
-                <div className="text-xs text-gray-500 font-medium">
+                <div className="text-[10px] sm:text-xs text-gray-500 font-medium">
                   {newWordsPercent}% hoàn thành
                 </div>
               </div>
@@ -460,23 +462,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       {/* Detail Views Overlay (If clicked 'Xem chi tiết') */}
       {activeDetailView === 'pending' && (
-        <div className="p-6 rounded-[32px] bg-white border border-[#FCE7F3] shadow-2xs space-y-6 animate-fadeIn">
+        <div className="p-4 sm:p-6 rounded-[20px] sm:rounded-[32px] bg-white border border-[#FCE7F3] shadow-2xs space-y-4 sm:space-y-6 animate-fadeIn">
           <div className="flex items-center justify-between">
             <button
               onClick={() => { setActiveDetailView(null); setDetailSearchTerm(''); }}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-[#FFF1F2] border border-[#FCE7F3] text-gray-700 hover:text-[#ED4F8E] hover:bg-[#FFE4E6] text-xs font-bold transition-all cursor-pointer"
+              className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-[#FFF1F2] border border-[#FCE7F3] text-gray-700 hover:text-[#ED4F8E] hover:bg-[#FFE4E6] text-xs font-bold transition-all cursor-pointer"
             >
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span>Quay lại</span>
             </button>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-[#E0F2FE] flex items-center justify-center text-[#0284C7] shadow-xs">
-              <Calendar className="w-6 h-6" />
+          <div className="flex items-center gap-3 sm:gap-4">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-[#E0F2FE] flex items-center justify-center text-[#0284C7] shadow-xs shrink-0">
+              <Calendar className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
-              <h2 className="text-xl sm:text-2xl font-extrabold text-gray-900">
+              <h2 className="text-lg sm:text-2xl font-extrabold text-gray-900">
                 Từ chưa đến hạn
               </h2>
               <p className="text-xs text-gray-500 font-medium">
@@ -496,26 +498,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
             />
           </div>
 
-          <div className="bg-white rounded-[24px] border border-[#FCE7F3] overflow-hidden shadow-2xs">
+          <div className="bg-white rounded-[20px] sm:rounded-[24px] border border-[#FCE7F3] overflow-hidden shadow-2xs">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-left text-xs min-w-[500px]">
                 <thead className="bg-[#FFF5F7] border-b border-[#FCE7F3] text-gray-500 font-bold uppercase tracking-wider text-[11px]">
                   <tr>
-                    <th className="py-3.5 px-5">Từ</th>
-                    <th className="py-3.5 px-5">Nghĩa</th>
-                    <th className="py-3.5 px-5 text-right">Thời gian tới hạn</th>
+                    <th className="py-3 px-3 sm:py-3.5 sm:px-5">Từ</th>
+                    <th className="py-3 px-3 sm:py-3.5 sm:px-5">Nghĩa</th>
+                    <th className="py-3 px-3 sm:py-3.5 sm:px-5 text-right">Thời gian tới hạn</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#FCE7F3]/60">
                   {pendingItems.map((item) => (
                     <tr key={item.id} className="hover:bg-[#FFF5F7]/50 transition-colors">
-                      <td className="py-3.5 px-5 font-bold text-gray-900">
+                      <td className="py-3 px-3 sm:py-3.5 sm:px-5 font-bold text-gray-900">
                         {item.word}
                       </td>
-                      <td className="py-3.5 px-5 text-gray-600 font-medium">
+                      <td className="py-3 px-3 sm:py-3.5 sm:px-5 text-gray-600 font-medium">
                         {item.meaning}
                       </td>
-                      <td className="py-3.5 px-5 text-right font-medium">
+                      <td className="py-3 px-3 sm:py-3.5 sm:px-5 text-right font-medium">
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#E0F2FE] text-[#0284C7] font-semibold text-[11px]">
                           <Clock className="w-3 h-3" />
                           {item.due_in}
@@ -531,33 +533,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
       )}
 
       {activeDetailView === 'mastered' && (
-        <div className="p-6 rounded-[32px] bg-white border border-[#FCE7F3] shadow-2xs space-y-6 animate-fadeIn">
+        <div className="p-4 sm:p-6 rounded-[20px] sm:rounded-[32px] bg-white border border-[#FCE7F3] shadow-2xs space-y-4 sm:space-y-6 animate-fadeIn">
           <div className="flex items-center justify-between">
             <button
               onClick={() => { setActiveDetailView(null); setDetailSearchTerm(''); }}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-[#FFF1F2] border border-[#FCE7F3] text-gray-700 hover:text-[#ED4F8E] hover:bg-[#FFE4E6] text-xs font-bold transition-all cursor-pointer"
+              className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-[#FFF1F2] border border-[#FCE7F3] text-gray-700 hover:text-[#ED4F8E] hover:bg-[#FFE4E6] text-xs font-bold transition-all cursor-pointer"
             >
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span>Quay lại</span>
             </button>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-[#D1FAE5] flex items-center justify-center text-[#059669] shadow-xs">
-              <Trophy className="w-6 h-6" />
+          <div className="flex items-center gap-3 sm:gap-4">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-[#D1FAE5] flex items-center justify-center text-[#059669] shadow-xs shrink-0">
+              <Trophy className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
-              <h2 className="text-xl sm:text-2xl font-extrabold text-gray-900">
+              <h2 className="text-lg sm:text-2xl font-extrabold text-gray-900">
                 Từ đã thành thạo
               </h2>
               <p className="text-xs text-gray-500 font-medium">
-                Các từ bạn đã đánh dấu thành thạo — có thể khôi phục để học lại
+                {masteredItems.length} từ đã thành thạo
               </p>
             </div>
-          </div>
-
-          <div className="text-xs font-bold text-gray-700">
-            {masteredItems.length} từ đã thành thạo
           </div>
 
           <div className="relative max-w-sm">
@@ -571,26 +569,27 @@ export const Dashboard: React.FC<DashboardProps> = ({
             />
           </div>
 
-          <div className="bg-white rounded-[24px] border border-[#FCE7F3] overflow-hidden shadow-2xs">
+          <div className="bg-white rounded-[20px] sm:rounded-[24px] border border-[#FCE7F3] overflow-hidden shadow-2xs">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-left text-xs min-w-[650px]">
                 <thead className="bg-[#FFF5F7] border-b border-[#FCE7F3] text-gray-500 font-bold uppercase tracking-wider text-[11px]">
                   <tr>
-                    <th className="py-3.5 px-5">Từ</th>
-                    <th className="py-3.5 px-5">Nghĩa</th>
-                    <th className="py-3.5 px-5">IPA</th>
-                    <th className="py-3.5 px-5">Ngày thành thạo</th>
-                    <th className="py-3.5 px-5 text-right">Hành động</th>
+                    <th className="py-3 px-3 sm:py-3.5 sm:px-5">Từ</th>
+                    <th className="py-3 px-3 sm:py-3.5 sm:px-5">Nghĩa</th>
+                    <th className="py-3 px-3 sm:py-3.5 sm:px-5">IPA</th>
+                    <th className="py-3 px-3 sm:py-3.5 sm:px-5">Ngày thành thạo</th>
+                    <th className="py-3 px-3 sm:py-3.5 sm:px-5 text-right">Hành động</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#FCE7F3]/60">
                   {masteredItems.map((item) => (
                     <tr key={item.id} className="hover:bg-[#FFF5F7]/50 transition-colors">
-                      <td className="py-3.5 px-5 font-bold text-gray-900">
+                      <td className="py-3 px-3 sm:py-3.5 sm:px-5 font-bold text-gray-900">
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => handlePlayAudio(item.word)}
                             title="Nghe phát âm"
+                            aria-label="Nghe phát âm"
                             className="p-1 rounded-lg text-gray-400 hover:text-[#ED4F8E] hover:bg-[#FFF1F2] transition-colors cursor-pointer"
                           >
                             <Volume2 className="w-3.5 h-3.5" />
@@ -598,16 +597,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           <span>{item.word}</span>
                         </div>
                       </td>
-                      <td className="py-3.5 px-5 text-gray-600 font-medium">
+                      <td className="py-3 px-3 sm:py-3.5 sm:px-5 text-gray-600 font-medium">
                         {item.meaning}
                       </td>
-                      <td className="py-3.5 px-5 text-gray-400 font-mono text-[11px]">
+                      <td className="py-3 px-3 sm:py-3.5 sm:px-5 text-gray-400 font-mono text-[11px]">
                         {item.ipa || '-'}
                       </td>
-                      <td className="py-3.5 px-5 text-gray-500 font-medium text-[11px]">
+                      <td className="py-3 px-3 sm:py-3.5 sm:px-5 text-gray-500 font-medium text-[11px]">
                         {item.mastered_date}
                       </td>
-                      <td className="py-3.5 px-5 text-right">
+                      <td className="py-3 px-3 sm:py-3.5 sm:px-5 text-right">
                         <button
                           onClick={async () => {
                             if (onUpdateProgress) {
@@ -615,7 +614,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             }
                             alert(`Đã chuyển từ "${item.word}" về danh sách học lại.`);
                           }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#FCE7F3] bg-white hover:bg-[#FFF1F2] text-gray-700 hover:text-[#ED4F8E] font-bold text-[11px] transition-all cursor-pointer shadow-2xs"
+                          className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl border border-[#FCE7F3] bg-white hover:bg-[#FFF1F2] text-gray-700 hover:text-[#ED4F8E] font-bold text-[11px] transition-all cursor-pointer shadow-2xs"
                         >
                           <RotateCcw className="w-3 h-3" />
                           <span>Học lại</span>
@@ -631,33 +630,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
       )}
 
       {activeDetailView === 'difficult' && (
-        <div className="p-6 rounded-[32px] bg-white border border-[#FCE7F3] shadow-2xs space-y-6 animate-fadeIn">
+        <div className="p-4 sm:p-6 rounded-[20px] sm:rounded-[32px] bg-white border border-[#FCE7F3] shadow-2xs space-y-4 sm:space-y-6 animate-fadeIn">
           <div className="flex items-center justify-between">
             <button
               onClick={() => { setActiveDetailView(null); setDetailSearchTerm(''); }}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-[#FFF1F2] border border-[#FCE7F3] text-gray-700 hover:text-[#ED4F8E] hover:bg-[#FFE4E6] text-xs font-bold transition-all cursor-pointer"
+              className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-[#FFF1F2] border border-[#FCE7F3] text-gray-700 hover:text-[#ED4F8E] hover:bg-[#FFE4E6] text-xs font-bold transition-all cursor-pointer"
             >
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span>Quay lại</span>
             </button>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-[#FFE4E6] flex items-center justify-center text-[#E11D48] shadow-xs">
-              <Brain className="w-6 h-6" />
+          <div className="flex items-center gap-3 sm:gap-4">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-[#FFE4E6] flex items-center justify-center text-[#E11D48] shadow-xs shrink-0">
+              <Brain className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
-              <h2 className="text-xl sm:text-2xl font-extrabold text-gray-900">
+              <h2 className="text-lg sm:text-2xl font-extrabold text-gray-900">
                 Từ vựng khó nhớ
               </h2>
               <p className="text-xs text-gray-500 font-medium">
-                Các từ vựng bạn trả lời sai nhiều lần cần chú ý đặc biệt
+                {difficultItems.length} từ khó nhớ
               </p>
             </div>
-          </div>
-
-          <div className="text-xs font-bold text-gray-700">
-            {difficultItems.length} từ khó nhớ
           </div>
 
           <div className="relative max-w-sm">
@@ -671,26 +666,27 @@ export const Dashboard: React.FC<DashboardProps> = ({
             />
           </div>
 
-          <div className="bg-white rounded-[24px] border border-[#FCE7F3] overflow-hidden shadow-2xs">
+          <div className="bg-white rounded-[20px] sm:rounded-[24px] border border-[#FCE7F3] overflow-hidden shadow-2xs">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-left text-xs min-w-[650px]">
                 <thead className="bg-[#FFF5F7] border-b border-[#FCE7F3] text-gray-500 font-bold uppercase tracking-wider text-[11px]">
                   <tr>
-                    <th className="py-3.5 px-5">Từ</th>
-                    <th className="py-3.5 px-5">Nghĩa</th>
-                    <th className="py-3.5 px-5">IPA</th>
-                    <th className="py-3.5 px-5">Số lần quên</th>
-                    <th className="py-3.5 px-5 text-right">Hành động</th>
+                    <th className="py-3 px-3 sm:py-3.5 sm:px-5">Từ</th>
+                    <th className="py-3 px-3 sm:py-3.5 sm:px-5">Nghĩa</th>
+                    <th className="py-3 px-3 sm:py-3.5 sm:px-5">IPA</th>
+                    <th className="py-3 px-3 sm:py-3.5 sm:px-5">Số lần quên</th>
+                    <th className="py-3 px-3 sm:py-3.5 sm:px-5 text-right">Hành động</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#FCE7F3]/60">
                   {difficultItems.map((item) => (
                     <tr key={item.id} className="hover:bg-[#FFF5F7]/50 transition-colors">
-                      <td className="py-3.5 px-5 font-bold text-gray-900">
+                      <td className="py-3 px-3 sm:py-3.5 sm:px-5 font-bold text-gray-900">
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => handlePlayAudio(item.word)}
                             title="Nghe phát âm"
+                            aria-label="Nghe phát âm"
                             className="p-1 rounded-lg text-gray-400 hover:text-[#ED4F8E] hover:bg-[#FFF1F2] transition-colors cursor-pointer"
                           >
                             <Volume2 className="w-3.5 h-3.5" />
@@ -698,21 +694,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           <span>{item.word}</span>
                         </div>
                       </td>
-                      <td className="py-3.5 px-5 text-gray-600 font-medium">
+                      <td className="py-3 px-3 sm:py-3.5 sm:px-5 text-gray-600 font-medium">
                         {item.meaning}
                       </td>
-                      <td className="py-3.5 px-5 text-gray-400 font-mono text-[11px]">
+                      <td className="py-3 px-3 sm:py-3.5 sm:px-5 text-gray-400 font-mono text-[11px]">
                         {item.ipa || '-'}
                       </td>
-                      <td className="py-3.5 px-5 font-semibold text-[#E11D48]">
+                      <td className="py-3 px-3 sm:py-3.5 sm:px-5 font-semibold text-[#E11D48]">
                         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#FFE4E6] text-[#E11D48] text-[11px]">
                           {item.fail_count} lần
                         </span>
                       </td>
-                      <td className="py-3.5 px-5 text-right">
+                      <td className="py-3 px-3 sm:py-3.5 sm:px-5 text-right">
                         <button
                           onClick={() => onSelectTopicForFlashcard('all')}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#ED4F8E] to-[#F472B6] text-white font-bold text-[11px] transition-all cursor-pointer shadow-2xs hover:opacity-95"
+                          className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-gradient-to-r from-[#ED4F8E] to-[#F472B6] text-white font-bold text-[11px] transition-all cursor-pointer shadow-2xs hover:opacity-95"
                         >
                           <Play className="w-3 h-3 fill-white" />
                           <span>Luyện tập</span>
@@ -729,139 +725,139 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       {/* Spaced Repetition Overview Section (Image 1 Layout) */}
       {activeDetailView === null && (
-        <div className="space-y-5">
+        <div className="space-y-4 sm:space-y-5">
           {/* Top 4 Mini Stat Summary Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="p-4 sm:p-5 rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex items-center justify-between">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
+            <div className="p-3 sm:p-5 rounded-[20px] sm:rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex items-center justify-between">
               <div>
-                <p className="text-xs font-semibold text-gray-500">Tổng thể</p>
-                <p className="text-xl sm:text-2xl font-black text-gray-900 mt-1">
+                <p className="text-[10px] sm:text-xs font-semibold text-gray-500">Tổng thể</p>
+                <p className="text-lg sm:text-2xl font-black text-gray-900 mt-0.5 sm:mt-1">
                   {isLoadingMetrics ? '...' : (dashboardMetrics?.totalVocabulary || 0)}
                 </p>
               </div>
-              <div className="w-10 h-10 rounded-2xl bg-[#FFF1F2] flex items-center justify-center text-[#ED4F8E]">
-                <Layers className="w-5 h-5" />
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-[#FFF1F2] flex items-center justify-center text-[#ED4F8E] shrink-0">
+                <Layers className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
             </div>
 
-            <div className="p-4 sm:p-5 rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex items-center justify-between">
+            <div className="p-3 sm:p-5 rounded-[20px] sm:rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex items-center justify-between">
               <div>
-                <p className="text-xs font-semibold text-gray-500">Đã học</p>
-                <p className="text-xl sm:text-2xl font-black text-gray-900 mt-1">
+                <p className="text-[10px] sm:text-xs font-semibold text-gray-500">Đã học</p>
+                <p className="text-lg sm:text-2xl font-black text-gray-900 mt-0.5 sm:mt-1">
                   {isLoadingMetrics ? '...' : ((dashboardMetrics?.masteredVocabulary || 0) + (dashboardMetrics?.learningVocabulary || 0))}
                 </p>
               </div>
-              <div className="w-10 h-10 rounded-2xl bg-[#FFF5F7] flex items-center justify-center text-[#F472B6]">
-                <BookOpen className="w-5 h-5" />
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-[#FFF5F7] flex items-center justify-center text-[#F472B6] shrink-0">
+                <BookOpen className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
             </div>
 
-            <div className="p-4 sm:p-5 rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex items-center justify-between">
+            <div className="p-3 sm:p-5 rounded-[20px] sm:rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex items-center justify-between">
               <div>
-                <p className="text-xs font-semibold text-gray-500">Thành thạo</p>
-                <p className="text-xl sm:text-2xl font-black text-gray-900 mt-1">
+                <p className="text-[10px] sm:text-xs font-semibold text-gray-500">Thành thạo</p>
+                <p className="text-lg sm:text-2xl font-black text-gray-900 mt-0.5 sm:mt-1">
                   {isLoadingMetrics ? '...' : (dashboardMetrics?.masteredVocabulary || 0)}
                 </p>
               </div>
-              <div className="w-10 h-10 rounded-2xl bg-[#D1FAE5] flex items-center justify-center text-[#059669]">
-                <CheckCircle2 className="w-5 h-5" />
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-[#D1FAE5] flex items-center justify-center text-[#059669] shrink-0">
+                <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
             </div>
 
-            <div className="p-4 sm:p-5 rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex items-center justify-between">
+            <div className="p-3 sm:p-5 rounded-[20px] sm:rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex items-center justify-between">
               <div>
-                <p className="text-xs font-semibold text-gray-500">Cần ôn ngay</p>
-                <p className="text-xl sm:text-2xl font-black text-gray-900 mt-1">
+                <p className="text-[10px] sm:text-xs font-semibold text-gray-500">Cần ôn ngay</p>
+                <p className="text-lg sm:text-2xl font-black text-gray-900 mt-0.5 sm:mt-1">
                   {isLoadingMetrics ? '...' : (dashboardMetrics?.dueVocabulary || 0)}
                 </p>
               </div>
-              <div className="w-10 h-10 rounded-2xl bg-[#F3E8FF] flex items-center justify-center text-[#A855F7]">
-                <Clock className="w-5 h-5" />
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-[#F3E8FF] flex items-center justify-center text-[#A855F7] shrink-0">
+                <Clock className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
             </div>
           </div>
 
           {/* 4 Status Rows */}
-          <div className="space-y-3">
+          <div className="space-y-2 sm:space-y-3">
             {/* Row 1: Từ cần ôn ngay */}
-            <div className="p-5 rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-[#F472B6]/40 transition-all">
-              <div className="flex items-center gap-4">
-                <div className="w-11 h-11 rounded-2xl bg-[#F3E8FF] flex items-center justify-center text-[#A855F7] flex-shrink-0">
-                  <Clock className="w-5 h-5" />
+            <div className="p-4 sm:p-5 rounded-[20px] sm:rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 hover:border-[#F472B6]/40 transition-all">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-[#F3E8FF] flex items-center justify-center text-[#A855F7] flex-shrink-0">
+                  <Clock className="w-4 h-4 sm:w-5 sm:h-5" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-sm text-gray-900">Từ cần ôn ngay</h3>
-                  <p className="text-base sm:text-lg font-black text-[#A855F7]">
+                  <h3 className="font-extrabold text-xs sm:text-sm text-gray-900">Từ cần ôn ngay</h3>
+                  <p className="text-sm sm:text-lg font-black text-[#A855F7]">
                     {isLoadingMetrics ? '...' : `${dashboardMetrics?.dueVocabulary || 0} từ đến hạn`}
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => onSelectTopicForFlashcard('all', 'learning')}
-                className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-[#ED4F8E] to-[#F472B6] hover:from-[#E13B7D] hover:to-[#EC4899] text-white font-bold text-xs shadow-xs transition-all cursor-pointer whitespace-nowrap self-start sm:self-auto"
+                className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-[#ED4F8E] to-[#F472B6] hover:from-[#E13B7D] hover:to-[#EC4899] text-white font-bold text-xs shadow-xs transition-all cursor-pointer whitespace-nowrap self-start sm:self-auto"
               >
                 Ôn tập ngay
               </button>
             </div>
 
             {/* Row 2: Từ chưa đến hạn */}
-            <div className="p-5 rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-[#0284C7]/30 transition-all">
-              <div className="flex items-center gap-4">
-                <div className="w-11 h-11 rounded-2xl bg-[#E0F2FE] flex items-center justify-center text-[#0284C7] flex-shrink-0">
-                  <Calendar className="w-5 h-5" />
+            <div className="p-4 sm:p-5 rounded-[20px] sm:rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 hover:border-[#0284C7]/30 transition-all">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-[#E0F2FE] flex items-center justify-center text-[#0284C7] flex-shrink-0">
+                  <Calendar className="w-4 h-4 sm:w-5 sm:h-5" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-sm text-gray-900">Từ chưa đến hạn</h3>
-                  <p className="text-base sm:text-lg font-black text-[#0284C7]">
+                  <h3 className="font-extrabold text-xs sm:text-sm text-gray-900">Từ chưa đến hạn</h3>
+                  <p className="text-sm sm:text-lg font-black text-[#0284C7]">
                     {pendingLearningVocabs.length} từ đang chờ
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setActiveDetailView('pending')}
-                className="px-5 py-2.5 rounded-2xl bg-white hover:bg-[#FFF1F2] border border-[#FCE7F3] text-gray-800 font-bold text-xs transition-all cursor-pointer whitespace-nowrap self-start sm:self-auto"
+                className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-white hover:bg-[#FFF1F2] border border-[#FCE7F3] text-gray-800 font-bold text-xs transition-all cursor-pointer whitespace-nowrap self-start sm:self-auto"
               >
                 Xem chi tiết
               </button>
             </div>
 
             {/* Row 3: Từ đã thành thạo */}
-            <div className="p-5 rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-[#059669]/30 transition-all">
-              <div className="flex items-center gap-4">
-                <div className="w-11 h-11 rounded-2xl bg-[#D1FAE5] flex items-center justify-center text-[#059669] flex-shrink-0">
-                  <Trophy className="w-5 h-5" />
+            <div className="p-4 sm:p-5 rounded-[20px] sm:rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 hover:border-[#059669]/30 transition-all">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-[#D1FAE5] flex items-center justify-center text-[#059669] flex-shrink-0">
+                  <Trophy className="w-4 h-4 sm:w-5 sm:h-5" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-sm text-gray-900">Từ đã thành thạo</h3>
-                  <p className="text-base sm:text-lg font-black text-[#059669]">
+                  <h3 className="font-extrabold text-xs sm:text-sm text-gray-900">Từ đã thành thạo</h3>
+                  <p className="text-sm sm:text-lg font-black text-[#059669]">
                     {isLoadingMetrics ? '...' : `${dashboardMetrics?.masteredVocabulary || 0} từ`}
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setActiveDetailView('mastered')}
-                className="px-5 py-2.5 rounded-2xl bg-white hover:bg-[#FFF1F2] border border-[#FCE7F3] text-gray-800 font-bold text-xs transition-all cursor-pointer whitespace-nowrap self-start sm:self-auto"
+                className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-white hover:bg-[#FFF1F2] border border-[#FCE7F3] text-gray-800 font-bold text-xs transition-all cursor-pointer whitespace-nowrap self-start sm:self-auto"
               >
                 Xem chi tiết
               </button>
             </div>
 
             {/* Row 4: Từ vựng khó nhớ */}
-            <div className="p-5 rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-[#E11D48]/30 transition-all">
-              <div className="flex items-center gap-4">
-                <div className="w-11 h-11 rounded-2xl bg-[#FFE4E6] flex items-center justify-center text-[#E11D48] flex-shrink-0">
-                  <Brain className="w-5 h-5" />
+            <div className="p-4 sm:p-5 rounded-[20px] sm:rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 hover:border-[#E11D48]/30 transition-all">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-[#FFE4E6] flex items-center justify-center text-[#E11D48] flex-shrink-0">
+                  <Brain className="w-4 h-4 sm:w-5 sm:h-5" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-sm text-gray-900">Từ vựng khó nhớ</h3>
-                  <p className="text-base sm:text-lg font-black text-[#E11D48]">
+                  <h3 className="font-extrabold text-xs sm:text-sm text-gray-900">Từ vựng khó nhớ</h3>
+                  <p className="text-sm sm:text-lg font-black text-[#E11D48]">
                     {isLoadingMetrics ? '...' : `${dashboardMetrics?.difficultVocabulary || 0} từ bạn thường quên`}
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setActiveDetailView('difficult')}
-                className="px-5 py-2.5 rounded-2xl bg-white hover:bg-[#FFF1F2] border border-[#FCE7F3] text-gray-800 font-bold text-xs transition-all cursor-pointer whitespace-nowrap self-start sm:self-auto"
+                className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-white hover:bg-[#FFF1F2] border border-[#FCE7F3] text-gray-800 font-bold text-xs transition-all cursor-pointer whitespace-nowrap self-start sm:self-auto"
               >
                 Xem chi tiết
               </button>
@@ -874,13 +870,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {/* MODAL: Cài đặt mục tiêu hàng ngày */}
       {isGoalModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn">
-          <div className="relative w-full max-w-md bg-white border border-[#FCE7F3] rounded-[28px] p-6 space-y-6 shadow-2xl">
-            
+          <div className="relative w-full max-w-md max-h-[90dvh] overflow-y-auto bg-white border border-[#FCE7F3] rounded-[20px] sm:rounded-[28px] p-4 sm:p-6 space-y-4 sm:space-y-6 shadow-2xl">
+
             {/* Modal Header */}
-            <div className="flex items-start justify-between">
+            <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
-                <h3 className="text-lg font-extrabold text-gray-900 flex items-center gap-2">
-                  <Settings className="w-5 h-5 text-[#ED4F8E]" />
+                <h3 className="text-base sm:text-lg font-extrabold text-gray-900 flex items-center gap-2">
+                  <Settings className="w-4 h-4 sm:w-5 sm:h-5 text-[#ED4F8E] shrink-0" />
                   <span>Cài đặt mục tiêu hàng ngày</span>
                 </h3>
                 <p className="text-xs text-gray-500">
@@ -889,26 +885,28 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </div>
               <button
                 onClick={() => setIsGoalModalOpen(false)}
-                className="p-1.5 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 transition-colors cursor-pointer"
+                aria-label="Đóng"
+                className="p-1.5 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 transition-colors cursor-pointer shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Form Controls */}
-            <div className="space-y-5 text-xs">
+            <div className="space-y-4 sm:space-y-5 text-xs">
               {/* Field 1: Số từ mới mỗi ngày */}
               <div className="space-y-2">
-                <label className="block font-bold text-gray-800">
+                <label htmlFor="daily-goal-input" className="block font-bold text-gray-800">
                   Số từ mới mỗi ngày
                 </label>
                 <input
+                  id="daily-goal-input"
                   type="number"
                   min={1}
                   max={100}
                   value={tempGoal}
                   onChange={(e) => setTempGoal(parseInt(e.target.value, 10) || 0)}
-                  className="w-full p-3 bg-[#FFF5F7] border border-[#FCE7F3] rounded-xl font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
+                  className="w-full p-2.5 sm:p-3 bg-[#FFF5F7] border border-[#FCE7F3] rounded-xl font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
                 />
                 <p className="text-[11px] text-gray-400">Giới hạn 1-100 từ</p>
               </div>
@@ -916,14 +914,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
               {/* Field 2: Giới hạn ôn tập */}
               <div className="space-y-2.5 pt-2 border-t border-[#FCE7F3]">
                 <div className="flex items-center justify-between">
-                  <label className="font-bold text-gray-800">
+                  <label htmlFor="unlimited-review-toggle" className="font-bold text-gray-800">
                     Giới hạn ôn tập
                   </label>
-                  
+
                   {/* Toggle switch */}
                   <button
+                    id="unlimited-review-toggle"
                     type="button"
                     onClick={() => setTempUnlimited(!tempUnlimited)}
+                    aria-label={tempUnlimited ? 'Tắt chế độ không giới hạn' : 'Bật chế độ không giới hạn'}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
                       tempUnlimited ? 'bg-[#ED4F8E]' : 'bg-gray-300'
                     }`}
@@ -951,13 +951,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#FCE7F3]">
               <button
                 onClick={() => setIsGoalModalOpen(false)}
-                className="px-5 py-2.5 rounded-xl bg-gray-100 text-gray-700 font-bold hover:bg-gray-200 transition-colors cursor-pointer"
+                className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl bg-gray-100 text-gray-700 font-bold hover:bg-gray-200 transition-colors cursor-pointer text-xs sm:text-sm"
               >
                 Hủy
               </button>
               <button
                 onClick={handleSaveGoalSettings}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#ED4F8E] to-[#F472B6] text-white font-bold hover:opacity-95 shadow-2xs transition-all cursor-pointer"
+                className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-[#ED4F8E] to-[#F472B6] text-white font-bold hover:opacity-95 shadow-2xs transition-all cursor-pointer text-xs sm:text-sm"
               >
                 Lưu
               </button>
