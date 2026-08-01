@@ -58,11 +58,11 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-white/90 border-b border-[#FCE7F3] shadow-2xs">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2 sm:gap-4">
         {/* Brand Logo */}
         <div
           onClick={() => setActiveTab('dashboard')}
-          className="flex items-center gap-2.5 cursor-pointer group"
+          className="flex items-center gap-2 sm:gap-2.5 cursor-pointer group shrink-0"
           role="button"
           tabIndex={0}
           onKeyDown={(e) => {
@@ -78,12 +78,12 @@ export const Navbar: React.FC<NavbarProps> = ({
               <BookOpen className="w-5 h-5 text-[#F472B6]" />
             </div>
           </div>
-          <div>
+          <div className="hidden min-[375px]:block sm:block">
             <div className="flex items-center gap-1.5">
-              <span className="font-extrabold text-xl bg-gradient-to-r from-[#F472B6] to-[#FF85A1] bg-clip-text text-transparent">
+              <span className="font-extrabold text-lg sm:text-xl bg-gradient-to-r from-[#F472B6] to-[#FF85A1] bg-clip-text text-transparent">
                 VocabTOEIC
               </span>
-              <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full bg-[#FFF1F2] text-[#F472B6]">
+              <span className="hidden sm:inline-block text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full bg-[#FFF1F2] text-[#F472B6]">
                 Master
               </span>
             </div>
@@ -143,21 +143,37 @@ export const Navbar: React.FC<NavbarProps> = ({
         </nav>
 
         {/* Action Badges & Buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Daily Streak Badge */}
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FFF1F2] border border-[#FCE7F3] rounded-2xl text-xs font-bold text-[#F472B6]">
-            <Flame className="w-4 h-4 text-[#F472B6] fill-[#F472B6] animate-pulse" />
-            <span>{currentStreak} Ngày Streak</span>
+          <div className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 bg-[#FFF1F2] border border-[#FCE7F3] rounded-2xl text-[11px] sm:text-xs font-bold text-[#F472B6]">
+            <Flame className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#F472B6] fill-[#F472B6] animate-pulse shrink-0" />
+            <span className="whitespace-nowrap">{currentStreak}</span>
           </div>
 
-          {/* Mastered Words Count Badge
-          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#FCE7F3] rounded-2xl text-xs font-bold text-gray-700">
-            <CheckCircle2 className="w-4 h-4 text-[#F472B6]" />
-            <span>{stats.masteredCount}/{stats.totalWords} Đã thuộc</span>
-          </div>
-          */}
+          {/* Account Button - Mobile (avatar only) */}
+          <button
+            onClick={() => router.push('/app/account')}
+            className="flex sm:hidden items-center justify-center p-1 text-gray-700 hover:text-[#F472B6] hover:bg-[#FFF1F2] rounded-full transition-all"
+            aria-label="Cài đặt tài khoản"
+            title="Cài đặt tài khoản"
+          >
+            {isLoadingProfile ? (
+              <div className="w-8 h-8 rounded-full bg-gray-200 animate-pulse" />
+            ) : profile?.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={profile.avatarUrl}
+                alt="Avatar"
+                className="w-8 h-8 rounded-full object-cover border-2 border-[#FCE7F3]"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#F472B6] to-[#FFB6C1] flex items-center justify-center text-white text-sm font-bold border-2 border-[#FCE7F3]">
+                {profile?.displayName?.[0]?.toUpperCase() || profile?.email?.[0]?.toUpperCase() || 'U'}
+              </div>
+            )}
+          </button>
 
-          {/* Account & Sign Out Buttons */}
+          {/* Account & Sign Out Buttons - Desktop */}
           <div className="hidden sm:flex items-center gap-2">
             {/* Profile Avatar/Icon Button */}
             <button
@@ -191,85 +207,52 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      {/* Mobile Navigation Row */}
-      <div className="flex md:hidden items-center justify-around border-t border-[#FCE7F3] py-2.5 bg-white px-2 text-xs">
+      {/* Mobile Navigation Row - Single instance */}
+      <nav
+        className="flex md:hidden items-center justify-around border-t border-[#FCE7F3] py-2 bg-white px-2 text-xs"
+        aria-label="Mobile navigation"
+      >
         <button
           onClick={() => setActiveTab('dashboard')}
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl ${
+          className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[60px] ${
             activeTab === 'dashboard' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
           }`}
+          aria-current={activeTab === 'dashboard' ? 'page' : undefined}
         >
-          <Home className="w-4 h-4" />
-          Tổng quan
+          <Home className="w-5 h-5 sm:w-4 sm:h-4" />
+          <span className="text-[10px] sm:text-xs">Tổng quan</span>
         </button>
         <button
           onClick={() => setActiveTab('flashcard')}
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl ${
+          className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[60px] ${
             activeTab === 'flashcard' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
           }`}
+          aria-current={activeTab === 'flashcard' ? 'page' : undefined}
         >
-          <Sparkles className="w-4 h-4" />
-          Flashcard
+          <Sparkles className="w-5 h-5 sm:w-4 sm:h-4" />
+          <span className="text-[10px] sm:text-xs">Flashcard</span>
         </button>
         <button
           onClick={() => setActiveTab('quiz')}
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl ${
+          className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[60px] ${
             activeTab === 'quiz' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
           }`}
+          aria-current={activeTab === 'quiz' ? 'page' : undefined}
         >
-          <HelpCircle className="w-4 h-4" />
-          Quiz
+          <HelpCircle className="w-5 h-5 sm:w-4 sm:h-4" />
+          <span className="text-[10px] sm:text-xs">Quiz</span>
         </button>
         <button
           onClick={() => setActiveTab('vocab-manager')}
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl ${
+          className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[60px] ${
             activeTab === 'vocab-manager' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
           }`}
+          aria-current={activeTab === 'vocab-manager' ? 'page' : undefined}
         >
-          <Layers className="w-4 h-4" />
-          Quản lý
+          <Layers className="w-5 h-5 sm:w-4 sm:h-4" />
+          <span className="text-[10px] sm:text-xs">Quản lý</span>
         </button>
-      </div>
-
-      {/* Mobile Navigation Row */}
-      <div className="flex md:hidden items-center justify-around border-t border-[#FCE7F3] py-2.5 bg-white px-2 text-xs">
-        <button
-          onClick={() => setActiveTab('dashboard')}
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl ${
-            activeTab === 'dashboard' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
-          }`}
-        >
-          <Home className="w-4 h-4" />
-          Tổng quan
-        </button>
-        <button
-          onClick={() => setActiveTab('flashcard')}
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl ${
-            activeTab === 'flashcard' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
-          }`}
-        >
-          <Sparkles className="w-4 h-4" />
-          Flashcard
-        </button>
-        <button
-          onClick={() => setActiveTab('quiz')}
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl ${
-            activeTab === 'quiz' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
-          }`}
-        >
-          <HelpCircle className="w-4 h-4" />
-          Quiz
-        </button>
-        <button
-          onClick={() => setActiveTab('vocab-manager')}
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl ${
-            activeTab === 'vocab-manager' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
-          }`}
-        >
-          <Layers className="w-4 h-4" />
-          Quản lý
-        </button>
-      </div>
+      </nav>
     </header>
   );
 };
