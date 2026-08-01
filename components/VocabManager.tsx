@@ -1,28 +1,29 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-  Plus, 
-  Search, 
-  MoreVertical, 
-  Edit3, 
-  Trash2, 
-  List, 
-  Upload, 
-  BookOpen, 
-  Volume2, 
-  Lock, 
-  Globe, 
-  ChevronRight, 
-  CheckCircle2, 
-  Clock, 
-  FolderPlus, 
-  FileSpreadsheet, 
-  Database, 
-  X, 
+import {
+  Plus,
+  Search,
+  MoreVertical,
+  Edit3,
+  Trash2,
+  List,
+  Upload,
+  BookOpen,
+  Volume2,
+  Lock,
+  Globe,
+  ChevronRight,
+  CheckCircle2,
+  Clock,
+  FolderPlus,
+  FileSpreadsheet,
+  Database,
+  X,
   ChevronDown,
   Layers,
-  Sparkles
+  Sparkles,
+  Download
 } from 'lucide-react';
 import { Collection, Vocabulary, Topic, LearningStatus } from '../lib/types';
 
@@ -43,6 +44,10 @@ interface VocabManagerProps {
   onOpenCollectionModal: () => void;
   onOpenSectionModal: (collectionId: string) => void;
   onOpenSqlModal: () => void;
+  onExportCSV?: () => void;
+  onExportJSON?: () => void;
+  isExportingCSV?: boolean;
+  isExportingJSON?: boolean;
   deleteError?: string;
   onClearDeleteError?: () => void;
 }
@@ -64,6 +69,10 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
   onOpenCollectionModal,
   onOpenSectionModal,
   onOpenSqlModal,
+  onExportCSV,
+  onExportJSON,
+  isExportingCSV = false,
+  isExportingJSON = false,
   deleteError,
   onClearDeleteError,
 }) => {
@@ -235,7 +244,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                 className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-[#FFF1F2] text-gray-700 font-semibold cursor-pointer transition-colors"
               >
                 <FolderPlus className="w-4 h-4 text-[#F472B6]" />
-                <span>Tạo Bộ từ vựng (Collection)</span>
+                <span>Tạo Bộ từ vựng</span>
               </button>
 
               <button
@@ -260,6 +269,32 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                 <span>Import File Excel</span>
               </button>
 
+              <div className="border-t border-[#FCE7F3] my-1"></div>
+
+              <button
+                onClick={() => {
+                  setIsTopCreateOpen(false);
+                  if (onExportCSV) onExportCSV();
+                }}
+                disabled={isExportingCSV}
+                className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-blue-50 text-gray-700 font-semibold cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Download className="w-4 h-4 text-blue-600" />
+                <span>{isExportingCSV ? 'Đang xuất...' : 'Xuất CSV'}</span>
+              </button>
+              {/* Tạm ẩn JSON Backup cho MVP
+              <button
+                onClick={() => {
+                  setIsTopCreateOpen(false);
+                  if (onExportJSON) onExportJSON();
+                }}
+                disabled={isExportingJSON}
+                className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-blue-50 text-gray-700 font-semibold cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Download className="w-4 h-4 text-blue-600" />
+                <span>{isExportingJSON ? 'Đang xuất...' : 'Xuất JSON (Backup)'}</span>
+              </button>
+                
               <button
                 onClick={() => {
                   setIsTopCreateOpen(false);
@@ -270,6 +305,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                 <Database className="w-4 h-4 text-purple-500" />
                 <span>Nguồn Supabase SQL Script ↗</span>
               </button>
+              */}
             </div>
           )}
         </div>
@@ -672,7 +708,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                   className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#ED4F8E] to-[#F472B6] text-white font-bold text-xs shadow-2xs transition-all cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
-                  <span>+ Thêm Từ Vựng</span>
+                  <span>Thêm Từ Vựng</span>
                 </button>
 
                 <button

@@ -577,6 +577,57 @@ Dashboard renders with real data
 - **Timezone-aware:** All day boundaries use local timezone via `getLocalDayBoundaries()`
 - **RLS enforcement:** Zero client-supplied user_id parameters; all queries user-scoped at database level
 
+### 3.3. Export Data Flow
+
+**Phase 8: CSV and JSON Export**
+
+```
+User clicks "Xuất CSV" or "Xuất JSON (Backup)"
+  ↓
+VocabManager → onExportCSV() / onExportJSON()
+  ↓
+importExportService.exportVocabulariesAsCSV()
+  OR
+importExportService.exportBackupAsJSON()
+  ↓
+getVocabulariesForExport() / getUserDataForBackup()
+  ↓ RLS-enforced queries:
+  │
+  ├─ CSV Export:
+  │    SELECT vocabularies.*, topics.title, collections.title
+  │    FROM vocabularies
+  │    INNER JOIN topics ON vocabularies.topic_id = topics.id
+  │    INNER JOIN collections ON topics.collection_id = collections.id
+  │    WHERE user_id = auth.uid()
+  │    ORDER BY word
+  │      ↓
+  │    escapeCSVCell() for each field
+  │      ↓
+  │    UTF-8 BOM + CSV content
+  │      ↓
+  │    Blob → downloadBlob() → toeic-vocabulary-YYYY-MM-DD.csv
+  │
+  └─ JSON Backup:
+       Parallel queries (all RLS-scoped):
+       ├─ SELECT * FROM collections
+       ├─ SELECT * FROM topics
+       ├─ SELECT * FROM vocabularies
+       ├─ SELECT * FROM user_vocab_progress
+       └─ SELECT * FROM review_logs LIMIT 5000 (last 5000 reviews)
+         ↓
+       VocabularyBackup { version: 1, exportedAt, collections, topics, vocabularies, progress, reviewLogs }
+         ↓
+       JSON.stringify()
+         ↓
+       Blob → downloadBlob() → toeic-vocabulary-backup-YYYY-MM-DD.json
+```
+
+**Security:**
+- All queries RLS-enforced (auth.uid() = user_id)
+- No auth tokens, service keys, or passwords included
+- Review logs limited to last 5000 to prevent excessive file size
+- CSV escaping prevents injection: commas, quotes, newlines properly escaped
+
 ---
 
 ## 4. State Management

@@ -51,10 +51,15 @@ export async function parseExcelFile(file: File): Promise<ParsedVocabRow[]> {
 
           Object.keys(row).forEach((key) => {
             const val = String(row[key] || '').trim();
-            const normalizedKey = key.toLowerCase().replace(/[\s\-_]/g, '');
+            const normalizedKey = key
+              .trim()
+              .toLowerCase()
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/đ/g, 'd')
+              .replace(/[^a-z0-9]/g, '');
 
             if (
-              normalizedKey === 'tưvưng' ||
               normalizedKey === 'tuvung' ||
               normalizedKey === 'word' ||
               normalizedKey === 'vocabulary'
@@ -89,7 +94,6 @@ export async function parseExcelFile(file: File): Promise<ParsedVocabRow[]> {
             ) {
               example_translation = val;
             } else if (
-              normalizedKey === 'tưđôngnghia' ||
               normalizedKey === 'tudongnghia' ||
               normalizedKey === 'dongnghia' ||
               normalizedKey === 'synonyms' ||
@@ -97,7 +101,6 @@ export async function parseExcelFile(file: File): Promise<ParsedVocabRow[]> {
             ) {
               synonyms = val;
             } else if (
-              normalizedKey === 'cumtư' ||
               normalizedKey === 'cumtu' ||
               normalizedKey === 'collocations' ||
               normalizedKey === 'phrases' ||
@@ -105,7 +108,6 @@ export async function parseExcelFile(file: File): Promise<ParsedVocabRow[]> {
             ) {
               collocations = val;
             } else if (
-              normalizedKey === 'loaitư' ||
               normalizedKey === 'loaitu' ||
               normalizedKey === 'partofspeech' ||
               normalizedKey === 'pos'
@@ -157,7 +159,7 @@ export function downloadExcelTemplate(): void {
   const headers = [
     'Từ vựng',
     'IPA-UK',
-    'IPK-US',
+    'IPA-US',
     'Meaning',
     'example',
     'example_vi',
@@ -170,7 +172,7 @@ export function downloadExcelTemplate(): void {
     {
       'Từ vựng': 'Obligation',
       'IPA-UK': '/ˌɒb.lɪˈɡeɪ.ʃən/',
-      'IPK-US': '/ˌɑː.bləˈɡeɪ.ʃən/',
+      'IPA-US': '/ˌɑː.bləˈɡeɪ.ʃən/',
       'Meaning': 'Nghĩa vụ, bổn phận, trách nhiệm bắt buộc',
       example: 'The vendor has a legal obligation to deliver the goods on schedule.',
       example_vi: 'Bên bán có nghĩa vụ pháp lý phải giao hàng đúng tiến độ.',

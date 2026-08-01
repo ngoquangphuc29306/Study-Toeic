@@ -129,7 +129,7 @@ export const AddVocabModal: React.FC<AddVocabModalProps> = ({
         {/* Header & Tabs */}
         <div className="space-y-3">
           <h3 className="text-xl font-extrabold text-gray-800">
-            Thêm Mới Từ Vựng Đơn Lẻ
+            Thêm Mới Từ Vựng
           </h3>
 
           <div className="flex items-center gap-1 bg-pink-50/80 p-1 rounded-2xl border border-pink-100 text-xs font-bold">
@@ -148,7 +148,7 @@ export const AddVocabModal: React.FC<AddVocabModalProps> = ({
                 activeTab === 'topic' ? 'bg-white text-pink-600 shadow-2xs' : 'text-gray-500'
               }`}
             >
-              Tạo Section Bài Học Mới
+              Tạo Học Phần Mới
             </button>
           </div>
         </div>

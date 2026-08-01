@@ -33,6 +33,10 @@ import { TopicHasVocabulariesError } from '../../services/topicErrors';
 import { VocabularyValidationError } from '../../services/vocabularyErrors';
 import { createClient } from '@/lib/supabase/client';
 import { clearStudySession } from '@/lib/session/storage';
+import {
+  exportVocabulariesAsCSV,
+  exportBackupAsJSON
+} from '../../services/importExportService';
 
 import { Collection, Topic, Vocabulary, StudyStats, LearningStatus } from '../../lib/types';
 
@@ -279,6 +283,35 @@ export default function AppPage() {
     setActiveTab('quiz');
   };
 
+  const [isExportingCSV, setIsExportingCSV] = useState(false);
+  const [isExportingJSON, setIsExportingJSON] = useState(false);
+
+  const handleExportCSV = async () => {
+    if (isExportingCSV) return;
+    setIsExportingCSV(true);
+    try {
+      await exportVocabulariesAsCSV();
+    } catch (err) {
+      console.error('Export CSV error:', err);
+      alert('Không thể xuất file CSV. Vui lòng thử lại.');
+    } finally {
+      setIsExportingCSV(false);
+    }
+  };
+
+  const handleExportJSON = async () => {
+    if (isExportingJSON) return;
+    setIsExportingJSON(true);
+    try {
+      await exportBackupAsJSON();
+    } catch (err) {
+      console.error('Export JSON error:', err);
+      alert('Không thể xuất file JSON backup. Vui lòng thử lại.');
+    } finally {
+      setIsExportingJSON(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#FFF9FA] space-y-4">
@@ -374,6 +407,10 @@ export default function AppPage() {
               setIsCollectionModalOpen(true);
             }}
             onOpenSqlModal={() => setIsSqlModalOpen(true)}
+            onExportCSV={handleExportCSV}
+            onExportJSON={handleExportJSON}
+            isExportingCSV={isExportingCSV}
+            isExportingJSON={isExportingJSON}
             deleteError={deleteError}
             onClearDeleteError={() => setDeleteError('')}
           />
