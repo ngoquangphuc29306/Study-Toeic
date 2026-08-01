@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Navbar } from '../../components/Navbar';
 import { Dashboard } from '../../components/Dashboard';
 import { FlashcardMode } from '../../components/FlashcardMode';
@@ -33,6 +34,7 @@ import { TopicHasVocabulariesError } from '../../services/topicErrors';
 import { VocabularyValidationError } from '../../services/vocabularyErrors';
 import { createClient } from '@/lib/supabase/client';
 import { clearStudySession } from '@/lib/session/storage';
+import { buildLoginUrl } from '@/lib/auth/safe-redirect';
 import {
   exportVocabulariesAsCSV,
   exportBackupAsJSON
@@ -48,6 +50,11 @@ import { Collection, Topic, Vocabulary, StudyStats, LearningStatus } from '../..
 type CreateModalMode = 'collection' | 'section';
 
 export default function AppPage() {
+  const router = useRouter();
+
+  // Auth state
+  const [authStatus, setAuthStatus] = useState<'checking' | 'authenticated' | 'unauthenticated'>('checking');
+
   const [activeTab, setActiveTab] = useState<'dashboard' | 'flashcard' | 'quiz' | 'vocab-manager'>('dashboard');
   const [selectedTopicId, setSelectedTopicId] = useState<string>('all');
   const [initialFlashcardStatus, setInitialFlashcardStatus] = useState<'all' | 'new' | 'learning' | 'mastered' | undefined>(undefined);
@@ -121,6 +128,11 @@ export default function AppPage() {
       const currentUserId = session?.user?.id || null;
       const previousUserId = previousUserIdRef.current;
 
+      // Defensive: Only handle events when actually on /app route
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/app')) {
+        return;
+      }
+
       if (event === 'PASSWORD_RECOVERY') {
         // PASSWORD_RECOVERY is handled by root-level AuthEventBridge
         // This is a fallback if user reaches /app during recovery flow
@@ -155,7 +167,15 @@ export default function AppPage() {
 
         // Navbar will clear its profile state on next render
         // No need to call getCurrentProfile() after sign out
-      } else if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+      } else if (event === 'SIGNED_IN') {
+        // SIGNED_IN: New authentication session established
+        // This is a real login, not just a user metadata update
+
+        // Validate session exists
+        if (!session?.user) {
+          return;
+        }
+
         // Detect actual user identity change (Alice → Bob)
         const userChanged = previousUserId !== null && previousUserId !== currentUserId;
 
@@ -188,8 +208,29 @@ export default function AppPage() {
         previousUserIdRef.current = currentUserId;
 
         // Reload data for authenticated user
-        if (session?.user) {
-          refreshAppData();
+        refreshAppData();
+      } else if (event === 'USER_UPDATED') {
+        // USER_UPDATED: User metadata changed (name, avatar, password, etc.)
+        // This is NOT a new login - do not treat it as SIGNED_IN
+
+        // Defensive: Ignore USER_UPDATED during password recovery flow
+        if (typeof window !== 'undefined') {
+          const recoveryMarker = sessionStorage.getItem('password_recovery_flow');
+          if (recoveryMarker) {
+            // Password recovery in progress - ignore this event
+            return;
+          }
+        }
+
+        // For USER_UPDATED on /app:
+        // - Do NOT clear all app state
+        // - Do NOT reload collections/topics/vocabulary/dashboard
+        // - Profile will be refreshed by Navbar's own effect when needed
+        // - No action required here
+
+        // Update tracked user ID if it changed (edge case: user ID shouldn't change on update)
+        if (currentUserId && currentUserId !== previousUserId) {
+          previousUserIdRef.current = currentUserId;
         }
       }
     });
@@ -199,8 +240,55 @@ export default function AppPage() {
     };
   }, [refreshAppData]);
 
-  // Initial Data Load
+  // Auth Initialization Guard
+  // Check authentication BEFORE loading any data
+  // Flow: checking → verify user → authenticated OR redirect to login
   useEffect(() => {
+    let isMounted = true;
+
+    const checkAuth = async () => {
+      try {
+        const supabase = createClient();
+        const { data: { user }, error } = await supabase.auth.getUser();
+
+        if (!isMounted) return;
+
+        if (error || !user) {
+          // Not authenticated - redirect to login with return path
+          const loginUrl = buildLoginUrl('/app');
+          router.replace(loginUrl);
+          setAuthStatus('unauthenticated');
+          return;
+        }
+
+        // Authenticated - mark as ready
+        setAuthStatus('authenticated');
+      } catch (err) {
+        console.error('Auth check error:', err);
+        if (isMounted) {
+          // On error, redirect to login
+          const loginUrl = buildLoginUrl('/app');
+          router.replace(loginUrl);
+          setAuthStatus('unauthenticated');
+        }
+      }
+    };
+
+    checkAuth();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [router]);
+
+  // Initial Data Load
+  // Only runs AFTER authentication is confirmed
+  useEffect(() => {
+    // Wait for auth confirmation
+    if (authStatus !== 'authenticated') {
+      return;
+    }
+
     let isMounted = true;
     const initData = async () => {
       try {
@@ -235,7 +323,7 @@ export default function AppPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [authStatus]); // Dependency on authStatus to run after auth confirmed
 
   // Handle Updates & Actions
   // Phase 5: handleUpdateProgress now throws errors for FlashcardMode to handle
@@ -358,7 +446,9 @@ export default function AppPage() {
     }
   };
 
-  if (isLoading) {
+  // Loading UI - shown during auth check and initial data load
+  // Do not render app UI until auth is confirmed and data is loaded
+  if (authStatus === 'checking' || isLoading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#FFF9FA] space-y-4">
         <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#F472B6] to-[#FF85A1] p-0.5 animate-bounce shadow-lg shadow-pink-100">
@@ -367,10 +457,15 @@ export default function AppPage() {
           </div>
         </div>
         <p className="text-xs font-bold text-[#F472B6] animate-pulse">
-          Đang tải hệ thống VocabTOEIC...
+          {authStatus === 'checking' ? 'Đang xác thực...' : 'Đang tải hệ thống VocabTOEIC...'}
         </p>
       </div>
     );
+  }
+
+  // If unauthenticated, render null while redirecting
+  if (authStatus === 'unauthenticated') {
+    return null;
   }
 
   return (
