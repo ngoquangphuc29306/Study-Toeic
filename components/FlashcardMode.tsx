@@ -837,26 +837,26 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   const currentStepIndex = modeSteps.findIndex((s) => s.id === subMode);
 
   return (
-    <div className="max-w-3xl mx-auto space-y-5 pb-12">
+    <div className="max-w-3xl mx-auto space-y-4 sm:space-y-5 pb-8 sm:pb-12 px-4 sm:px-0">
       {/* Top Header Navigation */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-2 sm:gap-4">
         <button
           onClick={onBackToDashboard}
-          className="inline-flex items-center gap-2 text-xs font-bold text-gray-700 hover:text-[#ED4F8E] bg-white px-4 py-2 rounded-2xl border border-[#FCE7F3] shadow-2xs transition-all cursor-pointer"
+          className="inline-flex items-center gap-2 text-xs font-bold text-gray-700 hover:text-[#ED4F8E] bg-white px-3 sm:px-4 py-2 rounded-2xl border border-[#FCE7F3] shadow-2xs transition-all cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Dashboard</span>
+          <span className="hidden xs:inline sm:inline">Dashboard</span>
         </button>
 
         {/* Topic & Status Display (Static Text Badges) */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           {/* Status Badge */}
-          <span className="bg-white border border-[#FCE7F3] rounded-2xl text-xs font-bold px-3 py-2 text-gray-800 shadow-2xs select-none">
+          <span className="bg-white border border-[#FCE7F3] rounded-2xl text-[10px] sm:text-xs font-bold px-2 sm:px-3 py-1.5 sm:py-2 text-gray-800 shadow-2xs select-none">
             {currentStatusLabel}
           </span>
 
           {/* Topic Badge */}
-          <span className="bg-white border border-[#FCE7F3] rounded-2xl text-xs font-bold px-3.5 py-2 text-gray-800 shadow-2xs select-none">
+          <span className="bg-white border border-[#FCE7F3] rounded-2xl text-[10px] sm:text-xs font-bold px-2 sm:px-3.5 py-1.5 sm:py-2 text-gray-800 shadow-2xs select-none">
             {currentTopicTitle}
           </span>
         </div>
@@ -879,18 +879,18 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
           return (
             <div
               key={step.id}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs whitespace-nowrap transition-all select-none ${badgeStyle}`}
+              className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-2 rounded-xl text-[10px] sm:text-xs whitespace-nowrap transition-all select-none ${badgeStyle}`}
             >
               {isPassed ? <Check className="w-3.5 h-3.5 text-[#059669]" /> : step.icon}
-              <span>{step.label}</span>
+              <span className="hidden xs:inline sm:inline">{step.label}</span>
             </div>
           );
         })}
       </div>
 
       {/* MAIN CONTENT STUDY CARD CONTAINER */}
-      <div className="bg-white rounded-[32px] border-2 border-[#FCE7F3] p-6 sm:p-8 shadow-xs relative space-y-6">
-        
+      <div className="bg-white rounded-[20px] sm:rounded-[32px] border-2 border-[#FCE7F3] p-4 sm:p-6 lg:p-8 shadow-xs relative space-y-4 sm:space-y-6">
+
         {/* Card Top Action Icons (Check / Trash / Settings / Alert) */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -921,7 +921,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
             <button
               onClick={() => handleRating(currentVocab.status !== 'mastered')}
               title={currentVocab.status === 'mastered' ? 'Đã thuộc' : 'Đánh dấu đã thuộc'}
-              className={`p-2 rounded-xl border transition-all cursor-pointer ${
+              className={`p-2 sm:p-2.5 rounded-xl border transition-all cursor-pointer ${
                 currentVocab.status === 'mastered'
                   ? 'bg-[#D1FAE5] border-[#059669] text-[#059669]'
                   : 'bg-white border-[#FCE7F3] text-gray-400 hover:text-[#059669] hover:bg-[#D1FAE5]/40'
@@ -934,7 +934,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
             <button
               onClick={handleDeleteCurrentVocab}
               title="Xóa từ vựng khỏi bài học này"
-              className="p-2 rounded-xl bg-white border border-[#FCE7F3] text-gray-400 hover:text-[#E11D48] hover:bg-[#FFE4E6] transition-all cursor-pointer"
+              className="p-2 sm:p-2.5 rounded-xl bg-white border border-[#FCE7F3] text-gray-400 hover:text-[#E11D48] hover:bg-[#FFE4E6] transition-all cursor-pointer"
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -943,7 +943,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
             <button
               onClick={() => setShowSettingsModal(true)}
               title="Cài đặt thẻ"
-              className="p-2 rounded-xl bg-white border border-[#FCE7F3] text-gray-400 hover:text-gray-700 hover:bg-[#FFF1F2] transition-all cursor-pointer"
+              className="p-2 sm:p-2.5 rounded-xl bg-white border border-[#FCE7F3] text-gray-400 hover:text-gray-700 hover:bg-[#FFF1F2] transition-all cursor-pointer"
             >
               <Settings className="w-4 h-4" />
             </button>
@@ -952,7 +952,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
             <button
               onClick={() => setShowReportModal(true)}
               title="Báo cáo từ này"
-              className="p-2 rounded-xl bg-white border border-[#FCE7F3] text-gray-400 hover:text-[#E11D48] hover:bg-[#FFE4E6] transition-all cursor-pointer"
+              className="p-2 sm:p-2.5 rounded-xl bg-white border border-[#FCE7F3] text-gray-400 hover:text-[#E11D48] hover:bg-[#FFE4E6] transition-all cursor-pointer"
             >
               <AlertTriangle className="w-4 h-4" />
             </button>
@@ -983,7 +983,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
               <div className="absolute inset-0 w-full h-full flex flex-col items-center justify-between text-center p-6 sm:p-8 rounded-3xl bg-gradient-to-b from-[#FFFDFE] via-white to-[#FFF5F7] border border-[#FCE7F3] shadow-xs hover:shadow-md transition-shadow [backface-visibility:hidden]">
                 <div className="space-y-4 my-auto">
                   <div className="flex items-center justify-center gap-2 flex-wrap">
-                    <h2 className="text-3xl sm:text-5xl font-black text-gray-900 tracking-tight">
+                    <h2 className="text-3xl sm:text-5xl font-black text-gray-900 tracking-tight break-words max-w-full">
                       {currentVocab.word}
                     </h2>
                     {showPartOfSpeech && currentVocab.part_of_speech && (
@@ -1208,7 +1208,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
                       if (!typingSubmitted) handleCheckTyping();
                     }
                   }}
-                  className={`w-full p-3.5 pr-12 bg-white border-2 rounded-2xl text-sm font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#F472B6] transition-all ${
+                  className={`w-full p-3.5 pr-12 bg-white border-2 rounded-2xl text-base sm:text-sm font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#F472B6] transition-all ${
                     typingSubmitted
                       ? isTypingCorrect
                         ? 'border-[#059669] bg-[#D1FAE5]/30'
@@ -1481,8 +1481,11 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
         )}
 
         {/* Shortcut hints */}
-        <p className="text-center text-[11px] text-gray-400 font-semibold">
+        <p className="text-center text-[11px] text-gray-400 font-semibold hidden sm:block">
           Ấn &quot;Đã thuộc&quot; để hiện 4 nút đánh giá · Ấn &quot;Chưa nhớ&quot; để qua phần bài tập khác (Flashcard → Trắc nghiệm → Gõ từ → Phát âm)
+        </p>
+        <p className="text-center text-[10px] text-gray-400 font-semibold sm:hidden">
+          Ấn &quot;Đã thuộc&quot; để đánh giá hoặc &quot;Chưa nhớ&quot; để luyện thêm
         </p>
       </div>
 
@@ -1492,18 +1495,21 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
           Chế độ {subMode === 'flashcard' ? '1' : subMode === 'quiz' ? '2' : subMode === 'typing' ? '3' : '4'}/4: {subMode === 'flashcard' ? 'Flashcard' : subMode === 'quiz' ? 'Trắc nghiệm' : subMode === 'typing' ? 'Gõ từ' : 'Phát âm'}
         </p>
 
-        <div className="flex items-center justify-center gap-6 text-xs font-bold">
+        <div className="flex items-center justify-center gap-4 sm:gap-6 text-xs font-bold">
           <div className="flex items-center gap-1.5">
             <span className="text-[#0284C7] font-black">{activeVocabs.length}</span>
-            <span className="text-gray-500">Từ mới</span>
+            <span className="text-gray-500 hidden xs:inline sm:inline">Từ mới</span>
+            <span className="text-gray-500 xs:hidden">Mới</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="text-[#A855F7] font-black">{sessionStats.mastered}</span>
-            <span className="text-gray-500">Đã học</span>
+            <span className="text-gray-500 hidden xs:inline sm:inline">Đã học</span>
+            <span className="text-gray-500 xs:hidden">Học</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="text-[#ED4F8E] font-black">{sessionStats.needsReview}</span>
-            <span className="text-gray-500">Ôn tập</span>
+            <span className="text-gray-500 hidden xs:inline sm:inline">Ôn tập</span>
+            <span className="text-gray-500 xs:hidden">Ôn</span>
           </div>
         </div>
       </div>
