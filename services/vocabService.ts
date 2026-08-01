@@ -343,14 +343,8 @@ export async function updateUserProgress(
     // Submit rating via RPC - server handles all scheduling logic
     await submitRatingViaRpc(vocabId, effectiveRating, idempotencyKey);
 
-    // Record today in study dates history for streak calculation
-    const now = new Date();
-    const todayDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const studyDates = getUserScopedArray<string>(LOCAL_STUDY_DATES_KEY, userId);
-    if (!studyDates.includes(todayDateStr)) {
-      studyDates.push(todayDateStr);
-      setUserScopedArray(LOCAL_STUDY_DATES_KEY, userId, studyDates);
-    }
+    // Phase 7: No longer update localStorage study dates
+    // Dashboard now queries review_logs directly for streak calculation
   } catch (err) {
     console.error('updateUserProgress error:', err);
     throw err;
@@ -390,7 +384,9 @@ function calculateStreak(studyDatesSet: Set<string>): number {
 }
 
 export async function getStudyStats(): Promise<StudyStats> {
-  // Phase 5: Stats computed from Supabase vocabularies + Supabase progress
+  // Phase 7: Stats are now computed in dashboardService from Supabase
+  // This function kept for backward compatibility but should be replaced
+  // with getDashboardMetrics() calls in components
   const userId = await getAuthUserId();
   if (!userId) {
     console.warn('getStudyStats: No authenticated user, returning empty stats');
@@ -409,40 +405,21 @@ export async function getStudyStats(): Promise<StudyStats> {
 
   let masteredCount = 0;
   let learningCount = 0;
-  let todayStudiedCount = 0;
-
-  const today = new Date();
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-
-  const storedDates = getUserScopedArray<string>(LOCAL_STUDY_DATES_KEY, userId);
-  const studyDatesSet = new Set<string>(storedDates);
 
   allVocabs.forEach((v) => {
     if (v.status === 'mastered') masteredCount++;
     else if (v.status === 'learning') learningCount++;
-
-    if (v.last_reviewed_at) {
-      const d = new Date(v.last_reviewed_at);
-      if (!isNaN(d.getTime())) {
-        const dStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        studyDatesSet.add(dStr);
-        if (dStr === todayStr) {
-          todayStudiedCount++;
-        }
-      }
-    }
   });
 
-  const dailyStreak = calculateStreak(studyDatesSet);
-
+  // Phase 7: Return minimal stats for backward compatibility
+  // Real Dashboard metrics now come from dashboardService.getDashboardMetrics()
   return {
     totalWords,
     masteredCount,
     learningCount,
     newCount: Math.max(0, totalWords - (masteredCount + learningCount)),
-    dailyStreak,
-    todayStudiedCount,
-    lastStudyDate: todayStr,
+    dailyStreak: 0, // Phase 7: Replaced by dashboardService
+    todayStudiedCount: 0, // Phase 7: Replaced by dashboardService
   };
 }
 

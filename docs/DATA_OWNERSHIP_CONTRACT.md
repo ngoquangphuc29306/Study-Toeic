@@ -1,9 +1,9 @@
 # VocabTOEIC — Data Ownership Contract
 
-**Document Version**: 2.5
+**Document Version**: 2.6
 **Created**: 2026-07-30
-**Updated**: 2026-07-31
-**Status**: Product Owner Approved (Phase 2E Complete)
+**Updated**: 2026-08-01
+**Status**: Product Owner Approved (Phase 7 Complete)
 **Authority**: Zero Trust — Server enforces all ownership rules
 
 **IMPORTANT**: All SQL examples in this document are **PROPOSED architectural drafts** and are **NOT migration-ready**. They require validation, testing, and adjustment before deployment to Supabase.
@@ -1299,5 +1299,6 @@ Users recreate Vocabularies in Supabase after Phase 2E deployment. Legacy localS
 | 2.3 | 2026-07-30 | Phase 2C Fix | Added user-scoped localStorage: Topics/Vocabularies namespaced per authenticated user (vocab_local_topics_v1:<user-id>), prevents cross-user data leakage, legacy global keys no longer read, auth state reset clears data on account change, icon defaults documented |
 | 2.4 | 2026-07-30 | Phase 2D | Topics migrated to Supabase with database UUIDs, RLS policies enforce ownership, composite FK enforces parent Collection ownership, Topic delete blocks when localStorage Vocabularies exist, Vocabulary create/update validates Topic UUID, legacy localStorage Topic keys inactive, Collection delete checks Supabase Topics instead of localStorage |
 | 2.5 | 2026-07-31 | Phase 2E | Vocabularies migrated to Supabase with database UUIDs, RLS policies enforce ownership, composite FK enforces parent Topic ownership, Vocabulary delete cleans localStorage progress references, Topic delete blocks when Supabase Vocabularies exist, legacy localStorage Vocabulary keys inactive for domain data, study/SRS progress remains in user-scoped localStorage referencing Supabase Vocabulary UUIDs |
+| 2.6 | 2026-08-01 | Phase 7 | Dashboard statistics migrated from localStorage to Supabase: streak from review_logs consecutive days, today activity from review_logs with timezone-aware boundaries, due count from user_vocab_progress.next_review_at server-side calculation, unique vocabulary studied today from review_logs DISTINCT count, localStorage study dates (vocab_study_dates_v1:<user-id>) no longer written but kept for backward compatibility, daily goal preference remains in localStorage as user setting not statistic, dashboardService.ts created for Dashboard-specific queries with RLS enforcement |
 
 **Approval**: This document defines the security model. Any deviation requires security review.

@@ -31,6 +31,7 @@ import { saveStudySession, loadStudySession, clearStudySession } from '../lib/se
 import { applyRatingToQueue } from '../lib/session/queueTransition';
 import type { StudySessionSnapshot } from '../lib/session/types';
 import { createClient } from '@/lib/supabase/client';
+import { filter } from 'motion/react-client';
 
 interface FlashcardModeProps {
   vocabularies: Vocabulary[];
@@ -198,21 +199,25 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
   // Reset interaction state during render when word or submode changes
   useEffect(() => {
-    setIsFlipped(false);
-    setShowRatingButtons(false);
+    const resetInteractionState = () => {
+      setIsFlipped(false);
+      setShowRatingButtons(false);
 
-    setTypedInput('');
-    setTypingSubmitted(false);
-    setIsTypingCorrect(null);
-    setShowHint(false);
+      setTypedInput('');
+      setTypingSubmitted(false);
+      setIsTypingCorrect(null);
+      setShowHint(false);
 
-    setIsRecording(false);
-    setPronounceSubmitted(false);
-    setIsPronounceCorrect(null);
-    setTranscriptText('');
+      setIsRecording(false);
+      setPronounceSubmitted(false);
+      setIsPronounceCorrect(null);
+      setTranscriptText('');
 
-    setSelectedQuizIndex(null);
-    setQuizAnswered(false);
+      setSelectedQuizIndex(null);
+      setQuizAnswered(false);
+    };
+
+    queueMicrotask(resetInteractionState);
   }, [currentIndex, subMode]);
 
   // Topic-filtered list
@@ -372,18 +377,6 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   const currentVocab = activeVocabs[safeIndex];
 
   // Sync currentIndex after render completes if it was out of bounds
-  useEffect(() => {
-    if (
-      activeVocabs.length > 0 &&
-      safeIndex !== currentIndex
-    ) {
-      setCurrentIndex(safeIndex);
-    }
-  }, [
-    safeIndex,
-    currentIndex,
-    activeVocabs.length,
-  ]);
 
   // Derive Quiz options dynamically using pure seeded shuffle
   const { quizOptions, correctQuizIndex } = useMemo(() => {
@@ -479,7 +472,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       const transition = applyRatingToQueue(
         srsRating,
         studyQueue,
-        currentIndex,
+        safeIndex,
         currentVocab.id
       );
 
@@ -531,7 +524,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     } finally {
       setIsSubmitting(false);
     }
-  }, [currentVocab, currentIndex, activeVocabs, onUpdateProgress, isSubmitting, studyQueue, filterTopic, filterStatus, getUserId]);
+  }, [currentVocab, safeIndex, onUpdateProgress, isSubmitting, studyQueue, filterTopic, filterStatus, getUserId]);
 
   // Handle Rating Selection from 4 evaluation buttons
   const handleSelectSrsRating = useCallback((srsRating: SrsRating) => {

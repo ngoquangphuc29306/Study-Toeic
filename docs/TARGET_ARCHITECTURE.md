@@ -1,8 +1,8 @@
 # VocabTOEIC — Target Architecture
 
-**Document Version**: 2.0  
-**Created**: 2026-07-30  
-**Updated**: 2026-07-30  
+**Document Version**: 2.1
+**Created**: 2026-07-30
+**Updated**: 2026-08-01  
 **Status**: Official Architecture Contract  
 **Authority**: Defines target architecture patterns for production
 
@@ -542,23 +542,40 @@ const rateCard = async (rating: SrsRating) => {
 
 ### 3.2. Load Dashboard Stats Flow
 
+**Phase 7: Real Supabase Data**
+
 ```
 User opens Dashboard
   ↓
-<Dashboard /> mounts
+<Dashboard /> component mounts
+  ↓ useEffect(() => loadMetrics())
+dashboardService.getDashboardMetrics()
+  ↓ 4 bounded RLS-enforced queries:
+  │
+  ├─ Query 1: COUNT(*) FROM vocabularies
+  │    └─ Returns: totalVocabulary
+  │
+  ├─ Query 2: SELECT status, again_count, next_review_at FROM user_vocab_progress
+  │    └─ Client aggregation → newVocabulary, learningVocabulary, masteredVocabulary, dueVocabulary, difficultVocabulary
+  │
+  ├─ Query 3: SELECT id, vocabulary_id FROM review_logs WHERE reviewed_at IN [startOfToday, endOfToday]
+  │    └─ Client aggregation → reviewsToday (count), uniqueVocabularyStudiedToday (distinct vocabulary_id)
+  │
+  └─ Query 4: SELECT reviewed_at FROM review_logs WHERE reviewed_at >= last365Days
+       └─ calculateStudyStreak() → ONE bounded query + client-side streak calculation
   ↓
-useDashboardStats() hook
-  ↓ useEffect fetch
-Repository (getStats)
-  ↓ Multiple Supabase queries (parallel)
-Database returns aggregated data
+Returns DashboardMetrics object
   ↓
-Repository maps to StatsViewModel
+setState(dashboardMetrics)
   ↓
-Hook setState(stats)
-  ↓
-Component renders stats cards
+Dashboard renders with real data
 ```
+
+**Key Optimizations:**
+- **Streak calculation:** ONE query fetches 365 days → client deduplicates dates → pure function calculates consecutive days
+- **Review metrics:** Single query returns both total count and unique vocabulary count
+- **Timezone-aware:** All day boundaries use local timezone via `getLocalDayBoundaries()`
+- **RLS enforcement:** Zero client-supplied user_id parameters; all queries user-scoped at database level
 
 ---
 

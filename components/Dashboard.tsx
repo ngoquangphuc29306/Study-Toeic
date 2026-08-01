@@ -1,19 +1,19 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import { 
-  Sparkles, 
-  CheckCircle2, 
-  Clock, 
-  BookOpen, 
-  Play, 
-  Search, 
-  Filter, 
-  Briefcase, 
-  FileText, 
-  Plane, 
-  CreditCard, 
-  TrendingUp, 
+import React, { useState, useMemo, useEffect } from 'react';
+import {
+  Sparkles,
+  CheckCircle2,
+  Clock,
+  BookOpen,
+  Play,
+  Search,
+  Filter,
+  Briefcase,
+  FileText,
+  Plane,
+  CreditCard,
+  TrendingUp,
   HelpCircle,
   PlusCircle,
   ArrowRight,
@@ -32,6 +32,11 @@ import {
 } from 'lucide-react';
 import { Topic, StudyStats, Vocabulary } from '../lib/types';
 import { SrsRating } from '../services/vocabService';
+import {
+  getDashboardMetrics,
+  getWeekActivity,
+  type DashboardMetrics
+} from '../services/dashboardService';
 
 interface DashboardProps {
   topics: Topic[];
@@ -64,7 +69,48 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
-  // Daily Goal Settings State
+  // Phase 7: Real Supabase metrics
+  const [dashboardMetrics, setDashboardMetrics] = useState<DashboardMetrics | null>(null);
+  const [weekActivity, setWeekActivity] = useState<Array<{ date: string; count: number }>>([]);
+  const [isLoadingMetrics, setIsLoadingMetrics] = useState(true);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
+
+  // Load real Dashboard metrics from Supabase
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadMetrics = async () => {
+      try {
+        setIsLoadingMetrics(true);
+        setMetricsError(null);
+
+        const [metrics, weekData] = await Promise.all([
+          getDashboardMetrics(),
+          getWeekActivity(),
+        ]);
+
+        if (isMounted) {
+          setDashboardMetrics(metrics);
+          setWeekActivity(weekData);
+          setIsLoadingMetrics(false);
+        }
+      } catch (err) {
+        console.error('Dashboard metrics load error:', err);
+        if (isMounted) {
+          setMetricsError(err instanceof Error ? err.message : 'Không thể tải thống kê');
+          setIsLoadingMetrics(false);
+        }
+      }
+    };
+
+    loadMetrics();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [vocabularies]); // Reload when vocabularies change
+
+  // Daily Goal Settings State (localStorage only for user preference)
   const [dailyGoal, setDailyGoal] = useState<number>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('vocab_daily_goal');
@@ -193,11 +239,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
       item.meaning.toLowerCase().includes(detailSearchTerm.toLowerCase())
   );
 
-  // Compute New Words Progress
-  const newWordsCount = stats.todayStudiedCount || 0;
+  // Phase 7: Compute New Words Progress from real metrics
+  const newWordsCount = dashboardMetrics?.uniqueVocabularyStudiedToday || 0;
   const newWordsPercent = Math.min(100, Math.round((newWordsCount / dailyGoal) * 100));
 
-  // Compute Week Days for Streak Tracker
+  // Phase 7: Compute Week Days from real Supabase review_logs data
   const weekDays = useMemo(() => {
     const now = new Date();
     const currentDayOfWeek = now.getDay(); // 0 = Sun, 1 = Mon...
@@ -207,25 +253,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     const daysName = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
-    let storedDates: string[] = [];
-    if (typeof window !== 'undefined') {
-      try {
-        storedDates = JSON.parse(localStorage.getItem('vocab_study_dates_v1') || '[]');
-      } catch (e) {
-        storedDates = [];
-      }
-    }
-    const studyDatesSet = new Set<string>(storedDates);
-
-    vocabularies.forEach((v) => {
-      if (v.last_reviewed_at) {
-        const d = new Date(v.last_reviewed_at);
-        if (!isNaN(d.getTime())) {
-          const dStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-          studyDatesSet.add(dStr);
-        }
-      }
-    });
+    // Build set of studied dates from weekActivity (real Supabase data)
+    const studyDatesSet = new Set<string>(
+      weekActivity.filter(a => a.count > 0).map(a => a.date)
+    );
 
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
@@ -245,7 +276,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         isStudied,
       };
     });
-  }, [vocabularies]);
+  }, [weekActivity]);
 
   const studiedDaysThisWeekCount = weekDays.filter((d) => d.isStudied).length;
 
@@ -331,11 +362,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <span>Chuỗi ngày học tập</span>
             </div>
             <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${
-              stats.dailyStreak > 0
+              (dashboardMetrics?.studyStreak || 0) > 0
                 ? 'bg-orange-50 text-orange-600 border-orange-200'
                 : 'bg-gray-50 text-gray-500 border-gray-200'
             }`}>
-              {stats.dailyStreak > 0 ? '🔥 Chuỗi đang hoạt động' : '❄️ Bắt đầu chuỗi ngay'}
+              {(dashboardMetrics?.studyStreak || 0) > 0 ? '🔥 Chuỗi đang hoạt động' : '❄️ Bắt đầu chuỗi ngay'}
             </span>
           </div>
 
@@ -343,13 +374,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className="space-y-1">
               <div className="flex items-baseline gap-2">
                 <span className="text-4xl sm:text-5xl font-black text-gray-900 tracking-tight">
-                  {stats.dailyStreak}
+                  {isLoadingMetrics ? '...' : (dashboardMetrics?.studyStreak || 0)}
                 </span>
                 <span className="text-lg font-bold text-gray-500">ngày liên tiếp</span>
               </div>
               <p className="text-xs text-gray-500 font-medium leading-relaxed">
-                {stats.dailyStreak > 0
-                  ? `Xuất sắc! Bạn đã duy trì thói quen học tập liên tục ${stats.dailyStreak} ngày.`
+                {(dashboardMetrics?.studyStreak || 0) > 0
+                  ? `Xuất sắc! Bạn đã duy trì thói quen học tập liên tục ${dashboardMetrics?.studyStreak} ngày.`
                   : 'Học hoặc ôn từ vựng hôm nay để thắp sáng ngọn lửa học tập!'}
               </p>
             </div>
@@ -420,7 +451,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
               <div className="text-center py-2 space-y-1">
                 <div className="text-3xl sm:text-4xl font-extrabold text-gray-900">
-                  {dueLearningVocabs.length} <span className="text-sm font-semibold text-gray-500">từ</span>
+                  {isLoadingMetrics ? '...' : (dashboardMetrics?.dueVocabulary || 0)} <span className="text-sm font-semibold text-gray-500">từ</span>
                 </div>
                 <div className="text-xs text-[#ED4F8E] font-medium">
                   {unlimitedReview ? 'Không giới hạn' : 'Đã đến hạn ôn tập'}
@@ -736,7 +767,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <div>
                 <p className="text-xs font-semibold text-gray-500">Tổng thể</p>
                 <p className="text-xl sm:text-2xl font-black text-gray-900 mt-1">
-                  {stats.totalWords}
+                  {isLoadingMetrics ? '...' : (dashboardMetrics?.totalVocabulary || 0)}
                 </p>
               </div>
               <div className="w-10 h-10 rounded-2xl bg-[#FFF1F2] flex items-center justify-center text-[#ED4F8E]">
@@ -748,7 +779,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <div>
                 <p className="text-xs font-semibold text-gray-500">Đã học</p>
                 <p className="text-xl sm:text-2xl font-black text-gray-900 mt-1">
-                  {stats.masteredCount + stats.learningCount}
+                  {isLoadingMetrics ? '...' : ((dashboardMetrics?.masteredVocabulary || 0) + (dashboardMetrics?.learningVocabulary || 0))}
                 </p>
               </div>
               <div className="w-10 h-10 rounded-2xl bg-[#FFF5F7] flex items-center justify-center text-[#F472B6]">
@@ -760,7 +791,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <div>
                 <p className="text-xs font-semibold text-gray-500">Thành thạo</p>
                 <p className="text-xl sm:text-2xl font-black text-gray-900 mt-1">
-                  {stats.masteredCount}
+                  {isLoadingMetrics ? '...' : (dashboardMetrics?.masteredVocabulary || 0)}
                 </p>
               </div>
               <div className="w-10 h-10 rounded-2xl bg-[#D1FAE5] flex items-center justify-center text-[#059669]">
@@ -772,7 +803,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <div>
                 <p className="text-xs font-semibold text-gray-500">Cần ôn ngay</p>
                 <p className="text-xl sm:text-2xl font-black text-gray-900 mt-1">
-                  {dueLearningVocabs.length}
+                  {isLoadingMetrics ? '...' : (dashboardMetrics?.dueVocabulary || 0)}
                 </p>
               </div>
               <div className="w-10 h-10 rounded-2xl bg-[#F3E8FF] flex items-center justify-center text-[#A855F7]">
@@ -792,7 +823,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <div>
                   <h3 className="font-extrabold text-sm text-gray-900">Từ cần ôn ngay</h3>
                   <p className="text-base sm:text-lg font-black text-[#A855F7]">
-                    {dueLearningVocabs.length} từ đến hạn
+                    {isLoadingMetrics ? '...' : `${dashboardMetrics?.dueVocabulary || 0} từ đến hạn`}
                   </p>
                 </div>
               </div>
@@ -834,7 +865,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <div>
                   <h3 className="font-extrabold text-sm text-gray-900">Từ đã thành thạo</h3>
                   <p className="text-base sm:text-lg font-black text-[#059669]">
-                    {stats.masteredCount} từ
+                    {isLoadingMetrics ? '...' : `${dashboardMetrics?.masteredVocabulary || 0} từ`}
                   </p>
                 </div>
               </div>
@@ -855,7 +886,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <div>
                   <h3 className="font-extrabold text-sm text-gray-900">Từ vựng khó nhớ</h3>
                   <p className="text-base sm:text-lg font-black text-[#E11D48]">
-                    {realDifficult.length} từ bạn thường quên
+                    {isLoadingMetrics ? '...' : `${dashboardMetrics?.difficultVocabulary || 0} từ bạn thường quên`}
                   </p>
                 </div>
               </div>

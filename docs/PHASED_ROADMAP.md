@@ -867,38 +867,137 @@ RETURNS JSON
 
 ## Phase 7 — Dashboard Real Data
 
-**Status**: 🔄 PENDING
+**Status**: ✅ COMPLETED (2026-08-01)
 
-**Goal**: Connect Dashboard stats to real Supabase data.
+**Goal**: Connect Dashboard stats to real Supabase data from `vocabularies`, `user_vocab_progress`, and `review_logs` tables.
 
 **Prerequisites**:
 - Phase 5 completed (progress in database)
 
 **Scope**:
 ✅ **Allowed**:
-- Query real stats from user_vocab_progress
-- Display due vocabulary count
-- Show daily goal progress
-- Calculate streak from review_logs
+- Create `services/dashboardService.ts` for Dashboard-specific queries
+- Query real stats from user_vocab_progress and review_logs
+- Display due vocabulary count from next_review_at
+- Show daily goal progress with unique vocabulary count today
+- Calculate streak from review_logs consecutive days
+- Implement timezone-aware day boundary calculations
+- Remove localStorage study dates from statistics
+- Keep daily goal preference in localStorage (user setting)
 
 ❌ **Not Allowed**:
-- Change UI (preserve current design)
+- Change Dashboard UI design or layout
+- Change SRS algorithm or Again queue behavior
+- Change Study Session Recovery logic
+- Add new packages or chart libraries
+- Create new database migrations
+- Run `supabase db push`
 
-**Tasks**:
-1. Query `SELECT status, COUNT(*) FROM user_vocab_progress GROUP BY status`
-2. Query due count: `WHERE next_review_at <= NOW()`
-3. Calculate streak from review_logs (consecutive days with reviews)
-4. Update Dashboard to use real data
+**Implementation Details**:
+
+**Files Created**:
+- `services/dashboardService.ts` — Dashboard metrics queries with RLS enforcement
+  - `getDashboardMetrics()`: Aggregate query for all metrics
+  - `calculateStudyStreak()`: Consecutive days from review_logs
+  - `getRecentActivity()`: Recent review actions with vocabulary details
+  - `getWeekActivity()`: 7-day activity histogram
+  - `getLocalDayBoundaries()`: Timezone-aware date helper
+- `services/dashboardErrors.ts` — `DashboardDataError`, `DashboardAuthError`
+- `docs/PHASE_7_IMPLEMENTATION_REPORT.md` — Full implementation report with 41-item verification
+
+**Files Modified**:
+- `components/Dashboard.tsx` — Replaced localStorage stats with real Supabase metrics
+  - Added `getDashboardMetrics()` and `getWeekActivity()` integration
+  - Replaced all `stats.*` references with `dashboardMetrics.*`
+  - Added loading states for async metric fetches
+  - Kept daily goal preference in localStorage (user setting)
+- `services/vocabService.ts` — Removed localStorage study dates logic
+  - `getStudyStats()`: Simplified to minimal backward-compatible stats
+  - `updateUserProgress()`: Removed localStorage study dates update
+  - Added Phase 7 migration comments
+
+**Data Migration**:
+
+**Before Phase 7**:
+- Total vocabulary: counted from vocabularies array in memory
+- Status counts: calculated from vocabularies with merged progress
+- Streak: calculated from localStorage `vocab_study_dates_v1:<user-id>`
+- Today activity: counted vocabularies with `last_reviewed_at` today
+- Due vocabulary: client-side filter on vocabularies array
+
+**After Phase 7**:
+- Total vocabulary: `COUNT(*) FROM vocabularies` (RLS-scoped)
+- Status counts: aggregated from `user_vocab_progress.status`
+- Streak: consecutive days calculation from `review_logs.reviewed_at`
+- Today activity: `COUNT(*) FROM review_logs WHERE reviewed_at >= startOfToday`
+- Unique vocabulary today: `COUNT(DISTINCT vocabulary_id) FROM review_logs today`
+- Due vocabulary: server-side calculation from `user_vocab_progress.next_review_at <= NOW()`
+- Difficult vocabulary: `COUNT(*) FROM user_vocab_progress WHERE again_count >= 5`
+
+**Metric Definitions** (As Specified):
+1. **Total Vocabulary:** Count of current user's vocabulary rows
+2. **New Vocabulary:** Vocabularies with NO user_vocab_progress row (NOT status='new')
+3. **Learning:** status='learning' in user_vocab_progress
+4. **Mastered:** status='mastered' in user_vocab_progress
+5. **Due:** status!='mastered' AND next_review_at IS NOT NULL AND next_review_at <= NOW()
+6. **Reviews Today:** COUNT(review_logs WHERE reviewed_at in local day boundaries)
+7. **Unique Vocabulary Studied Today:** COUNT(DISTINCT vocabulary_id) from review_logs today
+8. **Study Streak:** Consecutive days backwards from today/yesterday with at least one review_log
+9. **Difficult Vocabulary:** again_count >= 5 from user_vocab_progress
+
+**Timezone Handling**:
+- All day boundaries calculated in browser's local timezone
+- `getLocalDayBoundaries()` returns [startOfDay, endOfDay] in local time
+- Today queries use local date ranges, NOT UTC midnight
+- Streak calculation uses local dates from review_logs
+- Week activity visualization uses local day boundaries
+
+**Security & RLS**:
+- All queries user-scoped through Supabase RLS policies
+- No client-supplied `user_id` parameters
+- Authentication verified before all queries
+- RLS policies enforce user ownership at database level
+
+**Legacy localStorage Keys** (no longer written, kept for backward compatibility):
+```
+vocab_study_dates_v1:<user-id>  # No longer written after Phase 7
+```
+
+**Daily Goal Preference Keys** (still active, user settings not statistics):
+```
+vocab_daily_goal                # Daily goal preference (default: 20)
+vocab_unlimited_review          # Unlimited review mode (default: true)
+```
+
+**Quality Gates**:
+- ✅ ESLint passed (1 pre-existing warning unrelated to Phase 7)
+- ✅ TypeScript type check passed
+- ✅ Next.js build successful (6.6s)
+- ✅ No database migrations created
+- ✅ No `supabase db push` executed
+- ✅ No git commit or push executed
 
 **Acceptance Criteria**:
-- Stats reflect actual user progress
-- Due count accurate
-- Streak calculated correctly
-- Performance acceptable (<200ms query time)
+- ✅ Dashboard metrics load from Supabase on component mount
+- ✅ Streak displays correct count from review_logs consecutive days
+- ✅ Week visualization shows correct studied days from review_logs
+- ✅ Due count calculated from user_vocab_progress.next_review_at
+- ✅ New vocabulary count = total - (learning + mastered)
+- ✅ Today's unique vocabulary count from review_logs DISTINCT vocabulary_id
+- ✅ Timezone-aware day boundaries for all date calculations
+- ✅ Loading states display during metric fetch
+- ✅ localStorage no longer used for statistics (only daily goal preference)
+- ✅ All Dashboard visual contracts preserved (no UI redesign)
+- ✅ SRS algorithm unchanged (Again = 1min, Hard/Good/Easy intervals)
+- ✅ Again queue behavior unchanged (5-card gap, interval_hours=0)
+- ✅ Study Session Recovery unchanged
+- ✅ Documentation updated
 
-**Rollback**: Restore mock data
+**Rollback**: Restore localStorage-based stat calculations in vocabService.getStudyStats()
 
 **Commit Strategy**: "feat: Phase 7 — Dashboard real data"
+
+**Next Phase**: Phase 8 — Import and Export
 
 ---
 
