@@ -242,10 +242,16 @@ export function AccountSettings({ onClose }: AccountSettingsProps) {
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm sm:items-center" onClick={onClose}>
-      <div className="my-auto w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-[#FCE7F3] bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+    <div className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-black/40 p-3 sm:p-4 backdrop-blur-sm sm:items-center" onClick={onClose}>
+      <div
+        className="my-auto w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-[20px] sm:rounded-3xl border border-[#FCE7F3] bg-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="account-settings-title"
+      >
         {/* Header */}
-        <div className="sticky top-0 z-10 rounded-t-3xl border-b border-[#FCE7F3] bg-white px-6 py-4">
+        <div className="sticky top-0 z-10 rounded-t-[20px] sm:rounded-t-3xl border-b border-[#FCE7F3] bg-white px-4 sm:px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#F472B6] to-[#FFB6C1] p-0.5 shadow-md shadow-pink-100">
@@ -253,11 +259,11 @@ export function AccountSettings({ onClose }: AccountSettingsProps) {
                   <User className="w-5 h-5 text-[#F472B6]" />
                 </div>
               </div>
-              <h2 className="text-xl font-bold text-[#4A4A4A]">Tài khoản</h2>
+              <h2 id="account-settings-title" className="text-lg sm:text-xl font-bold text-[#4A4A4A]">Tài khoản</h2>
             </div>
             <button
               onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+              className="p-2 sm:p-2.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
               aria-label="Đóng"
             >
               <span className="text-2xl leading-none">&times;</span>
@@ -266,7 +272,7 @@ export function AccountSettings({ onClose }: AccountSettingsProps) {
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-6">
+        <div className="p-4 sm:p-6 space-y-6">
           {/* Profile Section */}
           <section>
             <h3 className="text-sm font-semibold text-[#4A4A4A] mb-3">Hồ sơ cá nhân</h3>
@@ -345,7 +351,7 @@ export function AccountSettings({ onClose }: AccountSettingsProps) {
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   disabled={isLoadingProfile || isSavingProfile}
-                  className="w-full px-4 py-2.5 bg-[#FFF9FA] border border-[#FCE7F3] rounded-xl text-sm text-[#4A4A4A] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#F472B6] focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full px-4 py-2.5 bg-[#FFF9FA] border border-[#FCE7F3] rounded-xl text-base sm:text-sm text-[#4A4A4A] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#F472B6] focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   placeholder="Nhập tên của bạn"
                   maxLength={80}
                 />
@@ -459,7 +465,7 @@ export function AccountSettings({ onClose }: AccountSettingsProps) {
                     onChange={(e) => setNewPassword(e.target.value)}
                     required
                     disabled={isSubmittingPassword}
-                    className="w-full pl-10 pr-11 py-2.5 bg-[#FFF9FA] border border-[#FCE7F3] rounded-xl text-sm text-[#4A4A4A] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#F472B6] focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full pl-10 pr-11 py-2.5 bg-[#FFF9FA] border border-[#FCE7F3] rounded-xl text-base sm:text-sm text-[#4A4A4A] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#F472B6] focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     placeholder="Tối thiểu 8 ký tự"
                     autoComplete="new-password"
                   />
@@ -489,7 +495,7 @@ export function AccountSettings({ onClose }: AccountSettingsProps) {
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     required
                     disabled={isSubmittingPassword}
-                    className="w-full pl-10 pr-11 py-2.5 bg-[#FFF9FA] border border-[#FCE7F3] rounded-xl text-sm text-[#4A4A4A] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#F472B6] focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full pl-10 pr-11 py-2.5 bg-[#FFF9FA] border border-[#FCE7F3] rounded-xl text-base sm:text-sm text-[#4A4A4A] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#F472B6] focus:border-transparent transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     placeholder="Nhập lại mật khẩu mới"
                     autoComplete="new-password"
                   />

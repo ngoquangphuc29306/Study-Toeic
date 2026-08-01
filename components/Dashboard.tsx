@@ -123,6 +123,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
   // Stable timestamp for due-time calculations
   const [nowMs] = useState(() => Date.now());
 
+  // ESC key handler for goal modal
+  useEffect(() => {
+    if (!isGoalModalOpen) return;
+
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsGoalModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [isGoalModalOpen]);
+
   const handlePlayAudio = (word: string) => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       const utterance = new SpeechSynthesisUtterance(word);
@@ -869,13 +882,22 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       {/* MODAL: Cài đặt mục tiêu hàng ngày */}
       {isGoalModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn">
-          <div className="relative w-full max-w-md max-h-[90dvh] overflow-y-auto bg-white border border-[#FCE7F3] rounded-[20px] sm:rounded-[28px] p-4 sm:p-6 space-y-4 sm:space-y-6 shadow-2xl">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn"
+          onClick={() => setIsGoalModalOpen(false)}
+        >
+          <div
+            className="relative w-full max-w-md max-h-[90dvh] overflow-y-auto bg-white border border-[#FCE7F3] rounded-[20px] sm:rounded-[28px] p-4 sm:p-6 space-y-4 sm:space-y-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="daily-goal-modal-title"
+          >
 
             {/* Modal Header */}
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
-                <h3 className="text-base sm:text-lg font-extrabold text-gray-900 flex items-center gap-2">
+                <h3 id="daily-goal-modal-title" className="text-base sm:text-lg font-extrabold text-gray-900 flex items-center gap-2">
                   <Settings className="w-4 h-4 sm:w-5 sm:h-5 text-[#ED4F8E] shrink-0" />
                   <span>Cài đặt mục tiêu hàng ngày</span>
                 </h3>
@@ -886,7 +908,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <button
                 onClick={() => setIsGoalModalOpen(false)}
                 aria-label="Đóng"
-                className="p-1.5 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 transition-colors cursor-pointer shrink-0"
+                className="p-2 sm:p-2.5 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 transition-colors cursor-pointer shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>

@@ -197,6 +197,24 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   const [isPronounceCorrect, setIsPronounceCorrect] = useState<boolean | null>(null);
   const [transcriptText, setTranscriptText] = useState<string>('');
 
+  // ESC key handlers for modals
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showSettingsModal) {
+          setShowSettingsModal(false);
+        } else if (showReportModal) {
+          setShowReportModal(false);
+        }
+      }
+    };
+
+    if (showSettingsModal || showReportModal) {
+      window.addEventListener('keydown', handleEsc);
+      return () => window.removeEventListener('keydown', handleEsc);
+    }
+  }, [showSettingsModal, showReportModal]);
+
   // Reset interaction state during render when word or submode changes
   useEffect(() => {
     const resetInteractionState = () => {
@@ -1516,17 +1534,27 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
       {/* MODAL: Settings (Colors synchronized with website theme) */}
       {showSettingsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fadeIn">
-          <div className="relative w-full max-w-sm bg-white text-gray-900 rounded-[28px] border border-[#FCE7F3] p-6 space-y-5 shadow-2xl">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs animate-fadeIn"
+          onClick={() => setShowSettingsModal(false)}
+        >
+          <div
+            className="relative w-full max-w-sm max-h-[90dvh] overflow-y-auto bg-white text-gray-900 rounded-[20px] sm:rounded-[28px] border border-[#FCE7F3] p-4 sm:p-6 space-y-4 sm:space-y-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="flashcard-settings-modal-title"
+          >
             {/* Header */}
             <div className="flex items-center justify-between pb-1 border-b border-[#FCE7F3]">
-              <h3 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
+              <h3 id="flashcard-settings-modal-title" className="text-base font-extrabold text-gray-900 flex items-center gap-2">
                 <Settings className="w-4 h-4 text-[#ED4F8E]" />
                 <span>Cài đặt</span>
               </h3>
               <button
                 onClick={() => setShowSettingsModal(false)}
-                className="p-1.5 rounded-full text-gray-400 hover:text-gray-700 hover:bg-[#FFF1F2] transition-colors cursor-pointer"
+                aria-label="Đóng"
+                className="p-2 sm:p-2.5 rounded-full text-gray-400 hover:text-gray-700 hover:bg-[#FFF1F2] transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1658,16 +1686,26 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
       {/* MODAL: Report word issue */}
       {showReportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn">
-          <div className="relative w-full max-w-md bg-white rounded-[28px] border border-[#FCE7F3] p-6 space-y-5 shadow-2xl">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-xs animate-fadeIn"
+          onClick={() => setShowReportModal(false)}
+        >
+          <div
+            className="relative w-full max-w-md max-h-[90dvh] overflow-y-auto bg-white rounded-[20px] sm:rounded-[28px] border border-[#FCE7F3] p-4 sm:p-6 space-y-4 sm:space-y-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="flashcard-report-modal-title"
+          >
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-extrabold text-gray-900 flex items-center gap-2">
+              <h3 id="flashcard-report-modal-title" className="text-base sm:text-lg font-extrabold text-gray-900 flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-[#E11D48]" />
                 <span>Báo cáo sai sót từ vựng</span>
               </h3>
               <button
                 onClick={() => setShowReportModal(false)}
-                className="p-1.5 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 cursor-pointer"
+                aria-label="Đóng"
+                className="p-2 sm:p-2.5 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>

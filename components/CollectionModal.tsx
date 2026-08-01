@@ -50,6 +50,17 @@ export const CollectionModal: React.FC<CollectionModalProps> = ({
     }
   }, [isOpen, mode, defaultCollectionId]);
 
+  // ESC key handler
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
   if (!isOpen) return null;
 
   const handleCollectionSubmit = async (e: React.FormEvent) => {
@@ -111,8 +122,17 @@ export const CollectionModal: React.FC<CollectionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fadeIn">
-      <div className="relative w-full max-w-lg bg-white rounded-[32px] border border-[#FCE7F3] shadow-2xl p-6 sm:p-8 space-y-6">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs animate-fadeIn"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-lg max-h-[90dvh] overflow-y-auto bg-white rounded-[20px] sm:rounded-[32px] border border-[#FCE7F3] shadow-2xl p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="collection-modal-title"
+      >
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-[#FCE7F3]">
           <div className="flex items-center gap-3">
@@ -120,7 +140,7 @@ export const CollectionModal: React.FC<CollectionModalProps> = ({
               <FolderPlus className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-xl font-extrabold text-gray-800">
+              <h3 id="collection-modal-title" className="text-lg sm:text-xl font-extrabold text-gray-800">
                 {mode === 'collection' ? 'Tạo Bộ Sưu Tập' : 'Tạo Section Bài Học'}
               </h3>
               <p className="text-xs text-gray-500">
@@ -133,14 +153,15 @@ export const CollectionModal: React.FC<CollectionModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-2 rounded-full bg-gray-100 hover:bg-[#FFF1F2] text-gray-500 hover:text-[#F472B6] transition-colors cursor-pointer"
+            aria-label="Đóng"
+            className="p-2 sm:p-2.5 rounded-full bg-gray-100 hover:bg-[#FFF1F2] text-gray-500 hover:text-[#F472B6] transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {error && (
-          <div className="p-3 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl text-xs font-bold">
+          <div className="p-3 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl text-xs font-bold" role="alert">
             {error}
           </div>
         )}
@@ -149,42 +170,44 @@ export const CollectionModal: React.FC<CollectionModalProps> = ({
         {mode === 'collection' && (
           <form onSubmit={handleCollectionSubmit} className="space-y-4 text-xs font-bold">
             <div>
-              <label className="block text-gray-700 mb-1">
+              <label htmlFor="collection-title" className="block text-gray-700 mb-1">
                 Tên Bộ Sưu Tập <span className="text-[#F472B6]">*</span>
               </label>
               <input
+                id="collection-title"
                 type="text"
                 required
                 placeholder="Ví dụ: TOEIC 800+ Master, Tiếng Anh Giao Tiếp..."
                 value={colTitle}
                 onChange={(e) => setColTitle(e.target.value)}
-                className="w-full p-3 bg-[#FFF9FA] border border-[#FCE7F3] rounded-2xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
+                className="w-full p-2.5 sm:p-3 bg-[#FFF9FA] border border-[#FCE7F3] rounded-2xl text-base sm:text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
               />
             </div>
 
             <div>
-              <label className="block text-gray-700 mb-1">Mô tả bộ sưu tập</label>
+              <label htmlFor="collection-desc" className="block text-gray-700 mb-1">Mô tả bộ sưu tập</label>
               <textarea
+                id="collection-desc"
                 rows={2}
                 placeholder="Mô tả mục tiêu học tập hoặc chủ đề chính..."
                 value={colDesc}
                 onChange={(e) => setColDesc(e.target.value)}
-                className="w-full p-3 bg-[#FFF9FA] border border-[#FCE7F3] rounded-2xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
+                className="w-full p-2.5 sm:p-3 bg-[#FFF9FA] border border-[#FCE7F3] rounded-2xl text-base sm:text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6] resize-none"
               />
             </div>
 
-            <div className="pt-2 flex justify-end gap-2">
+            <div className="pt-2 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-5 py-2.5 rounded-2xl bg-gray-100 text-gray-600 hover:bg-gray-200 transition-all cursor-pointer"
+                className="px-5 py-2.5 sm:py-3 rounded-2xl bg-gray-100 text-gray-600 hover:bg-gray-200 transition-all cursor-pointer text-xs sm:text-sm font-bold"
               >
                 Hủy
               </button>
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="px-6 py-2.5 rounded-2xl bg-[#F472B6] hover:bg-[#ec4899] text-white font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                className="px-6 py-2.5 sm:py-3 rounded-2xl bg-[#F472B6] hover:bg-[#ec4899] text-white font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm"
               >
                 {isSubmitting ? 'Đang Tạo...' : 'Tạo Bộ Sưu Tập'}
               </button>
@@ -196,16 +219,17 @@ export const CollectionModal: React.FC<CollectionModalProps> = ({
         {mode === 'section' && (
           <form onSubmit={handleSectionSubmit} className="space-y-4 text-xs font-bold">
             <div>
-              <label className="block text-gray-700 mb-1">
+              <label htmlFor="section-collection" className="block text-gray-700 mb-1">
                 Bộ Sưu Tập Chứa Section <span className="text-[#F472B6]">*</span>
               </label>
               <select
+                id="section-collection"
                 value={effectiveColId}
                 onChange={(e) => {
                   // Section form uses derived effectiveColId, no local state needed
                 }}
                 disabled
-                className="w-full p-3 bg-[#FFF9FA] border border-[#FCE7F3] rounded-2xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6] opacity-75"
+                className="w-full p-2.5 sm:p-3 bg-[#FFF9FA] border border-[#FCE7F3] rounded-2xl text-base sm:text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6] opacity-75"
               >
                 {collections.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -216,53 +240,56 @@ export const CollectionModal: React.FC<CollectionModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-gray-700 mb-1">
+              <label htmlFor="section-title" className="block text-gray-700 mb-1">
                 Tên Section / Bài học <span className="text-[#F472B6]">*</span>
               </label>
               <input
+                id="section-title"
                 type="text"
                 required
                 placeholder="Ví dụ: Section 1: Hợp Đồng & Đàm Phán..."
                 value={secTitle}
                 onChange={(e) => setSecTitle(e.target.value)}
-                className="w-full p-3 bg-[#FFF9FA] border border-[#FCE7F3] rounded-2xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
+                className="w-full p-2.5 sm:p-3 bg-[#FFF9FA] border border-[#FCE7F3] rounded-2xl text-base sm:text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
               />
             </div>
 
             <div>
-              <label className="block text-gray-700 mb-1">Phân Loại (Category)</label>
+              <label htmlFor="section-category" className="block text-gray-700 mb-1">Phân Loại (Category)</label>
               <input
+                id="section-category"
                 type="text"
                 placeholder="Business, Travel, Finance..."
                 value={secCategory}
                 onChange={(e) => setSecCategory(e.target.value)}
-                className="w-full p-3 bg-[#FFF9FA] border border-[#FCE7F3] rounded-2xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
+                className="w-full p-2.5 sm:p-3 bg-[#FFF9FA] border border-[#FCE7F3] rounded-2xl text-base sm:text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
               />
             </div>
 
             <div>
-              <label className="block text-gray-700 mb-1">Mô tả ngắn bài học</label>
+              <label htmlFor="section-desc" className="block text-gray-700 mb-1">Mô tả ngắn bài học</label>
               <textarea
+                id="section-desc"
                 rows={2}
                 placeholder="Tóm tắt từ vựng cốt lõi hoặc dạng câu hỏi TOEIC áp dụng..."
                 value={secDesc}
                 onChange={(e) => setSecDesc(e.target.value)}
-                className="w-full p-3 bg-[#FFF9FA] border border-[#FCE7F3] rounded-2xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
+                className="w-full p-2.5 sm:p-3 bg-[#FFF9FA] border border-[#FCE7F3] rounded-2xl text-base sm:text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6] resize-none"
               />
             </div>
 
-            <div className="pt-2 flex justify-end gap-2">
+            <div className="pt-2 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-5 py-2.5 rounded-2xl bg-gray-100 text-gray-600 hover:bg-gray-200 transition-all cursor-pointer"
+                className="px-5 py-2.5 sm:py-3 rounded-2xl bg-gray-100 text-gray-600 hover:bg-gray-200 transition-all cursor-pointer text-xs sm:text-sm font-bold"
               >
                 Hủy
               </button>
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="px-6 py-2.5 rounded-2xl bg-[#F472B6] hover:bg-[#ec4899] text-white font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                className="px-6 py-2.5 sm:py-3 rounded-2xl bg-[#F472B6] hover:bg-[#ec4899] text-white font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm"
               >
                 {isSubmitting ? 'Đang Tạo...' : 'Tạo Section'}
               </button>

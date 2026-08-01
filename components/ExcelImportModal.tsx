@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Upload, FileSpreadsheet, Download, CheckCircle, AlertCircle, Trash2, ArrowRight } from 'lucide-react';
 import { Collection, Topic, Vocabulary } from '../lib/types';
 import { parseExcelFile, downloadExcelTemplate, ParsedVocabRow } from '../lib/excelUtils';
@@ -49,6 +49,19 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   const [isParsing, setIsParsing] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // ESC key handler
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -133,7 +146,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       }));
 
       await onBulkAddVocabularies(payload);
-      
+
       // Reset & Close
       setFile(null);
       setParsedRows([]);
@@ -150,8 +163,17 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   const validCount = parsedRows.filter((r) => r.isValid).length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fadeIn">
-      <div className="relative w-full max-w-4xl max-h-[90vh] bg-white rounded-[32px] border border-[#FCE7F3] shadow-2xl overflow-hidden flex flex-col p-6 sm:p-8 space-y-5">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs animate-fadeIn"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-4xl max-h-[90dvh] bg-white rounded-[20px] sm:rounded-[32px] border border-[#FCE7F3] shadow-2xl overflow-hidden flex flex-col p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-5"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="excel-import-modal-title"
+      >
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-[#FCE7F3]">
           <div className="flex items-center gap-3">
@@ -159,7 +181,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
               <FileSpreadsheet className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-xl font-extrabold text-gray-800">
+              <h3 id="excel-import-modal-title" className="text-lg sm:text-xl font-extrabold text-gray-800">
                 Import Từ Vựng Bằng File Excel
               </h3>
               <p className="text-xs text-gray-500">
@@ -171,15 +193,17 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={downloadExcelTemplate}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-[#FFF1F2] hover:bg-[#FCE7F3] text-[#F472B6] border border-[#FCE7F3] text-xs font-bold transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-3 sm:px-3.5 py-2 rounded-2xl bg-[#FFF1F2] hover:bg-[#FCE7F3] text-[#F472B6] border border-[#FCE7F3] text-xs font-bold transition-all cursor-pointer"
             >
               <Download className="w-4 h-4" />
-              <span>Tải File Mẫu (.xlsx)</span>
+              <span className="hidden sm:inline">Tải File Mẫu (.xlsx)</span>
+              <span className="sm:hidden">Mẫu</span>
             </button>
 
             <button
               onClick={onClose}
-              className="p-2 rounded-full bg-gray-100 hover:bg-[#FFF1F2] text-gray-500 hover:text-[#F472B6] transition-colors cursor-pointer"
+              aria-label="Đóng"
+              className="p-2 sm:p-2.5 rounded-full bg-gray-100 hover:bg-[#FFF1F2] text-gray-500 hover:text-[#F472B6] transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -189,10 +213,11 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         {/* Section 1: Target Destination Picker */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-[#FFF9FA] p-4 rounded-2xl border border-[#FCE7F3] text-xs">
           <div>
-            <label className="block font-bold text-gray-700 mb-1">
+            <label htmlFor="excel-collection-select" className="block font-bold text-gray-700 mb-1">
               1. Chọn Collection (Bộ sưu tập) <span className="text-[#F472B6]">*</span>
             </label>
             <select
+              id="excel-collection-select"
               value={selectedColId}
               onChange={(e) => {
                 const colId = e.target.value;
@@ -200,7 +225,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                 const firstMatchingTopic = topics.find((t) => t.collection_id === colId);
                 if (firstMatchingTopic) setSelectedTopicId(firstMatchingTopic.id);
               }}
-              className="w-full p-2.5 bg-white border border-[#FCE7F3] rounded-xl font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
+              className="w-full p-2.5 sm:p-3 bg-white border border-[#FCE7F3] rounded-xl text-base sm:text-sm font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
             >
               {collections.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -212,7 +237,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="font-bold text-gray-700">
+              <label htmlFor="excel-topic-select" className="font-bold text-gray-700">
                 2. Chọn Section (Bài học đích) <span className="text-[#F472B6]">*</span>
               </label>
               <button
@@ -226,17 +251,19 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
             {isCreatingNewTopic ? (
               <input
+                id="excel-new-topic-input"
                 type="text"
                 placeholder="Nhập tên Section mới (ví dụ: Section 4: Chăm Sóc Khách Hàng)..."
                 value={newTopicTitle}
                 onChange={(e) => setNewTopicTitle(e.target.value)}
-                className="w-full p-2.5 bg-white border border-[#FCE7F3] rounded-xl font-bold text-[#F472B6] focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
+                className="w-full p-2.5 sm:p-3 bg-white border border-[#FCE7F3] rounded-xl text-base sm:text-sm font-bold text-[#F472B6] focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
               />
             ) : (
               <select
+                id="excel-topic-select"
                 value={selectedTopicId}
                 onChange={(e) => setSelectedTopicId(e.target.value)}
-                className="w-full p-2.5 bg-white border border-[#FCE7F3] rounded-xl font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
+                className="w-full p-2.5 sm:p-3 bg-white border border-[#FCE7F3] rounded-xl text-base sm:text-sm font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
               >
                 {availableTopics.length > 0 ? (
                   availableTopics.map((t) => (
@@ -378,9 +405,10 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                       <td className="py-2 px-3 text-center">
                         <button
                           onClick={() => handleRemoveRow(idx)}
-                          className="p-1 hover:bg-rose-100 rounded text-rose-500 cursor-pointer"
+                          aria-label={`Xóa từ ${row.word || 'dòng ' + (idx + 1)}`}
+                          className="p-2 hover:bg-rose-100 rounded text-rose-500 cursor-pointer"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </td>
                     </tr>
@@ -393,17 +421,17 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
         {/* Error Feedback */}
         {errorMsg && (
-          <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
+          <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2" role="alert">
             <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0" />
             <span>{errorMsg}</span>
           </div>
         )}
 
         {/* Footer Actions */}
-        <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#FCE7F3]">
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-3 border-t border-[#FCE7F3]">
           <button
             onClick={onClose}
-            className="px-5 py-2.5 rounded-2xl bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold text-xs transition-all cursor-pointer"
+            className="px-5 py-2.5 sm:py-3 rounded-2xl bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold text-xs sm:text-sm transition-all cursor-pointer"
           >
             Hủy Bỏ
           </button>
@@ -411,7 +439,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           <button
             onClick={handleImportSubmit}
             disabled={isSubmitting || isParsing || parsedRows.length === 0 || validCount === 0}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-2xl bg-[#F472B6] hover:bg-[#ec4899] text-white font-bold text-xs shadow-xs transition-all cursor-pointer disabled:opacity-50"
+            className="flex items-center justify-center gap-2 px-6 py-2.5 sm:py-3 rounded-2xl bg-[#F472B6] hover:bg-[#ec4899] text-white font-bold text-xs sm:text-sm shadow-xs transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span>{isSubmitting ? 'Đang Import...' : `Xác Nhận Import (${validCount} Từ)`}</span>
             <ArrowRight className="w-4 h-4" />
