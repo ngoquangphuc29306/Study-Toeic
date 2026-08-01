@@ -82,6 +82,8 @@ export async function getVocabulariesForExport(): Promise<ExportVocabulary[]> {
 
     if (!data) return [];
 
+    // TypeScript any: Supabase nested JOIN returns untyped object with topics.collections structure
+    // All fields explicitly accessed with fallback values for safety
     return data.map((v: any) => ({
       word: v.word || '',
       phonetic_uk: v.phonetic_uk || '',

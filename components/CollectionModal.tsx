@@ -43,11 +43,10 @@ export const CollectionModal: React.FC<CollectionModalProps> = ({
   // Derive effective collection ID from props
   const effectiveColId = defaultCollectionId || collections[0]?.id || '';
 
-  // Debug log to verify mode prop
+  // Reset form when modal opens
   useEffect(() => {
     if (isOpen) {
-      console.log('CollectionModal opened with mode:', mode);
-      console.log('CollectionModal defaultCollectionId:', defaultCollectionId);
+      // Form will be reset in next useEffect based on mode
     }
   }, [isOpen, mode, defaultCollectionId]);
 
