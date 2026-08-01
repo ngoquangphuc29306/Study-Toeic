@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import { BookOpen, Sparkles, Database, Plus, Flame, CheckCircle2, Home, Layers, HelpCircle, User } from 'lucide-react';
 import { StudyStats } from '../lib/types';
 import { SignOutButton } from './auth/sign-out-button';
-import { AccountSettings } from './AccountSettings';
 import { getCurrentProfile } from '@/services/profileService';
 import type { UserProfile } from '@/services/profileService';
 
@@ -12,6 +12,7 @@ interface NavbarProps {
   activeTab: 'dashboard' | 'flashcard' | 'quiz' | 'vocab-manager';
   setActiveTab: (tab: 'dashboard' | 'flashcard' | 'quiz' | 'vocab-manager') => void;
   stats: StudyStats;
+  currentStreak: number; // Phase 9.8: Authoritative streak from dashboardMetrics
   onOpenSqlModal: () => void;
   onOpenAddModal: () => void;
 }
@@ -20,14 +21,16 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   setActiveTab,
   stats,
+  currentStreak,
   onOpenSqlModal,
   onOpenAddModal,
 }) => {
-  const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
 
-  // Load profile on mount
+  // Load profile on mount and when pathname changes
   useEffect(() => {
     let isActive = true;
 
@@ -51,20 +54,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     return () => {
       isActive = false;
     };
-  }, []);
-
-  // Reload profile when AccountSettings closes
-  const handleCloseAccountSettings = async () => {
-    setIsAccountSettingsOpen(false);
-
-    // Reload profile to reflect any changes
-    try {
-      const profileData = await getCurrentProfile();
-      setProfile(profileData);
-    } catch (err) {
-      console.error('Reload profile error:', err);
-    }
-  };
+  }, [pathname]); // Reload when pathname changes
 
   return (
     <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-white/90 border-b border-[#FCE7F3] shadow-2xs">
@@ -157,20 +147,21 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Daily Streak Badge */}
           <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FFF1F2] border border-[#FCE7F3] rounded-2xl text-xs font-bold text-[#F472B6]">
             <Flame className="w-4 h-4 text-[#F472B6] fill-[#F472B6] animate-pulse" />
-            <span>{stats.dailyStreak} Ngày Streak</span>
+            <span>{currentStreak} Ngày Streak</span>
           </div>
 
-          {/* Mastered Words Count Badge */}
+          {/* Mastered Words Count Badge
           <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#FCE7F3] rounded-2xl text-xs font-bold text-gray-700">
             <CheckCircle2 className="w-4 h-4 text-[#F472B6]" />
             <span>{stats.masteredCount}/{stats.totalWords} Đã thuộc</span>
           </div>
+          */}
 
           {/* Account & Sign Out Buttons */}
           <div className="hidden sm:flex items-center gap-2">
             {/* Profile Avatar/Icon Button */}
             <button
-              onClick={() => setIsAccountSettingsOpen(true)}
+              onClick={() => router.push('/app/account')}
               className="flex items-center gap-2 p-1.5 pr-3 text-gray-700 hover:text-[#F472B6] hover:bg-[#FFF1F2] rounded-full transition-all group"
               aria-label="Cài đặt tài khoản"
               title="Cài đặt tài khoản"
@@ -240,10 +231,45 @@ export const Navbar: React.FC<NavbarProps> = ({
         </button>
       </div>
 
-      {/* Account Settings Modal */}
-      {isAccountSettingsOpen && (
-        <AccountSettings onClose={handleCloseAccountSettings} />
-      )}
+      {/* Mobile Navigation Row */}
+      <div className="flex md:hidden items-center justify-around border-t border-[#FCE7F3] py-2.5 bg-white px-2 text-xs">
+        <button
+          onClick={() => setActiveTab('dashboard')}
+          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl ${
+            activeTab === 'dashboard' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
+          }`}
+        >
+          <Home className="w-4 h-4" />
+          Tổng quan
+        </button>
+        <button
+          onClick={() => setActiveTab('flashcard')}
+          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl ${
+            activeTab === 'flashcard' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
+          }`}
+        >
+          <Sparkles className="w-4 h-4" />
+          Flashcard
+        </button>
+        <button
+          onClick={() => setActiveTab('quiz')}
+          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl ${
+            activeTab === 'quiz' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
+          }`}
+        >
+          <HelpCircle className="w-4 h-4" />
+          Quiz
+        </button>
+        <button
+          onClick={() => setActiveTab('vocab-manager')}
+          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl ${
+            activeTab === 'vocab-manager' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+          Quản lý
+        </button>
+      </div>
     </header>
   );
 };

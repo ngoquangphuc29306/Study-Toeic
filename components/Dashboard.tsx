@@ -42,6 +42,9 @@ interface DashboardProps {
   topics: Topic[];
   vocabularies: Vocabulary[];
   stats: StudyStats;
+  dashboardMetrics: DashboardMetrics | null; // Phase 9.8: Passed from parent
+  weekActivity: Array<{ date: string; count: number }>; // Phase 9.8: Passed from parent
+  isLoadingMetrics: boolean; // Phase 9.8: Passed from parent
   onSelectTopicForFlashcard: (topicId: string, initialStatus?: 'all' | 'new' | 'learning' | 'mastered') => void;
   onSelectTopicForQuiz: (topicId: string) => void;
   onOpenAddModal: () => void;
@@ -61,6 +64,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
   topics,
   vocabularies,
   stats,
+  dashboardMetrics,
+  weekActivity,
+  isLoadingMetrics,
   onSelectTopicForFlashcard,
   onSelectTopicForQuiz,
   onOpenAddModal,
@@ -69,46 +75,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
-  // Phase 7: Real Supabase metrics
-  const [dashboardMetrics, setDashboardMetrics] = useState<DashboardMetrics | null>(null);
-  const [weekActivity, setWeekActivity] = useState<Array<{ date: string; count: number }>>([]);
-  const [isLoadingMetrics, setIsLoadingMetrics] = useState(true);
-  const [metricsError, setMetricsError] = useState<string | null>(null);
-
-  // Load real Dashboard metrics from Supabase
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadMetrics = async () => {
-      try {
-        setIsLoadingMetrics(true);
-        setMetricsError(null);
-
-        const [metrics, weekData] = await Promise.all([
-          getDashboardMetrics(),
-          getWeekActivity(),
-        ]);
-
-        if (isMounted) {
-          setDashboardMetrics(metrics);
-          setWeekActivity(weekData);
-          setIsLoadingMetrics(false);
-        }
-      } catch (err) {
-        console.error('Dashboard metrics load error:', err);
-        if (isMounted) {
-          setMetricsError(err instanceof Error ? err.message : 'Không thể tải thống kê');
-          setIsLoadingMetrics(false);
-        }
-      }
-    };
-
-    loadMetrics();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [vocabularies]); // Reload when vocabularies change
+  // Phase 9.8: Dashboard metrics now passed from parent (app/app/page.tsx)
+  // Removed internal state and useEffect for getDashboardMetrics/getWeekActivity
+  // Parent owns single source of truth and refreshes metrics with vocabulary changes
 
   // Daily Goal Settings State (localStorage only for user preference)
   const [dailyGoal, setDailyGoal] = useState<number>(() => {

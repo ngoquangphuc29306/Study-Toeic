@@ -544,7 +544,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     } else if (subMode === 'typing') {
       setSubMode('pronounce');
     } else if (subMode === 'pronounce') {
-      handleRating(false);
+      handleRating(false, 'again');
       setSubMode('flashcard');
     }
   }, [subMode, handleRating]);

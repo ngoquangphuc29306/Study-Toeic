@@ -37,6 +37,11 @@ import {
   exportVocabulariesAsCSV,
   exportBackupAsJSON
 } from '../../services/importExportService';
+import {
+  getDashboardMetrics,
+  getWeekActivity,
+  type DashboardMetrics
+} from '../../services/dashboardService';
 
 import { Collection, Topic, Vocabulary, StudyStats, LearningStatus } from '../../lib/types';
 
@@ -60,6 +65,14 @@ export default function AppPage() {
     todayStudiedCount: 0,
   });
 
+  // Phase 9.8: Dashboard metrics ownership (single source of truth for streak)
+  const [dashboardMetrics, setDashboardMetrics] = useState<DashboardMetrics | null>(null);
+  const [weekActivity, setWeekActivity] = useState<Array<{ date: string; count: number }>>([]);
+  const [isLoadingDashboardMetrics, setIsLoadingDashboardMetrics] = useState(true);
+
+  // Extract authoritative streak for Navbar
+  const currentStreak = dashboardMetrics?.studyStreak ?? 0;
+
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [isCollectionModalOpen, setIsCollectionModalOpen] = useState<boolean>(false);
   const [collectionModalMode, setCollectionModalMode] = useState<CreateModalMode>('collection');
@@ -72,16 +85,20 @@ export default function AppPage() {
   // Helper to re-fetch data
   const refreshAppData = useCallback(async () => {
     try {
-      const [fetchedCols, fetchedTopics, fetchedVocab, fetchedStats] = await Promise.all([
+      const [fetchedCols, fetchedTopics, fetchedVocab, fetchedStats, fetchedMetrics, fetchedWeek] = await Promise.all([
         getCollections(),
         getTopics(),
         getVocabByTopic('all'),
         getStudyStats(),
+        getDashboardMetrics(),
+        getWeekActivity(),
       ]);
       setCollections(fetchedCols);
       setTopics(fetchedTopics);
       setVocabularies(fetchedVocab);
       setStats(fetchedStats);
+      setDashboardMetrics(fetchedMetrics);
+      setWeekActivity(fetchedWeek);
     } catch (err) {
       console.error('Error refreshing VocabTOEIC data:', err);
     }
@@ -128,6 +145,9 @@ export default function AppPage() {
           dailyStreak: 0,
           todayStudiedCount: 0,
         });
+        setDashboardMetrics(null);
+        setWeekActivity([]);
+        setIsLoadingDashboardMetrics(true);
         setSelectedTopicId('all');
         setDeleteError('');
 
@@ -157,6 +177,9 @@ export default function AppPage() {
             dailyStreak: 0,
             todayStudiedCount: 0,
           });
+          setDashboardMetrics(null);
+          setWeekActivity([]);
+          setIsLoadingDashboardMetrics(true);
           setSelectedTopicId('all');
           setDeleteError('');
         }
@@ -181,22 +204,30 @@ export default function AppPage() {
     let isMounted = true;
     const initData = async () => {
       try {
-        const [fetchedCols, fetchedTopics, fetchedVocab, fetchedStats] = await Promise.all([
+        const [fetchedCols, fetchedTopics, fetchedVocab, fetchedStats, fetchedMetrics, fetchedWeek] = await Promise.all([
           getCollections(),
           getTopics(),
           getVocabByTopic('all'),
           getStudyStats(),
+          getDashboardMetrics(),
+          getWeekActivity(),
         ]);
         if (isMounted) {
           setCollections(fetchedCols);
           setTopics(fetchedTopics);
           setVocabularies(fetchedVocab);
           setStats(fetchedStats);
+          setDashboardMetrics(fetchedMetrics);
+          setWeekActivity(fetchedWeek);
+          setIsLoadingDashboardMetrics(false);
           setIsLoading(false);
         }
       } catch (err) {
         console.error('Error loading VocabTOEIC data:', err);
-        if (isMounted) setIsLoading(false);
+        if (isMounted) {
+          setIsLoadingDashboardMetrics(false);
+          setIsLoading(false);
+        }
       }
     };
 
@@ -349,6 +380,7 @@ export default function AppPage() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         stats={stats}
+        currentStreak={currentStreak}
         onOpenSqlModal={() => setIsSqlModalOpen(true)}
         onOpenAddModal={() => setIsAddModalOpen(true)}
       />
@@ -360,6 +392,9 @@ export default function AppPage() {
             topics={topics}
             vocabularies={vocabularies}
             stats={stats}
+            dashboardMetrics={dashboardMetrics}
+            weekActivity={weekActivity}
+            isLoadingMetrics={isLoadingDashboardMetrics}
             onSelectTopicForFlashcard={handleSelectTopicForFlashcard}
             onSelectTopicForQuiz={handleSelectTopicForQuiz}
             onOpenAddModal={() => setIsAddModalOpen(true)}
