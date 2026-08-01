@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   ArrowLeft, 
   Volume2, 
@@ -94,33 +94,72 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     }
   }, []);
 
-  // Track prop changes to reset filterTopic and default filterStatus
-  const [prevSelectedTopic, setPrevSelectedTopic] = useState<string>(selectedTopicId);
-  const [prevInitialStatus, setPrevInitialStatus] = useState<'all' | 'new' | 'learning' | 'mastered' | undefined>(initialStatus);
+  const previousStudyContextRef = useRef({
+    selectedTopicId,
+    initialStatus,
+  });
 
-  if (selectedTopicId !== prevSelectedTopic || initialStatus !== prevInitialStatus) {
-    setPrevSelectedTopic(selectedTopicId);
-    setPrevInitialStatus(initialStatus);
-    setFilterTopic(selectedTopicId || 'all');
-    setFilterStatus(initialStatus || 'new');
-    setCurrentIndex(0);
-    setIsFlipped(false);
-    setIsCompleted(false);
-    setSubMode('flashcard');
-    // Phase 6 Fix: Clear session on explicit topic/status change
-    setStudyQueue([]);
-    setIsSessionRestored(false);
-    // Clear persisted session when user changes topic/status
-    getUserId().then(userId => {
-      if (userId) {
-        clearStudySession(userId);
-      }
-    });
+  const hasInitializedStudyContextRef = useRef(false);
+
+  useEffect(() => {
+  // Lần chạy đầu tiên chỉ ghi nhận context hiện tại.
+  // Không xóa session vì đây có thể là lúc trang đang refresh
+  // và cần khôi phục snapshot cũ.
+  if (!hasInitializedStudyContextRef.current) {
+    previousStudyContextRef.current = {
+      selectedTopicId,
+      initialStatus,
+    };
+
+    hasInitializedStudyContextRef.current = true;
+    return;
   }
 
+  const previousContext = previousStudyContextRef.current;
+
+  const topicChanged =
+    previousContext.selectedTopicId !== selectedTopicId;
+
+  const statusChanged =
+    previousContext.initialStatus !== initialStatus;
+
+  if (!topicChanged && !statusChanged) {
+    return;
+  }
+
+  // Cập nhật ref trước để effect không xử lý lại cùng một thay đổi.
+  previousStudyContextRef.current = {
+    selectedTopicId,
+    initialStatus,
+  };
+
+  setFilterTopic(selectedTopicId || 'all');
+  setFilterStatus(initialStatus || 'new');
+
+  setCurrentIndex(0);
+  setIsFlipped(false);
+  setIsCompleted(false);
+  setSubMode('flashcard');
+
+  setStudyQueue([]);
+  setIsSessionRestored(false);
+
+  const clearPreviousStudySession = async () => {
+    const userId = await getUserId();
+
+    if (userId) {
+      clearStudySession(userId);
+    }
+  };
+
+  void clearPreviousStudySession();
+}, [
+  selectedTopicId,
+  initialStatus,
+  getUserId,
+]);
+
   // Track previous index & subMode for state reset during render
-  const [prevIndex, setPrevIndex] = useState<number>(currentIndex);
-  const [prevSubMode, setPrevSubMode] = useState<StudySubMode>(subMode);
   const [sessionStats, setSessionStats] = useState({ mastered: 0, needsReview: 0 });
 
   // Stable timestamp for due-time calculations
@@ -158,22 +197,23 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   const [transcriptText, setTranscriptText] = useState<string>('');
 
   // Reset interaction state during render when word or submode changes
-  if (currentIndex !== prevIndex || subMode !== prevSubMode) {
-    setPrevIndex(currentIndex);
-    setPrevSubMode(subMode);
+  useEffect(() => {
     setIsFlipped(false);
     setShowRatingButtons(false);
+
     setTypedInput('');
     setTypingSubmitted(false);
     setIsTypingCorrect(null);
     setShowHint(false);
+
     setIsRecording(false);
     setPronounceSubmitted(false);
     setIsPronounceCorrect(null);
     setTranscriptText('');
+
     setSelectedQuizIndex(null);
     setQuizAnswered(false);
-  }
+  }, [currentIndex, subMode]);
 
   // Topic-filtered list
   const topicVocabs = useMemo(() => {
@@ -332,10 +372,18 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   const currentVocab = activeVocabs[safeIndex];
 
   // Sync currentIndex after render completes if it was out of bounds
-  if (safeIndex !== currentIndex && activeVocabs.length > 0) {
-    // This runs during render, queued for next render cycle
-    Promise.resolve().then(() => setCurrentIndex(safeIndex));
-  }
+  useEffect(() => {
+    if (
+      activeVocabs.length > 0 &&
+      safeIndex !== currentIndex
+    ) {
+      setCurrentIndex(safeIndex);
+    }
+  }, [
+    safeIndex,
+    currentIndex,
+    activeVocabs.length,
+  ]);
 
   // Derive Quiz options dynamically using pure seeded shuffle
   const { quizOptions, correctQuizIndex } = useMemo(() => {
@@ -428,13 +476,11 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       }));
 
       // Phase 6 Fix: Calculate queue transition ONCE, use for both state and snapshot
-      const isLastCard = currentIndex >= activeVocabs.length - 1;
       const transition = applyRatingToQueue(
         srsRating,
         studyQueue,
         currentIndex,
-        currentVocab.id,
-        isLastCard
+        currentVocab.id
       );
 
       // Apply transition to React state
@@ -442,7 +488,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       setCurrentIndex(transition.currentIndex);
 
       // Check if session is completed
-      if (isLastCard) {
+      if (transition.isComplete) {
         setIsCompleted(true);
         // Phase 6 Fix: Clear session on completion
         const userId = await getUserId();
