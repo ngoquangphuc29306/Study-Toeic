@@ -120,6 +120,26 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
     return () => window.removeEventListener('click', handleClickOutside);
   }, []);
 
+  // ESC key handlers for modals
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (viewWordsTopic) {
+          setViewWordsTopic(null);
+        } else if (editingCollection) {
+          setEditingCollection(null);
+        } else if (editingTopic) {
+          setEditingTopic(null);
+        }
+      }
+    };
+
+    if (viewWordsTopic || editingCollection || editingTopic) {
+      window.addEventListener('keydown', handleEsc);
+      return () => window.removeEventListener('keydown', handleEsc);
+    }
+  }, [viewWordsTopic, editingCollection, editingTopic]);
+
   // Group topics by collection
   const collectionGroupMap = React.useMemo(() => {
     const map = new Map<string, Topic[]>();
@@ -234,7 +254,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
           {isTopCreateOpen && (
             <div
               onClick={(e) => e.stopPropagation()}
-              className="absolute right-0 mt-2 w-56 bg-white border border-[#FCE7F3] rounded-2xl shadow-xl z-50 p-2 space-y-1 text-xs"
+              className="absolute right-0 mt-2 w-56 max-w-[calc(100vw-2rem)] bg-white border border-[#FCE7F3] rounded-2xl shadow-xl z-50 p-2 space-y-1 text-xs"
             >
               <button
                 onClick={() => {
@@ -325,10 +345,10 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
             <div key={col.id} className="space-y-4">
               
               {/* Collection Header Row */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <h3 className="text-lg sm:text-xl font-extrabold text-gray-900 flex items-center gap-2">
-                    <span>{col.title}</span>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <h3 className="text-lg sm:text-xl font-extrabold text-gray-900 flex items-center gap-2 min-w-0">
+                    <span className="truncate">{col.title}</span>
                   </h3>
 
                   {/* Privacy Badge */}
@@ -481,7 +501,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
 
                       {/* Section Title & Progress Stat */}
                       <div className="space-y-2">
-                        <h4 className="text-base font-extrabold text-gray-900 leading-snug group-hover:text-[#F472B6] transition-colors">
+                        <h4 className="text-base font-extrabold text-gray-900 leading-snug group-hover:text-[#F472B6] transition-colors line-clamp-2">
                           {topic.title}
                         </h4>
 
@@ -514,7 +534,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                           {activeManageDropdown === topic.id && (
                             <div
                               onClick={(e) => e.stopPropagation()}
-                              className="absolute left-0 bottom-11 w-48 bg-white border border-[#FCE7F3] rounded-2xl shadow-xl z-40 p-1.5 space-y-1 text-xs"
+                              className="absolute left-0 top-11 w-48 bg-white border border-[#FCE7F3] rounded-2xl shadow-xl z-40 p-1.5 space-y-1 text-xs"
                             >
                               <button
                                 onClick={() => {
@@ -683,13 +703,22 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
 
       {/* MODAL: Xem danh sách từ của Học Phần */}
       {viewWordsTopic && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn">
-          <div className="relative w-full max-w-4xl max-h-[90vh] bg-white border border-[#FCE7F3] rounded-[32px] shadow-2xl overflow-hidden flex flex-col p-6 space-y-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-xs animate-fadeIn"
+          onClick={() => setViewWordsTopic(null)}
+        >
+          <div
+            className="relative w-full max-w-4xl max-h-[90dvh] bg-white border border-[#FCE7F3] rounded-[20px] sm:rounded-[32px] shadow-2xl overflow-hidden flex flex-col p-4 sm:p-6 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="view-words-modal-title"
+          >
             
             {/* Modal Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-[#FCE7F3]">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-[#FCE7F3]">
               <div>
-                <h3 className="text-xl font-extrabold text-gray-900 flex items-center gap-2">
+                <h3 id="view-words-modal-title" className="text-xl font-extrabold text-gray-900 flex items-center gap-2">
                   <BookOpen className="w-5 h-5 text-[#F472B6]" />
                   <span>{viewWordsTopic.title}</span>
                 </h3>
@@ -698,7 +727,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
                 <button
                   onClick={() => {
                     const tid = viewWordsTopic.id;
@@ -713,7 +742,8 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
 
                 <button
                   onClick={() => setViewWordsTopic(null)}
-                  className="p-2 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 transition-colors cursor-pointer"
+                  aria-label="Đóng"
+                  className="p-2.5 sm:p-2 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -728,13 +758,14 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                 placeholder="Tìm từ vựng trong học phần này..."
                 value={modalSearch}
                 onChange={(e) => setModalSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-[#FFF5F7] border border-[#FCE7F3] rounded-xl text-xs font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
+                className="w-full pl-10 pr-4 py-2.5 bg-[#FFF5F7] border border-[#FCE7F3] rounded-xl text-base sm:text-xs font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6]"
               />
             </div>
 
             {/* Modal Words Table */}
             <div className="flex-1 overflow-y-auto border border-[#FCE7F3] rounded-2xl bg-[#FFF5F7]/30">
-              {(() => {
+              <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                {(() => {
                 const topicWords = vocabularies.filter(
                   (v) =>
                     v.topic_id === viewWordsTopic.id &&
@@ -751,7 +782,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                 }
 
                 return (
-                  <table className="w-full text-left border-collapse text-xs">
+                  <table className="w-full text-left border-collapse text-xs min-w-[800px]">
                     <thead className="sticky top-0 bg-[#FFF1F2] text-gray-700 font-bold text-[11px] uppercase tracking-wider border-b border-[#FCE7F3]">
                       <tr>
                         <th className="py-3 px-4">Từ Vựng / IPA</th>
@@ -826,7 +857,8 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                                   await onDeleteVocabulary(item.id);
                                 }
                               }}
-                              className="p-1.5 hover:bg-rose-100 rounded-lg text-rose-500 cursor-pointer"
+                              aria-label={`Xóa từ ${item.word}`}
+                              className="p-2 sm:p-1.5 hover:bg-rose-100 rounded-lg text-rose-500 cursor-pointer"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -837,6 +869,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                   </table>
                 );
               })()}
+              </div>
             </div>
 
             <div className="flex justify-end pt-2 border-t border-[#FCE7F3]">
@@ -854,23 +887,31 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
 
       {/* MODAL: Đổi Tên Bộ Từ Vựng (Collection) */}
       {editingCollection && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fadeIn">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs animate-fadeIn"
+          onClick={() => setEditingCollection(null)}
+        >
           <form
             onSubmit={(e) => {
               e.preventDefault();
               handleSaveRenameCollection();
             }}
-            className="relative w-full max-w-md bg-white border border-[#FCE7F3] rounded-[28px] p-6 space-y-4 text-xs shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-md bg-white border border-[#FCE7F3] rounded-[20px] sm:rounded-[28px] p-4 sm:p-6 space-y-4 text-xs shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rename-collection-modal-title"
           >
             <div className="flex items-center justify-between pb-2 border-b border-[#FCE7F3]">
-              <h3 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
+              <h3 id="rename-collection-modal-title" className="text-base font-extrabold text-gray-900 flex items-center gap-2">
                 <Edit3 className="w-4 h-4 text-[#ED4F8E]" />
                 <span>Đổi Tên Bộ Từ Vựng</span>
               </h3>
               <button
                 type="button"
                 onClick={() => setEditingCollection(null)}
-                className="p-1.5 rounded-full hover:bg-[#FFF1F2] text-gray-400 hover:text-gray-700 transition-colors cursor-pointer"
+                aria-label="Đóng"
+                className="p-2 sm:p-1.5 rounded-full hover:bg-[#FFF1F2] text-gray-400 hover:text-gray-700 transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -907,23 +948,31 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
 
       {/* MODAL: Đổi Tên Học Phần (Section) */}
       {editingTopic && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fadeIn">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs animate-fadeIn"
+          onClick={() => setEditingTopic(null)}
+        >
           <form
             onSubmit={(e) => {
               e.preventDefault();
               handleSaveRenameTopic();
             }}
-            className="relative w-full max-w-md bg-white border border-[#FCE7F3] rounded-[28px] p-6 space-y-4 text-xs shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-md bg-white border border-[#FCE7F3] rounded-[20px] sm:rounded-[28px] p-4 sm:p-6 space-y-4 text-xs shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rename-topic-modal-title"
           >
             <div className="flex items-center justify-between pb-2 border-b border-[#FCE7F3]">
-              <h3 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
+              <h3 id="rename-topic-modal-title" className="text-base font-extrabold text-gray-900 flex items-center gap-2">
                 <Edit3 className="w-4 h-4 text-[#ED4F8E]" />
                 <span>Đổi Tên Học Phần (Section)</span>
               </h3>
               <button
                 type="button"
                 onClick={() => setEditingTopic(null)}
-                className="p-1.5 rounded-full hover:bg-[#FFF1F2] text-gray-400 hover:text-gray-700 transition-colors cursor-pointer"
+                aria-label="Đóng"
+                className="p-2 sm:p-1.5 rounded-full hover:bg-[#FFF1F2] text-gray-400 hover:text-gray-700 transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
