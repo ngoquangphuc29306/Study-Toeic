@@ -3,8 +3,8 @@ import './globals.css'; // Global styles
 import { AuthEventBridge } from '@/components/AuthEventBridge';
 
 export const metadata: Metadata = {
-  title: 'My Google AI Studio App',
-  description: 'My Google AI Studio App',
+  title: 'Easy TOEIC',
+  description: 'Ứng dụng học TOEIC thông minh',
 };
 
 export default function RootLayout({children}: {children: React.ReactNode}) {
