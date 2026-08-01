@@ -129,8 +129,18 @@ export default function LoginForm() {
             </button>
           </form>
 
+          {/* Forgot Password Link */}
+          <div className="mt-4 text-center">
+            <Link
+              href="/forgot-password"
+              className="text-sm text-[#9CA3AF] hover:text-[#F472B6] hover:underline transition-colors"
+            >
+              Quên mật khẩu?
+            </Link>
+          </div>
+
           {/* Sign Up Link */}
-          <div className="mt-6 text-center">
+          <div className="mt-4 text-center">
             <p className="text-sm text-[#6B7280]">
               Chưa có tài khoản?{' '}
               <Link

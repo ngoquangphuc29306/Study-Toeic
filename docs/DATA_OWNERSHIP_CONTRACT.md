@@ -1,9 +1,9 @@
 # VocabTOEIC — Data Ownership Contract
 
-**Document Version**: 2.7
+**Document Version**: 2.8
 **Created**: 2026-07-30
 **Updated**: 2026-08-01
-**Status**: Product Owner Approved (Phase 8 Complete)
+**Status**: Product Owner Approved (Phase 9.5 Complete)
 **Authority**: Zero Trust — Server enforces all ownership rules
 
 **IMPORTANT**: All SQL examples in this document are **PROPOSED architectural drafts** and are **NOT migration-ready**. They require validation, testing, and adjustment before deployment to Supabase.

@@ -89,6 +89,12 @@ export default function AppPage() {
 
   // Phase 2C Fix: Auth state change listener
   // Phase 6 Fix: Track user identity to detect actual user switches
+  // Phase 9.5: Application-level auth listener (scoped to /app route)
+  //
+  // Mount Scope: /app route only
+  // - Does NOT run when recovery links open /reset-password directly
+  // - PASSWORD_RECOVERY handling moved to root-level AuthEventBridge
+  // - This listener manages application state for signed-in users
   const previousUserIdRef = React.useRef<string | null>(null);
 
   useEffect(() => {
@@ -97,6 +103,12 @@ export default function AppPage() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const currentUserId = session?.user?.id || null;
       const previousUserId = previousUserIdRef.current;
+
+      if (event === 'PASSWORD_RECOVERY') {
+        // PASSWORD_RECOVERY is handled by root-level AuthEventBridge
+        // This is a fallback if user reaches /app during recovery flow
+        return; // Don't reload app data during recovery flow
+      }
 
       if (event === 'SIGNED_OUT') {
         // Clear the outgoing user's session

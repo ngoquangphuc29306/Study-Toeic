@@ -1,9 +1,10 @@
 'use client';
 
-import React from 'react';
-import { BookOpen, Sparkles, Database, Plus, Flame, CheckCircle2, Home, Layers, HelpCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { BookOpen, Sparkles, Database, Plus, Flame, CheckCircle2, Home, Layers, HelpCircle, User } from 'lucide-react';
 import { StudyStats } from '../lib/types';
 import { SignOutButton } from './auth/sign-out-button';
+import { AccountSettings } from './AccountSettings';
 
 interface NavbarProps {
   activeTab: 'dashboard' | 'flashcard' | 'quiz' | 'vocab-manager';
@@ -20,6 +21,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSqlModal,
   onOpenAddModal,
 }) => {
+  const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(false);
+
   return (
     <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-white/90 border-b border-[#FCE7F3] shadow-2xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
@@ -120,8 +123,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span>{stats.masteredCount}/{stats.totalWords} Đã thuộc</span>
           </div>
 
-          {/* Sign Out Button */}
-          <div className="hidden sm:block">
+          {/* Account & Sign Out Buttons */}
+          <div className="hidden sm:flex items-center gap-2">
+            {/* Account Settings Button */}
+            <button
+              onClick={() => setIsAccountSettingsOpen(true)}
+              className="p-2 text-gray-500 hover:text-[#F472B6] hover:bg-[#FFF1F2] rounded-xl transition-all"
+              aria-label="Cài đặt tài khoản"
+              title="Cài đặt tài khoản"
+            >
+              <User className="w-4 h-4" />
+            </button>
+
+            {/* Sign Out Button */}
             <SignOutButton variant="compact" />
           </div>
         </div>
@@ -166,6 +180,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           Quản lý
         </button>
       </div>
+
+      {/* Account Settings Modal */}
+      {isAccountSettingsOpen && (
+        <AccountSettings onClose={() => setIsAccountSettingsOpen(false)} />
+      )}
     </header>
   );
 };

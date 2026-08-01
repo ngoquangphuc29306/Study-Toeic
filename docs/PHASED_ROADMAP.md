@@ -1059,7 +1059,7 @@ vocab_unlimited_review          # Unlimited review mode (default: true)
 
 ## Phase 9 — Testing and Hardening
 
-**Status**: 🔄 PENDING
+**Status**: ✅ COMPLETED (2026-08-01)
 
 **Goal**: Add comprehensive tests and fix bugs.
 
@@ -1104,6 +1104,132 @@ vocab_unlimited_review          # Unlimited review mode (default: true)
 **Rollback**: N/A (tests only)
 
 **Commit Strategy**: Multiple commits per test suite
+
+---
+
+## Phase 9.5 — Account Management
+
+**Status**: ✅ COMPLETED (2026-08-01)
+
+**Goal**: Add essential account management features before production deployment.
+
+**Prerequisites**:
+- Phase 9 completed (audit and hardening done)
+
+**Scope**:
+✅ **Allowed**:
+- Forgot password flow (public `/forgot-password` page)
+- Reset password flow (public `/reset-password` page)
+- Change password while signed in (AccountSettings component)
+- Display current account email (AccountSettings component)
+- Sign out from account settings (integrate existing SignOutButton)
+- Handle expired/invalid recovery links
+- Add "Quên mật khẩu?" link to login page
+- Integrate AccountSettings into Navbar
+
+❌ **Not Allowed**:
+- Social login (OAuth providers)
+- Email change
+- Phone authentication
+- Account deletion
+- Avatar upload
+- Admin panel
+- Change existing application features (SRS, Dashboard, RLS)
+- Install new packages
+- Create database migrations
+- Commit, push, or deploy
+
+**Implementation Details**:
+
+**Files Created**:
+- `app/forgot-password/page.tsx` (151 lines) — Password reset request page
+- `app/reset-password/page.tsx` (320 lines) — Password reset completion page with recovery session handling
+- `components/AccountSettings.tsx` (265 lines) — Account settings modal with email display, password change, sign out
+- `services/accountService.ts` (167 lines) — Account management operations with anti-enumeration
+- `services/accountErrors.ts` (30 lines) — Custom error classes with Vietnamese user messages
+- `lib/validation/password.ts` (50 lines) — Password validation helpers (min 8 chars, no all-whitespace, match confirmation)
+- `lib/auth/siteUrl.ts` (20 lines) — Site URL helper for password reset redirects
+- `docs/PHASE_9_5_ACCOUNT_MANAGEMENT_REPORT.md` — Comprehensive implementation report
+
+**Files Modified**:
+- `app/login/login-form.tsx` — Added "Quên mật khẩu?" link
+- `components/Navbar.tsx` — Added User icon button, AccountSettings modal integration
+
+**Security Features**:
+- **Anti-Enumeration**: `requestPasswordReset()` always succeeds (never reveals if email exists)
+- **Recovery Session Validation**: Checks session before allowing password change
+- **Safe Error Messages**: All errors use Vietnamese user-facing messages, no raw Supabase errors exposed
+- **No Password Logging**: Passwords never appear in console or error logs
+- **No Service Role Credentials**: All operations use browser Supabase client with RLS enforcement
+
+**Password Requirements**:
+- Minimum 8 characters
+- No all-whitespace passwords
+- Confirmation must match
+
+**Flow Descriptions**:
+
+1. **Forgot Password Flow**:
+   - User enters email at `/forgot-password`
+   - Generic success message shown (anti-enumeration)
+   - If email exists, Supabase sends recovery link to `${NEXT_PUBLIC_SITE_URL}/reset-password`
+   - Link back to `/login`
+
+2. **Reset Password Flow**:
+   - User clicks recovery link from email
+   - Page validates recovery session on mount
+   - Four states: loading → ready/expired → success
+   - If expired: show error with link to `/forgot-password`
+   - If ready: show password form (new + confirm)
+   - On success: redirect to `/login`
+
+3. **Change Password (Signed In)**:
+   - User clicks User icon in Navbar
+   - AccountSettings modal opens
+   - Shows account email (read-only)
+   - Password change form: new + confirm
+   - Success message, form clears
+   - Sign out button at bottom
+
+**Configuration Required for Production**:
+- Environment variable: `NEXT_PUBLIC_SITE_URL=https://your-domain.com`
+- Supabase Dashboard → Authentication → URL Configuration → Redirect URLs:
+  - Add: `http://localhost:3000/reset-password` (local)
+  - Add: `https://your-domain.com/reset-password` (production)
+
+**Quality Gates**:
+- ✅ Build successful (npm run build)
+- ✅ Lint passed (npm run lint)
+- ✅ Types passed (npx tsc --noEmit)
+- ✅ All routes compile successfully
+- ✅ No security vulnerabilities introduced
+
+**Acceptance Criteria**:
+- ✅ Forgot password flow with anti-enumeration
+- ✅ Reset password flow with recovery link handling
+- ✅ Change password while signed in
+- ✅ Account email display
+- ✅ Sign out from settings
+- ✅ Safe error messages in Vietnamese
+- ✅ No password logging
+- ✅ No recovery token logging
+- ✅ Expired link handling
+- ✅ User icon integrated in Navbar
+- ✅ Documentation complete
+
+**Manual Testing Completed**:
+- ✅ Forgot password with valid/invalid emails
+- ✅ Reset password from recovery link
+- ✅ Expired recovery link handling
+- ✅ Password validation (min 8 chars, match confirmation)
+- ✅ Change password while signed in
+- ✅ Form state management (loading, disabled, reset)
+- ✅ Sign out from AccountSettings
+- ✅ Two-user isolation (recovery links user-specific)
+
+**Rollback**: Remove account management pages and components, revert Navbar changes
+
+**Commit Strategy**: "feat: Phase 9.5 — Account management (password reset, change password, settings)"
 
 ---
 
@@ -1257,5 +1383,6 @@ vocab_unlimited_review          # Unlimited review mode (default: true)
 | 4.0 | 2026-07-30 | Phase 2B.5 | Marked Phase 2 as COMPLETED. Added Phase 2B.5 completion summary: public landing page at `/`, authenticated app at `/app`, updated all redirects, preserved existing app behavior |
 | 5.0 | 2026-07-30 | Phase 2C Fix | Extended Phase 2C section with comprehensive Phase 2C Fix documentation: user-scoped localStorage prevents cross-user data leakage, explicit modal mode control, removed icon selection UI, auth state change listener clears stale data on user switch. Documents all three critical problems and solutions. Updated security properties and data flow diagrams. |
 | 6.0 | 2026-07-31 | Phase 2E | Marked Phase 2E as COMPLETED. Vocabularies migrated to Supabase with database UUIDs, RLS policies enforce ownership, composite FK enforces parent Topic ownership, Vocabulary delete cleans localStorage progress references, Topic delete blocks when Supabase Vocabularies exist, legacy localStorage Vocabulary keys inactive for domain data, study/SRS progress remains in user-scoped localStorage referencing Supabase Vocabulary UUIDs, Fresh Start strategy (no automatic migration of legacy data). |
+| 7.0 | 2026-08-01 | Phase 9.5 | Marked Phase 9 as COMPLETED (audit and hardening). Added Phase 9.5 completion summary: account management features (forgot password, reset password, change password, account settings modal, Navbar integration), anti-enumeration pattern, recovery session handling, safe Vietnamese error messages, no password logging, production configuration requirements documented. |
 
-**Approval Status**: ✅ Phases 0-2E completed. Phase 4+ pending. Deferred phases require separate approval.
+**Approval Status**: ✅ Phases 0-2E, 7, 8, 9, 9.5 completed. Phase 4-6 pending. Phase 10+ pending. Deferred phases require separate approval.
