@@ -863,7 +863,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
           className="inline-flex items-center gap-2 text-xs font-bold text-gray-700 hover:text-[#ED4F8E] bg-white px-3 sm:px-4 py-2 rounded-2xl border border-[#FCE7F3] shadow-2xs transition-all cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span className="hidden xs:inline sm:inline">Dashboard</span>
+          <span className="hidden sm:inline">Dashboard</span>
         </button>
 
         {/* Topic & Status Display (Static Text Badges) */}
@@ -900,7 +900,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
               className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-2 rounded-xl text-[10px] sm:text-xs whitespace-nowrap transition-all select-none ${badgeStyle}`}
             >
               {isPassed ? <Check className="w-3.5 h-3.5 text-[#059669]" /> : step.icon}
-              <span className="hidden xs:inline sm:inline">{step.label}</span>
+              <span className="hidden sm:inline">{step.label}</span>
             </div>
           );
         })}
@@ -1516,18 +1516,18 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
         <div className="flex items-center justify-center gap-4 sm:gap-6 text-xs font-bold">
           <div className="flex items-center gap-1.5">
             <span className="text-[#0284C7] font-black">{activeVocabs.length}</span>
-            <span className="text-gray-500 hidden xs:inline sm:inline">Từ mới</span>
-            <span className="text-gray-500 xs:hidden">Mới</span>
+            <span className="text-gray-500 hidden sm:inline">Từ mới</span>
+            <span className="text-gray-500 sm:hidden">Mới</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="text-[#A855F7] font-black">{sessionStats.mastered}</span>
-            <span className="text-gray-500 hidden xs:inline sm:inline">Đã học</span>
-            <span className="text-gray-500 xs:hidden">Học</span>
+            <span className="text-gray-500 hidden sm:inline">Đã học</span>
+            <span className="text-gray-500 sm:hidden">Học</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="text-[#ED4F8E] font-black">{sessionStats.needsReview}</span>
-            <span className="text-gray-500 hidden xs:inline sm:inline">Ôn tập</span>
-            <span className="text-gray-500 xs:hidden">Ôn</span>
+            <span className="text-gray-500 hidden sm:inline">Ôn tập</span>
+            <span className="text-gray-500 sm:hidden">Ôn</span>
           </div>
         </div>
       </div>

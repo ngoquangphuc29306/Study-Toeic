@@ -12,6 +12,20 @@ interface SqlScriptModalProps {
 export const SqlScriptModal: React.FC<SqlScriptModalProps> = ({ isOpen, onClose }) => {
   const [copied, setCopied] = useState<boolean>(false);
 
+  // ESC key handler
+  React.useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+
+    if (isOpen) {
+      window.addEventListener('keydown', handleEsc);
+      return () => window.removeEventListener('keydown', handleEsc);
+    }
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleCopy = () => {
@@ -33,11 +47,21 @@ export const SqlScriptModal: React.FC<SqlScriptModalProps> = ({ isOpen, onClose 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fadeIn">
-      <div className="relative w-full max-w-3xl bg-white rounded-3xl border border-pink-100 shadow-2xl overflow-hidden p-6 sm:p-8 space-y-5 max-h-[90vh] flex flex-col">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs animate-fadeIn"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-3xl bg-white rounded-[20px] sm:rounded-3xl border border-pink-100 shadow-2xl overflow-hidden p-4 sm:p-6 lg:p-8 space-y-5 max-h-[90dvh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sql-script-modal-title"
+      >
         {/* Modal Close Button */}
         <button
           onClick={onClose}
+          aria-label="Đóng"
           className="absolute top-5 right-5 p-1.5 rounded-full bg-gray-100 hover:bg-pink-100 text-gray-500 hover:text-pink-600 transition-colors cursor-pointer"
         >
           <X className="w-5 h-5" />
@@ -49,7 +73,7 @@ export const SqlScriptModal: React.FC<SqlScriptModalProps> = ({ isOpen, onClose 
             <Database className="w-3.5 h-3.5" />
             <span>Supabase SQL Architecture & Seed Data</span>
           </div>
-          <h3 className="text-xl font-extrabold text-gray-800">
+          <h3 id="sql-script-modal-title" className="text-xl font-extrabold text-gray-800">
             Script Khởi Tạo Cơ Sở Dữ Liệu Supabase (Phase 1)
           </h3>
           <p className="text-xs text-gray-500">
