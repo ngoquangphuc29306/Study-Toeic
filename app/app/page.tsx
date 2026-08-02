@@ -1,16 +1,43 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { Navbar } from '../../components/Navbar';
 import { Dashboard } from '../../components/Dashboard';
-import { FlashcardMode } from '../../components/FlashcardMode';
-import { QuizMode } from '../../components/QuizMode';
-import { VocabManager } from '../../components/VocabManager';
 import { AddVocabModal } from '../../components/AddVocabModal';
 import { CollectionModal } from '../../components/CollectionModal';
 import { ExcelImportModal } from '../../components/ExcelImportModal';
 import { SqlScriptModal } from '../../components/SqlScriptModal';
+
+// RC15 Code Splitting: Lazy-load tab components that are not rendered by default
+// Only Dashboard renders on initial page load; other tabs load on demand
+function TabLoadingFallback() {
+  return (
+    <div
+      className="flex min-h-[400px] items-center justify-center"
+      role="status"
+      aria-live="polite"
+    >
+      <span className="text-[#5C635D]">Đang tải nội dung...</span>
+    </div>
+  );
+}
+
+const FlashcardMode = dynamic(
+  () => import('../../components/FlashcardMode').then((mod) => mod.FlashcardMode),
+  { loading: () => <TabLoadingFallback /> }
+);
+
+const QuizMode = dynamic(
+  () => import('../../components/QuizMode').then((mod) => mod.QuizMode),
+  { loading: () => <TabLoadingFallback /> }
+);
+
+const VocabManager = dynamic(
+  () => import('../../components/VocabManager').then((mod) => mod.VocabManager),
+  { loading: () => <TabLoadingFallback /> }
+);
 
 import {
   getCollections,
@@ -91,26 +118,26 @@ export default function AppPage() {
 
   // Helper to re-fetch data
   // RC2 Fix: Used only for mutations (add/update/delete), NOT for initial load
-  const refreshAppData = useCallback(async () => {
-    try {
-      const [fetchedCols, fetchedTopics, fetchedVocab, fetchedStats, fetchedMetrics, fetchedWeek] = await Promise.all([
-        getCollections(),
-        getTopics(),
-        getVocabByTopic('all'),
-        getStudyStats(),
-        getDashboardMetrics(),
-        getWeekActivity(),
-      ]);
-      setCollections(fetchedCols);
-      setTopics(fetchedTopics);
-      setVocabularies(fetchedVocab);
-      setStats(fetchedStats);
-      setDashboardMetrics(fetchedMetrics);
-      setWeekActivity(fetchedWeek);
-    } catch (err) {
-      console.error('Error refreshing EasyTOEIC data:', err);
-    }
-  }, []);
+  // const refreshAppData = useCallback(async () => {
+  //   try {
+  //     const [fetchedCols, fetchedTopics, fetchedVocab, fetchedStats, fetchedMetrics, fetchedWeek] = await Promise.all([
+  //       getCollections(),
+  //       getTopics(),
+  //       getVocabByTopic('all'),
+  //       getStudyStats(),
+  //       getDashboardMetrics(),
+  //       getWeekActivity(),
+  //     ]);
+  //     setCollections(fetchedCols);
+  //     setTopics(fetchedTopics);
+  //     setVocabularies(fetchedVocab);
+  //     setStats(fetchedStats);
+  //     setDashboardMetrics(fetchedMetrics);
+  //     setWeekActivity(fetchedWeek);
+  //   } catch (err) {
+  //     console.error('Error refreshing EasyTOEIC data:', err);
+  //   }
+  // }, []);
 
   // Phase 2C Fix: Auth state change listener
   // Phase 6 Fix: Track user identity to detect actual user switches
@@ -241,7 +268,7 @@ export default function AppPage() {
     return () => {
       subscription.unsubscribe();
     };
-  }, [refreshAppData]);
+  }, []);
 
   // Auth Initialization Guard
   // Check authentication BEFORE loading any data
@@ -341,9 +368,7 @@ export default function AppPage() {
 
     // Refetch the updated vocabulary's progress by reloading all vocabularies for current topic
     // This is necessary because progress fields are joined data from user_vocab_progress table
-    const updatedVocabs = await getVocabByTopic(
-      selectedTopicId === 'all' ? undefined : selectedTopicId
-    );
+    const updatedVocabs = await getVocabByTopic('all');
     setVocabularies(updatedVocabs);
 
     // Refetch all three aggregates that depend on progress
@@ -371,15 +396,17 @@ export default function AppPage() {
   const handleUpdateCollection = async (colId: string, updates: Partial<Collection>) => {
     // Batch Fix Phase 3: Update local state immediately, then save to server
     // No refetch needed - only 1 collection modified, no dependencies changed
-    setCollections((prev) => prev.map((c) => (c.id === colId ? { ...c, ...updates } : c)));
     await updateCollection(colId, updates);
+    
+    setCollections((prev) => prev.map((c) => (c.id === colId ? { ...c, ...updates } : c)));
   };
 
   const handleUpdateTopic = async (topicId: string, updates: Partial<Topic>) => {
     // Batch Fix Phase 5: Update local state immediately, then save to server
     // No refetch needed - only 1 topic modified, no dependencies changed
-    setTopics((prev) => prev.map((t) => (t.id === topicId ? { ...t, ...updates } : t)));
     await updateTopic(topicId, updates);
+
+    setTopics((prev) => prev.map((t) => (t.id === topicId ? { ...t, ...updates } : t)));
   };
 
   const handleDeleteCollection = async (colId: string) => {
