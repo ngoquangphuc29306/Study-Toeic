@@ -382,7 +382,16 @@ export default function AppPage() {
     try {
       setDeleteError('');
       await deleteTopic(topicId);
-      await refreshAppData();
+
+      // RC1 Fix: Only update topics state, do NOT refetch all app data
+      // Delete operation only changes topics table (1 row removed)
+      // Collections, vocabularies, stats, metrics, week activity are unchanged
+      setTopics(prevTopics => prevTopics.filter(t => t.id !== topicId));
+
+      // Reset selection if deleted topic was currently selected
+      if (selectedTopicId === topicId) {
+        setSelectedTopicId('all');
+      }
     } catch (err) {
       if (err instanceof TopicHasVocabulariesError) {
         setDeleteError('Không thể xóa học phần này vì vẫn còn từ vựng. Hãy xóa từ vựng bên trong trước.');
