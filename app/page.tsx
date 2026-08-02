@@ -17,7 +17,7 @@ export default function LandingPage() {
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="font-extrabold text-xl bg-gradient-to-r from-[#F472B6] to-[#FF85A1] bg-clip-text text-transparent">
-                  VocabTOEIC
+                  EasyTOEIC
                 </span>
               </div>
             </div>

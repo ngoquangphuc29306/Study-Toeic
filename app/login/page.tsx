@@ -30,7 +30,7 @@ function LoginPageSkeleton() {
             </div>
           </div>
           <h1 className="text-2xl font-bold text-[#4A4A4A] mb-1">Đăng nhập</h1>
-          <p className="text-sm text-[#9CA3AF]">Chào mừng trở lại với VocabTOEIC</p>
+          <p className="text-sm text-[#9CA3AF]">Chào mừng trở lại với EasyTOEIC</p>
         </div>
 
         {/* Loading Card */}

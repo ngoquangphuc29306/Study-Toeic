@@ -227,7 +227,7 @@ export default function SignupPage() {
 
         {/* Footer Note */}
         <p className="text-center text-xs text-[#9CA3AF] mt-6">
-          Bằng việc đăng ký, bạn đồng ý với các điều khoản sử dụng của VocabTOEIC
+          Bằng việc đăng ký, bạn đồng ý với các điều khoản sử dụng của EasyTOEIC
         </p>
       </div>
     </div>

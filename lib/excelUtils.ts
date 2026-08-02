@@ -222,5 +222,5 @@ export function downloadExcelTemplate(): void {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'VocabTemplate');
 
-  XLSX.writeFile(workbook, 'VocabTOEIC_Mau_Import_Tu_Vung.xlsx');
+  XLSX.writeFile(workbook, 'EasyTOEIC_Mau_Import_Tu_Vung.xlsx');
 }

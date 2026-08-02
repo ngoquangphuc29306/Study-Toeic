@@ -1,5 +1,5 @@
 {
-  "name": "VocabTOEIC - Học Từ Vựng TOEIC",
+  "name": "EasyTOEIC - Học Từ Vựng TOEIC",
   "description": "Nền tảng học từ vựng TOEIC thông minh với Flashcard lật mặt, Spaced Repetition (SRS), Quiz trắc nghiệm và giao diện Pastel Pink dịu nhẹ.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
