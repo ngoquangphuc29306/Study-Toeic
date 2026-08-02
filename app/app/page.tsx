@@ -359,7 +359,8 @@ export default function AppPage() {
     try {
       setDeleteError('');
       await deleteCollection(colId);
-      await refreshAppData();
+
+      setCollections((currentCollections) => currentCollections.filter((collection) => collection.id !== colId));
     } catch (err) {
       if (err instanceof CollectionHasChildrenError) {
         setDeleteError('Không thể xóa bộ sưu tập này vì vẫn còn chủ đề hoặc từ vựng. Hãy xóa dữ liệu bên trong trước.');
