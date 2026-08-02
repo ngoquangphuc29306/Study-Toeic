@@ -81,7 +81,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="hidden min-[375px]:block sm:block">
             <div className="flex items-center gap-1.5">
               <span className="font-extrabold text-lg sm:text-xl bg-gradient-to-r from-[#F472B6] to-[#FF85A1] bg-clip-text text-transparent">
-                VocabTOEIC
+                EasyTOEIC
               </span>
               <span className="hidden sm:inline-block text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full bg-[#FFF1F2] text-[#F472B6]">
                 Master

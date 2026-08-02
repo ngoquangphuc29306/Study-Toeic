@@ -254,7 +254,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
           {isTopCreateOpen && (
             <div
               onClick={(e) => e.stopPropagation()}
-              className="absolute right-0 mt-2 w-56 max-w-[calc(100vw-2rem)] bg-white border border-[#FCE7F3] rounded-2xl shadow-xl z-50 p-2 space-y-1 text-xs"
+              className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-56 max-w-[calc(100vw-2rem)] bg-white border border-[#FCE7F3] rounded-2xl shadow-xl z-50 p-2 space-y-1 text-xs"
             >
               <button
                 onClick={() => {
@@ -265,17 +265,6 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
               >
                 <FolderPlus className="w-4 h-4 text-[#F472B6]" />
                 <span>Tạo Bộ từ vựng</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setIsTopCreateOpen(false);
-                  if (onOpenAddModalWithTopic) onOpenAddModalWithTopic();
-                }}
-                className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-[#FFF1F2] text-gray-700 font-semibold cursor-pointer transition-colors"
-              >
-                <Plus className="w-4 h-4 text-emerald-600" />
-                <span>Tạo Học phần / Thêm từ</span>
               </button>
 
               <button

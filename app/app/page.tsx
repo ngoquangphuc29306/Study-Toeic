@@ -107,7 +107,7 @@ export default function AppPage() {
       setDashboardMetrics(fetchedMetrics);
       setWeekActivity(fetchedWeek);
     } catch (err) {
-      console.error('Error refreshing VocabTOEIC data:', err);
+      console.error('Error refreshing EasyTOEIC data:', err);
     }
   }, []);
 
@@ -311,7 +311,7 @@ export default function AppPage() {
           setIsLoading(false);
         }
       } catch (err) {
-        console.error('Error loading VocabTOEIC data:', err);
+        console.error('Error loading EasyTOEIC data:', err);
         if (isMounted) {
           setIsLoadingDashboardMetrics(false);
           setIsLoading(false);
@@ -457,7 +457,7 @@ export default function AppPage() {
           </div>
         </div>
         <p className="text-xs font-bold text-[#F472B6] animate-pulse">
-          {authStatus === 'checking' ? 'Đang xác thực...' : 'Đang tải hệ thống VocabTOEIC...'}
+          {authStatus === 'checking' ? 'Đang xác thực...' : 'Đang tải hệ thống EasyTOEIC...'}
         </p>
       </div>
     );
@@ -602,7 +602,7 @@ export default function AppPage() {
       <footer className="border-t border-[#FCE7F3] bg-white/70 py-6 text-center text-xs text-gray-500 mt-auto">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-center gap-3">
           <p className="font-medium text-gray-600">
-            VocabTOEIC Phase 1 — Subsystem Học Từ Vựng TOEIC với Spaced Repetition & Soft Clean Minimalist UI
+            EasyTOEIC Phase 1 — Subsystem Học Từ Vựng TOEIC với Spaced Repetition & Soft Clean Minimalist UI
           </p>
         </div>
       </footer>

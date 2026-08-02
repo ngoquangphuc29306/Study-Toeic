@@ -45,7 +45,7 @@ export default function LoginForm() {
             </div>
           </div>
           <h1 className="text-2xl font-bold text-[#4A4A4A] mb-1">Đăng nhập</h1>
-          <p className="text-sm text-[#9CA3AF]">Chào mừng trở lại với VocabTOEIC</p>
+          <p className="text-sm text-[#9CA3AF]">Chào mừng trở lại với EasyTOEIC</p>
         </div>
 
         {/* Login Form Card */}
@@ -155,7 +155,7 @@ export default function LoginForm() {
 
         {/* Footer Note */}
         <p className="text-center text-xs text-[#9CA3AF] mt-6">
-          Bằng việc đăng nhập, bạn đồng ý với các điều khoản sử dụng của VocabTOEIC
+          Bằng việc đăng nhập, bạn đồng ý với các điều khoản sử dụng của EasyTOEIC
         </p>
       </div>
     </div>
