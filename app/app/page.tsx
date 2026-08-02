@@ -90,6 +90,7 @@ export default function AppPage() {
   const [deleteError, setDeleteError] = useState<string>('');
 
   // Helper to re-fetch data
+  // RC2 Fix: Used only for mutations (add/update/delete), NOT for initial load
   const refreshAppData = useCallback(async () => {
     try {
       const [fetchedCols, fetchedTopics, fetchedVocab, fetchedStats, fetchedMetrics, fetchedWeek] = await Promise.all([
@@ -207,8 +208,10 @@ export default function AppPage() {
         // Update tracked user ID
         previousUserIdRef.current = currentUserId;
 
-        // Reload data for authenticated user
-        refreshAppData();
+        // RC2 Fix: Do NOT reload data here
+        // Auth initialization flow (useEffect[authStatus]) is the single source
+        // of initial data load after SIGNED_IN completes.
+        // This prevents duplicate 12-query load on fresh login.
       } else if (event === 'USER_UPDATED') {
         // USER_UPDATED: User metadata changed (name, avatar, password, etc.)
         // This is NOT a new login - do not treat it as SIGNED_IN
@@ -283,6 +286,8 @@ export default function AppPage() {
 
   // Initial Data Load
   // Only runs AFTER authentication is confirmed
+  // RC2 Fix: This is the SINGLE source of initial data load
+  // Runs after fresh login, page refresh, and user switching
   useEffect(() => {
     // Wait for auth confirmation
     if (authStatus !== 'authenticated') {
@@ -329,32 +334,60 @@ export default function AppPage() {
   // Phase 5: handleUpdateProgress now throws errors for FlashcardMode to handle
   const handleUpdateProgress = async (vocabId: string, status: LearningStatus, rating?: SrsRating): Promise<void> => {
     await updateUserProgress(vocabId, status, rating);
-    await refreshAppData();
+
+    // Batch Fix Phase 10: Refetch affected vocabulary progress + all aggregates
+    // Progress update affects: single vocabulary progress, stats (status counts), metrics (streak/today), weekActivity (review log)
+    // Cannot use optimistic update per task constraints - must refetch after server confirmation
+
+    // Refetch the updated vocabulary's progress by reloading all vocabularies for current topic
+    // This is necessary because progress fields are joined data from user_vocab_progress table
+    const updatedVocabs = await getVocabByTopic(
+      selectedTopicId === 'all' ? undefined : selectedTopicId
+    );
+    setVocabularies(updatedVocabs);
+
+    // Refetch all three aggregates that depend on progress
+    const [updatedStats, updatedMetrics, updatedWeekActivity] = await Promise.all([
+      getStudyStats(),
+      getDashboardMetrics(),
+      getWeekActivity(),
+    ]);
+    setStats(updatedStats);
+    setDashboardMetrics(updatedMetrics);
+    setWeekActivity(updatedWeekActivity);
   };
 
   const handleAddCollection = async (newCol: Omit<Collection, 'id'>) => {
     const col = await addCollection(newCol);
-    await refreshAppData();
+
+    // Batch Fix Phase 2: Only update collections state, do NOT refetch all app data
+    // Add operation only changes collections table (1 row added)
+    // Topics, vocabularies, stats, metrics, week activity are unchanged
+    setCollections((prevCollections) => [...prevCollections, col]);
+
     return col;
   };
 
   const handleUpdateCollection = async (colId: string, updates: Partial<Collection>) => {
+    // Batch Fix Phase 3: Update local state immediately, then save to server
+    // No refetch needed - only 1 collection modified, no dependencies changed
     setCollections((prev) => prev.map((c) => (c.id === colId ? { ...c, ...updates } : c)));
     await updateCollection(colId, updates);
-    await refreshAppData();
   };
 
   const handleUpdateTopic = async (topicId: string, updates: Partial<Topic>) => {
+    // Batch Fix Phase 5: Update local state immediately, then save to server
+    // No refetch needed - only 1 topic modified, no dependencies changed
     setTopics((prev) => prev.map((t) => (t.id === topicId ? { ...t, ...updates } : t)));
     await updateTopic(topicId, updates);
-    await refreshAppData();
   };
 
   const handleDeleteCollection = async (colId: string) => {
     try {
       setDeleteError('');
       await deleteCollection(colId);
-      await refreshAppData();
+
+      setCollections((currentCollections) => currentCollections.filter((collection) => collection.id !== colId));
     } catch (err) {
       if (err instanceof CollectionHasChildrenError) {
         setDeleteError('Không thể xóa bộ sưu tập này vì vẫn còn chủ đề hoặc từ vựng. Hãy xóa dữ liệu bên trong trước.');
@@ -369,7 +402,12 @@ export default function AppPage() {
 
   const handleAddTopic = async (newTopic: Omit<Topic, 'id'>) => {
     const topic = await addTopic(newTopic);
-    await refreshAppData();
+
+    // Batch Fix Phase 4: Only update topics state, do NOT refetch all app data
+    // Add operation only changes topics table (1 row added)
+    // Collections, vocabularies, stats, metrics, week activity are unchanged
+    setTopics((prevTopics) => [...prevTopics, topic]);
+
     return topic;
   };
 
@@ -377,7 +415,16 @@ export default function AppPage() {
     try {
       setDeleteError('');
       await deleteTopic(topicId);
-      await refreshAppData();
+
+      // RC1 Fix: Only update topics state, do NOT refetch all app data
+      // Delete operation only changes topics table (1 row removed)
+      // Collections, vocabularies, stats, metrics, week activity are unchanged
+      setTopics(prevTopics => prevTopics.filter(t => t.id !== topicId));
+
+      // Reset selection if deleted topic was currently selected
+      if (selectedTopicId === topicId) {
+        setSelectedTopicId('all');
+      }
     } catch (err) {
       if (err instanceof TopicHasVocabulariesError) {
         setDeleteError('Không thể xóa học phần này vì vẫn còn từ vựng. Hãy xóa từ vựng bên trong trước.');
@@ -391,18 +438,73 @@ export default function AppPage() {
   };
 
   const handleAddVocabulary = async (newVocab: Omit<Vocabulary, 'id'>) => {
-    await addVocabulary(newVocab);
-    await refreshAppData();
+    const createdVocab = await addVocabulary(newVocab);
+
+    // Batch Fix Phase 6: Add vocabulary with default progress + targeted refetch
+    // New vocabulary has no progress yet (status='new', review_count=0)
+    const vocabWithDefaultProgress: Vocabulary = {
+      ...createdVocab,
+      status: 'new',
+      review_count: 0,
+      last_reviewed_at: undefined,
+      next_review_at: undefined,
+      interval_hours: undefined,
+      again_count: 0,
+      is_difficult: false,
+    };
+
+    setVocabularies((prevVocabs) => [...prevVocabs, vocabWithDefaultProgress]);
+
+    // Only refetch aggregates affected by vocabulary count change
+    const [updatedStats, updatedMetrics] = await Promise.all([
+      getStudyStats(),
+      getDashboardMetrics(),
+    ]);
+    setStats(updatedStats);
+    setDashboardMetrics(updatedMetrics);
   };
 
   const handleBulkAddVocabularies = async (items: Omit<Vocabulary, 'id'>[]) => {
-    await bulkAddVocabularies(items);
-    await refreshAppData();
+    const createdVocabs = await bulkAddVocabularies(items);
+
+    // Batch Fix Phase 7: Add all vocabularies with default progress + targeted refetch
+    // New vocabularies have no progress yet (status='new', review_count=0)
+    const vocabsWithDefaultProgress: Vocabulary[] = createdVocabs.map((vocab) => ({
+      ...vocab,
+      status: 'new' as const,
+      review_count: 0,
+      last_reviewed_at: undefined,
+      next_review_at: undefined,
+      interval_hours: undefined,
+      again_count: 0,
+      is_difficult: false,
+    }));
+
+    setVocabularies((prevVocabs) => [...prevVocabs, ...vocabsWithDefaultProgress]);
+
+    // Only refetch aggregates affected by vocabulary count change
+    const [updatedStats, updatedMetrics] = await Promise.all([
+      getStudyStats(),
+      getDashboardMetrics(),
+    ]);
+    setStats(updatedStats);
+    setDashboardMetrics(updatedMetrics);
   };
 
   const handleDeleteVocabulary = async (vocabId: string) => {
     await deleteVocabulary(vocabId);
-    await refreshAppData();
+
+    // Batch Fix Phase 8: Remove vocabulary from state + targeted refetch
+    // Deletion affects vocabulary count, so stats and metrics must be refetched
+    setVocabularies((prevVocabs) => prevVocabs.filter((v) => v.id !== vocabId));
+
+    // Only refetch aggregates affected by vocabulary count change
+    const [updatedStats, updatedMetrics] = await Promise.all([
+      getStudyStats(),
+      getDashboardMetrics(),
+    ]);
+    setStats(updatedStats);
+    setDashboardMetrics(updatedMetrics);
   };
 
   // Switchers
