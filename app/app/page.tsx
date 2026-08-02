@@ -90,6 +90,7 @@ export default function AppPage() {
   const [deleteError, setDeleteError] = useState<string>('');
 
   // Helper to re-fetch data
+  // RC2 Fix: Used only for mutations (add/update/delete), NOT for initial load
   const refreshAppData = useCallback(async () => {
     try {
       const [fetchedCols, fetchedTopics, fetchedVocab, fetchedStats, fetchedMetrics, fetchedWeek] = await Promise.all([
@@ -207,8 +208,10 @@ export default function AppPage() {
         // Update tracked user ID
         previousUserIdRef.current = currentUserId;
 
-        // Reload data for authenticated user
-        refreshAppData();
+        // RC2 Fix: Do NOT reload data here
+        // Auth initialization flow (useEffect[authStatus]) is the single source
+        // of initial data load after SIGNED_IN completes.
+        // This prevents duplicate 12-query load on fresh login.
       } else if (event === 'USER_UPDATED') {
         // USER_UPDATED: User metadata changed (name, avatar, password, etc.)
         // This is NOT a new login - do not treat it as SIGNED_IN
@@ -283,6 +286,8 @@ export default function AppPage() {
 
   // Initial Data Load
   // Only runs AFTER authentication is confirmed
+  // RC2 Fix: This is the SINGLE source of initial data load
+  // Runs after fresh login, page refresh, and user switching
   useEffect(() => {
     // Wait for auth confirmation
     if (authStatus !== 'authenticated') {
