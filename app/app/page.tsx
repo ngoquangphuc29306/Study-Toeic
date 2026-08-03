@@ -31,8 +31,8 @@ const FlashcardMode = dynamic(
   { loading: () => <TabLoadingFallback /> }
 );
 
-const QuizMode = dynamic(
-  () => import('../../components/QuizMode').then((mod) => mod.QuizMode),
+const SynonymPractice = dynamic(
+  () => import('../../features/synonym-practice').then((mod) => mod.SynonymPractice),
   { loading: () => <TabLoadingFallback /> }
 );
 
@@ -101,7 +101,7 @@ export default function AppPage() {
   // Auth state
   const [authStatus, setAuthStatus] = useState<'checking' | 'authenticated' | 'unauthenticated'>('checking');
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'flashcard' | 'quiz' | 'vocab-manager'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'flashcard' | 'synonyms' | 'vocab-manager'>('dashboard');
   const [selectedTopicId, setSelectedTopicId] = useState<string>('all');
   const [initialFlashcardStatus, setInitialFlashcardStatus] = useState<'all' | 'new' | 'learning' | 'mastered' | undefined>(undefined);
   const [defaultModalTopicId, setDefaultModalTopicId] = useState<string | undefined>(undefined);
@@ -132,6 +132,7 @@ export default function AppPage() {
   const [collectionModalDefaultId, setCollectionModalDefaultId] = useState<string | undefined>(undefined);
   const [isExcelModalOpen, setIsExcelModalOpen] = useState<boolean>(false);
   const [isSqlModalOpen, setIsSqlModalOpen] = useState<boolean>(false);
+  const [editingVocabulary, setEditingVocabulary] = useState<Vocabulary | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Helper to re-fetch data
@@ -645,7 +646,7 @@ export default function AppPage() {
 
   const handleSelectTopicForQuiz = (topicId: string) => {
     setSelectedTopicId(topicId);
-    setActiveTab('quiz');
+    setActiveTab('synonyms');
   };
 
   const [isExportingCSV, setIsExportingCSV] = useState(false);
@@ -748,14 +749,14 @@ export default function AppPage() {
           />
         )}
 
-        {activeTab === 'quiz' && (
-          <QuizMode
+        {activeTab === 'synonyms' && (
+          <SynonymPractice
             vocabularies={vocabularies}
             topics={topics}
+            collections={collections}
             selectedTopicId={selectedTopicId}
-            onUpdateProgress={handleUpdateProgress}
-            onBackToDashboard={() => setActiveTab('dashboard')}
-            onSwitchToFlashcards={handleSelectTopicForFlashcard}
+            onOpenEditVocabulary={setEditingVocabulary}
+            onOpenVocabularyManager={() => setActiveTab('vocab-manager')}
           />
         )}
 
@@ -807,6 +808,16 @@ export default function AppPage() {
         topics={topics}
         defaultTopicId={defaultModalTopicId}
         onAddVocabulary={handleAddVocabulary}
+      />
+
+      <AddVocabModal
+        key={editingVocabulary?.id ?? 'edit-vocabulary-modal'}
+        isOpen={Boolean(editingVocabulary)}
+        onClose={() => setEditingVocabulary(null)}
+        topics={topics}
+        mode="edit"
+        editVocabulary={editingVocabulary ?? undefined}
+        onEditVocabulary={handleUpdateVocabulary}
       />
 
       <CollectionModal
