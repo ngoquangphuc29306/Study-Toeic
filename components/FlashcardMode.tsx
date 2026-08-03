@@ -1,14 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { 
-  ArrowLeft, 
-  Volume2, 
-  RotateCw, 
-  CheckCircle2, 
-  HelpCircle, 
-  BookOpen, 
-  Award, 
+import {
+  ArrowLeft,
+  Volume2,
+  RotateCw,
+  CheckCircle2,
+  HelpCircle,
+  BookOpen,
+  Award,
   RefreshCw,
   Target,
   Keyboard,
@@ -28,6 +28,7 @@ import confetti from 'canvas-confetti';
 import { Vocabulary, Topic } from '../lib/types';
 import { SrsRating } from '../services/vocabService';
 import { saveStudySession, loadStudySession, clearStudySession } from '../lib/session/storage';
+import { useToast } from '../contexts/ToastContext';
 import { applyRatingToQueue } from '../lib/session/queueTransition';
 import type { StudySessionSnapshot } from '../lib/session/types';
 import { createClient } from '@/lib/supabase/client';
@@ -72,6 +73,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   onSwitchToQuiz,
   onDeleteVocabulary,
 }) => {
+  const { showToast } = useToast();
   const [filterTopic, setFilterTopic] = useState<string>(selectedTopicId || 'all');
   const [filterStatus, setFilterStatus] = useState<'all' | 'new' | 'learning' | 'mastered'>(initialStatus || 'new');
   const [subMode, setSubMode] = useState<StudySubMode>('flashcard');
@@ -422,7 +424,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   // Text-to-Speech
   const playPronunciation = useCallback((text: string, accent: 'en-US' | 'en-GB' = voiceAccent) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      alert('Trình duyệt của bạn không hỗ trợ Web Speech API.');
+      showToast('Trình duyệt của bạn không hỗ trợ Web Speech API.', 'error');
       return;
     }
 
@@ -432,7 +434,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     utterance.rate = 0.85;
 
     window.speechSynthesis.speak(utterance);
-  }, [voiceAccent]);
+  }, [voiceAccent, showToast]);
 
   // Helper for dynamic SRS button interval subtitles
   const getRatingSubtitle = (rating: 'again' | 'hard' | 'good' | 'easy', currentInterval = 0) => {
@@ -1180,7 +1182,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
                       </span>
                     )}
                     {showSynonyms && currentVocab.synonyms && (
-                      <span className="px-3 py-1.5 rounded-xl bg-[#F3E8FF] border border-[#E9D5FF] text-[#A855F7] font-bold text-[11px]">
+                      <span className="px-3 py-1.5 rounded-xl bg-[#F3E8FF] border border-[#E9D5FF] text-[#A855F7] font-bold text-xs sm:text-sm">
                         Đồng nghĩa: {currentVocab.synonyms}
                       </span>
                     )}
@@ -1523,7 +1525,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
           /* 4 Rating/Evaluation Buttons revealed when clicking "Đã thuộc" */
           <div className="space-y-2 animate-fadeIn">
             <div className="flex items-center justify-between px-1">
-              <span className="text-xs font-bold text-gray-600">Đánh giá mức độ thuộc:</span>
+              <span className="text-sm font-bold text-gray-600">Đánh giá mức độ thuộc:</span>
               <button
                 onClick={() => setShowRatingButtons(false)}
                 className="text-[11px] text-gray-400 hover:text-gray-600 font-semibold cursor-pointer"
@@ -1535,10 +1537,10 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
               <button
                 onClick={() => handleSelectSrsRating('again')}
                 disabled={isSubmitting}
-                className="p-3.5 rounded-2xl bg-[#EF4444] text-white font-bold text-xs flex flex-col items-center justify-center gap-0.5 hover:opacity-90 transition-all cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-3.5 rounded-2xl bg-[#EF4444] text-white font-bold text-sm sm:text-base flex flex-col items-center justify-center gap-0.5 hover:opacity-90 transition-all cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span>Học lại</span>
-                <span className="text-[10px] font-normal opacity-90">
+                <span className="text-xs sm:text-sm font-normal opacity-90">
                   {getRatingSubtitle('again', currentVocab?.interval_hours)}
                 </span>
               </button>
@@ -1546,10 +1548,10 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
               <button
                 onClick={() => handleSelectSrsRating('hard')}
                 disabled={isSubmitting}
-                className="p-3.5 rounded-2xl bg-[#D97706] text-white font-bold text-xs flex flex-col items-center justify-center gap-0.5 hover:opacity-90 transition-all cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-3.5 rounded-2xl bg-[#D97706] text-white font-bold text-sm sm:text-base flex flex-col items-center justify-center gap-0.5 hover:opacity-90 transition-all cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span>Khó</span>
-                <span className="text-[10px] font-normal opacity-90">
+                <span className="text-xs sm:text-sm font-normal opacity-90">
                   {getRatingSubtitle('hard', currentVocab?.interval_hours)}
                 </span>
               </button>
@@ -1557,10 +1559,10 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
               <button
                 onClick={() => handleSelectSrsRating('good')}
                 disabled={isSubmitting}
-                className="p-3.5 rounded-2xl bg-[#059669] text-white font-bold text-xs flex flex-col items-center justify-center gap-0.5 hover:opacity-90 transition-all cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-3.5 rounded-2xl bg-[#059669] text-white font-bold text-sm sm:text-base flex flex-col items-center justify-center gap-0.5 hover:opacity-90 transition-all cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span>Tốt</span>
-                <span className="text-[10px] font-normal opacity-90">
+                <span className="text-xs sm:text-sm font-normal opacity-90">
                   {getRatingSubtitle('good', currentVocab?.interval_hours)}
                 </span>
               </button>
@@ -1568,10 +1570,10 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
               <button
                 onClick={() => handleSelectSrsRating('easy')}
                 disabled={isSubmitting}
-                className="p-3.5 rounded-2xl bg-[#0284C7] text-white font-bold text-xs flex flex-col items-center justify-center gap-0.5 hover:opacity-90 transition-all cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-3.5 rounded-2xl bg-[#0284C7] text-white font-bold text-sm sm:text-base flex flex-col items-center justify-center gap-0.5 hover:opacity-90 transition-all cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span>Dễ</span>
-                <span className="text-[10px] font-normal opacity-90">
+                <span className="text-xs sm:text-sm font-normal opacity-90">
                   {getRatingSubtitle('easy', currentVocab?.interval_hours)}
                 </span>
               </button>
@@ -1805,7 +1807,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
                 <button
                   key={idx}
                   onClick={() => {
-                    alert('Cảm ơn bạn đã đóng góp! Đội ngũ sẽ kiểm tra và cập nhật.');
+                    showToast('Cảm ơn bạn đã đóng góp! Đội ngũ sẽ kiểm tra và cập nhật.', 'success');
                     setShowReportModal(false);
                   }}
                   className="w-full p-3 text-left rounded-xl bg-[#FFF5F7] hover:bg-[#FFF1F2] border border-[#FCE7F3] transition-all cursor-pointer"

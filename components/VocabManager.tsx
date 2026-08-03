@@ -48,8 +48,6 @@ interface VocabManagerProps {
   onExportJSON?: () => void;
   isExportingCSV?: boolean;
   isExportingJSON?: boolean;
-  deleteError?: string;
-  onClearDeleteError?: () => void;
 }
 
 export const VocabManager: React.FC<VocabManagerProps> = ({
@@ -73,8 +71,6 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
   onExportJSON,
   isExportingCSV = false,
   isExportingJSON = false,
-  deleteError,
-  onClearDeleteError,
 }) => {
   // Active dropdown state tracking
   const [activeManageDropdown, setActiveManageDropdown] = useState<string | null>(null);
@@ -185,27 +181,6 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
   return (
     <div className="bg-white text-gray-800 rounded-[32px] p-4 sm:p-6 lg:p-8 space-y-8 font-sans shadow-sm border border-[#FCE7F3]">
 
-      {/* Error Alert for Collection Deletion */}
-      {deleteError && (
-        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-start gap-3">
-          <div className="flex-shrink-0 mt-0.5">
-            <X className="w-5 h-5 text-rose-500" />
-          </div>
-          <div className="flex-1">
-            <h4 className="text-sm font-bold text-rose-900 mb-1">Không thể xóa bộ sưu tập</h4>
-            <p className="text-sm text-rose-700">{deleteError}</p>
-          </div>
-          <button
-            onClick={() => {
-              if (onClearDeleteError) onClearDeleteError();
-            }}
-            className="flex-shrink-0 p-1 rounded-lg hover:bg-rose-100 text-rose-400 hover:text-rose-600 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
       {/* Top Bar Header */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-6 border-b border-[#FCE7F3]">
         
@@ -286,6 +261,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                   if (onExportCSV) onExportCSV();
                 }}
                 disabled={isExportingCSV}
+                aria-busy={isExportingCSV}
                 className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-blue-50 text-gray-700 font-semibold cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Download className="w-4 h-4 text-blue-600" />
@@ -298,6 +274,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                   if (onExportJSON) onExportJSON();
                 }}
                 disabled={isExportingJSON}
+                aria-busy={isExportingJSON}
                 className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-blue-50 text-gray-700 font-semibold cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Download className="w-4 h-4 text-blue-600" />
