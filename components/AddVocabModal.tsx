@@ -253,6 +253,8 @@ export const AddVocabModal: React.FC<AddVocabModalProps> = ({
                   <option value="adjective">Tính từ (Adjective)</option>
                   <option value="adverb">Trạng từ (Adverb)</option>
                   <option value="phrase">Cụm từ (Phrase)</option>
+                  <option value="conjunction">Liên từ (Conjunction)</option>
+                  <option value="preposition">Giới từ (Preposition)</option>
                 </select>
               </div>
             </div>

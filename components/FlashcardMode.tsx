@@ -26,7 +26,7 @@ import {
   Pencil
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { Vocabulary, Topic } from '../lib/types';
+import { FlashcardInitialFilter, Vocabulary, Topic } from '../lib/types';
 import { SrsRating } from '../services/vocabService';
 import { saveStudySession, loadStudySession, clearStudySession } from '../lib/session/storage';
 import { useToast } from '../contexts/ToastContext';
@@ -37,6 +37,7 @@ import { AddVocabModal } from './AddVocabModal';
 import gsap from 'gsap';
 import { motionTokens } from '../lib/animation/motionTokens';
 import { usePrefersReducedMotion } from '../hooks/use-prefers-reduced-motion';
+import { isVocabularyDue } from '../features/review-reminder';
 
 type VocabularyUpdate = Partial<Pick<Vocabulary,
   'word' | 'phonetic_uk' | 'phonetic_us' | 'part_of_speech' |
@@ -48,10 +49,11 @@ interface FlashcardModeProps {
   vocabularies: Vocabulary[];
   topics: Topic[];
   selectedTopicId: string;
-  initialStatus?: 'all' | 'new' | 'learning' | 'mastered';
+  initialStatus?: FlashcardInitialFilter;
   onUpdateProgress: (vocabId: string, status: 'learning' | 'mastered', rating?: SrsRating) => Promise<void>;
   onBackToDashboard: () => void;
   onSwitchToSynonyms: (topicId: string) => void;
+  onStudySessionCompleted?: () => void;
   onDeleteVocabulary?: (vocabId: string) => void;
   onEditVocabulary?: (vocabId: string, updates: VocabularyUpdate) => Promise<void>;
 }
@@ -82,12 +84,13 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   onUpdateProgress,
   onBackToDashboard,
   onSwitchToSynonyms,
+  onStudySessionCompleted,
   onDeleteVocabulary,
   onEditVocabulary,
 }) => {
   const { showToast } = useToast();
   const [filterTopic, setFilterTopic] = useState<string>(selectedTopicId || 'all');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'new' | 'learning' | 'mastered'>(initialStatus || 'new');
+  const [filterStatus, setFilterStatus] = useState<FlashcardInitialFilter>(initialStatus || 'new');
   const [subMode, setSubMode] = useState<StudySubMode>('flashcard');
   const [currentIndex, setCurrentIndex] = useState<number>(0);
 
@@ -283,11 +286,8 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
         m++;
       } else if (v.status === 'learning') {
         l++;
-        const isDue = !v.next_review_at || new Date(v.next_review_at).getTime() <= nowMs;
-        if (isDue) {
-          due++;
-        }
       }
+      if (isVocabularyDue(v, nowMs)) due++;
     });
     return { newCount: n, learningCount: l, dueCount: due, masteredCount: m, totalCount: topicVocabs.length };
   }, [topicVocabs, nowMs]);
@@ -301,6 +301,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
   const currentStatusLabel = useMemo(() => {
     if (filterStatus === 'new') return `🌟 Từ mới (${newCount})`;
+    if (filterStatus === 'due') return `⏰ Đến hạn ôn (${dueCount})`;
     if (filterStatus === 'learning') return `⏰ Đến hạn ôn (${dueCount})`;
     if (filterStatus === 'mastered') return `✅ Đã thuộc (${masteredCount})`;
     return `📚 Tất cả trạng thái (${totalCount})`;
@@ -323,6 +324,9 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     if (filterStatus === 'mastered') {
       return topicVocabs.filter((v) => v.status === 'mastered');
     }
+    if (filterStatus === 'due') {
+      return topicVocabs.filter((v) => isVocabularyDue(v, nowMs));
+    }
     if (filterStatus === 'learning') {
       // Only include words in 'learning' status that are ACTUALLY due for review (next_review_at <= now)
       return topicVocabs.filter((v) => v.status === 'learning' && (!v.next_review_at || new Date(v.next_review_at).getTime() <= nowMs));
@@ -336,7 +340,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
     topicVocabs.forEach((v) => {
       if (v.status === 'learning') {
-        const isDue = !v.next_review_at || new Date(v.next_review_at).getTime() <= nowMs;
+        const isDue = isVocabularyDue(v, nowMs);
         if (isDue) {
           dueWords.push(v);
         } else {
@@ -699,6 +703,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       if (transition.isComplete) {
         // Final card: Show completion ONLY after save succeeds
         setIsCompleted(true);
+        onStudySessionCompleted?.();
         setStudyQueue(transition.queue);
         setCurrentIndex(transition.currentIndex);
 
@@ -753,7 +758,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       ratingSubmitLockRef.current = false;
       setIsSubmitting(false);
     }
-  }, [currentVocab, safeIndex, onUpdateProgress, studyQueue, sessionStats, filterTopic, filterStatus, getUserId, prefersReducedMotion]);
+  }, [currentVocab, safeIndex, onUpdateProgress, onStudySessionCompleted, studyQueue, sessionStats, filterTopic, filterStatus, getUserId, prefersReducedMotion]);
 
   // Handle Rating Selection from 4 evaluation buttons
   const handleSelectSrsRating = useCallback((srsRating: SrsRating) => {
@@ -1019,14 +1024,14 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
         <h3 className="font-bold text-lg text-gray-800">
           {filterStatus === 'new'
             ? 'Không có từ mới trong học phần này'
-            : filterStatus === 'learning'
+            : filterStatus === 'learning' || filterStatus === 'due'
             ? 'Không có từ nào đến hạn ôn tập'
             : 'Không có từ vựng nào phù hợp'}
         </h3>
         <p className="text-xs text-gray-500 leading-relaxed">
           {filterStatus === 'new'
             ? 'Tất cả các từ vựng trong học phần này đã được khởi đầu học hoặc đã thuộc. Bạn có thể chọn học tất cả từ hoặc chọn bộ lọc khác.'
-            : filterStatus === 'learning'
+            : filterStatus === 'learning' || filterStatus === 'due'
             ? 'Bạn đã hoàn thành tất cả các từ đến hạn ôn tập lúc này! Bạn có thể học thêm từ mới hoặc ôn tập lại tất cả các từ.'
             : 'Vui lòng chọn bài học khác hoặc quay về Dashboard.'}
         </p>
@@ -1041,7 +1046,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
             </button>
           )}
 
-          {filterStatus === 'learning' && totalCount > 0 && (
+          {(filterStatus === 'learning' || filterStatus === 'due') && totalCount > 0 && (
             <button
               onClick={() => setFilterStatus('all')}
               className="px-5 py-2.5 bg-[#FFF1F2] text-[#ED4F8E] font-bold rounded-2xl text-xs cursor-pointer border border-[#FCE7F3] hover:bg-[#FFE4E6] transition-colors"

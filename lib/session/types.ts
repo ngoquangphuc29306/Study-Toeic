@@ -13,7 +13,7 @@ export interface StudySessionSnapshot {
   vocabularyIds: string[];
   currentIndex: number;
   selectedTopicId: string;
-  initialStatus: 'all' | 'new' | 'learning' | 'mastered';
+  initialStatus: 'all' | 'new' | 'learning' | 'mastered' | 'due';
   startedAt: string;
   updatedAt: string;
 }
