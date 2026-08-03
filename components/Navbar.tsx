@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { BookOpen, Sparkles, Database, Plus, Flame, CheckCircle2, Home, Layers, HelpCircle, User } from 'lucide-react';
+import { BookOpen, Sparkles, Database, Plus, Flame, CheckCircle2, Home, Layers, GitCompareArrows, User } from 'lucide-react';
 import { StudyStats } from '../lib/types';
 import { SignOutButton } from './auth/sign-out-button';
 import { getCurrentProfile } from '@/services/profileService';
@@ -10,8 +10,8 @@ import type { UserProfile } from '@/services/profileService';
 import Image from 'next/image';
 
 interface NavbarProps {
-  activeTab: 'dashboard' | 'flashcard' | 'quiz' | 'vocab-manager';
-  setActiveTab: (tab: 'dashboard' | 'flashcard' | 'quiz' | 'vocab-manager') => void;
+  activeTab: 'dashboard' | 'flashcard' | 'synonyms' | 'vocab-manager';
+  setActiveTab: (tab: 'dashboard' | 'flashcard' | 'synonyms' | 'vocab-manager') => void;
   stats: StudyStats;
   currentStreak: number; // Phase 9.8: Authoritative streak from dashboardMetrics
   onOpenSqlModal: () => void;
@@ -119,15 +119,15 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveTab('quiz')}
+            onClick={() => setActiveTab('synonyms')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
-              activeTab === 'quiz'
+              activeTab === 'synonyms'
                 ? 'bg-white text-[#F472B6] shadow-2xs'
                 : 'text-gray-500 hover:text-[#F472B6] hover:bg-white/60'
             }`}
           >
-            <HelpCircle className="w-4 h-4" />
-            Bài Tập Quiz
+            <GitCompareArrows className="w-4 h-4" />
+            Từ đồng nghĩa
           </button>
 
           <button
@@ -234,14 +234,14 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span className="text-[10px] sm:text-xs">Flashcard</span>
         </button>
         <button
-          onClick={() => setActiveTab('quiz')}
+          onClick={() => setActiveTab('synonyms')}
           className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[60px] ${
-            activeTab === 'quiz' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
+            activeTab === 'synonyms' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
           }`}
-          aria-current={activeTab === 'quiz' ? 'page' : undefined}
+          aria-current={activeTab === 'synonyms' ? 'page' : undefined}
         >
-          <HelpCircle className="w-5 h-5 sm:w-4 sm:h-4" />
-          <span className="text-[10px] sm:text-xs">Quiz</span>
+          <GitCompareArrows className="w-5 h-5 sm:w-4 sm:h-4" />
+          <span className="text-[10px] sm:text-xs">Đồng nghĩa</span>
         </button>
         <button
           onClick={() => setActiveTab('vocab-manager')}
