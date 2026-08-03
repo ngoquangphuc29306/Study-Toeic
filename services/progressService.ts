@@ -58,7 +58,7 @@ export async function getProgressForVocabularies(
 
   const progressMap = new Map<string, ProgressRecord>();
   if (data) {
-    data.forEach((record) => {
+    (data as ProgressRecord[]).forEach((record) => {
       progressMap.set(record.vocabulary_id, record as ProgressRecord);
     });
   }

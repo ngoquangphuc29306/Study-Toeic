@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import type { AuthChangeEvent } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
 
 /**
@@ -30,7 +31,7 @@ export function AuthEventBridge() {
   useEffect(() => {
     const supabase = createClient();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: AuthChangeEvent) => {
       if (event === 'PASSWORD_RECOVERY') {
         // User clicked password recovery link from email
         // Set marker with timestamp for /reset-password page

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import type { AuthChangeEvent } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Lock, Eye, EyeOff, CheckCircle2, AlertTriangle } from 'lucide-react';
@@ -85,7 +86,7 @@ export default function ResetPasswordPage() {
 
     // Scoped listener for direct PASSWORD_RECOVERY (fallback)
     const supabase = createClient();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: AuthChangeEvent) => {
       if (event === 'PASSWORD_RECOVERY' && isMounted) {
         // Direct PASSWORD_RECOVERY received on this page
         // Set marker if not already set by AuthEventBridge

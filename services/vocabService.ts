@@ -52,18 +52,18 @@ const DELETED_VOCABS_KEY = 'vocab_deleted_vocabs_v1'; // INACTIVE after Phase 2E
 // Legacy localStorage progress keys (vocab_local_progress_v1:<user-id>) are no longer written
 
 /**
- * Get authenticated user ID from Supabase
- * Returns null if not authenticated or error occurs
+ * Get authenticated user ID from Supabase.
+ * An unavailable session is a load error, not an empty vocabulary result.
  */
-async function getAuthUserId(): Promise<string | null> {
+async function getAuthUserId(): Promise<string> {
   try {
     const supabase = createClient();
     const { data: { user }, error } = await supabase.auth.getUser();
-    if (error || !user) return null;
+    if (error || !user) throw new Error('AUTH_REQUIRED');
     return user.id;
   } catch (err) {
     console.warn('getAuthUserId error:', err);
-    return null;
+    throw err instanceof Error ? err : new Error('AUTH_REQUIRED');
   }
 }
 
@@ -98,28 +98,14 @@ function getSupabase() {
 // --- COLLECTION METHODS (Phase 2C: Migrated to Supabase) ---
 
 /**
- * Get all collections from Supabase with computed totals
+ * Get all collections from Supabase.
+ * Collection totals are composed by the page loader from the same snapshot
+ * as topics and vocabularies, avoiding a second nested fetch during restore.
  * Phase 2E: Collections, Topics, and Vocabularies in Supabase
  */
 export async function getCollections(): Promise<Collection[]> {
   try {
-    const collections = await getCollectionsFromSupabase();
-
-    // Compute totals from Supabase Topics and Vocabularies
-    const allTopics = await getTopics();
-    const allVocabs = await getVocabByTopic();
-
-    return collections.map((col) => {
-      const colTopics = allTopics.filter((t) => t.collection_id === col.id);
-      const colTopicIds = new Set(colTopics.map((t) => t.id));
-      const colVocabs = allVocabs.filter((v) => colTopicIds.has(v.topic_id));
-
-      return {
-        ...col,
-        total_topics: colTopics.length,
-        total_words: colVocabs.length,
-      };
-    });
+    return await getCollectionsFromSupabase();
   } catch (err) {
     console.error('getCollections error:', err);
     throw err;
@@ -221,12 +207,7 @@ export async function deleteTopic(topicId: string): Promise<void> {
  * Phase 5: Vocabulary domain data from Supabase, progress from Supabase user_vocab_progress
  */
 export async function getVocabByTopic(topicId?: string): Promise<Vocabulary[]> {
-  const userId = await getAuthUserId();
-  if (!userId) {
-    console.warn('getVocabByTopic: No authenticated user, returning empty array');
-    return [];
-  }
-
+  await getAuthUserId();
   try {
     // Load vocabularies from Supabase
     const supabaseVocabs = await getVocabulariesFromSupabase(topicId);

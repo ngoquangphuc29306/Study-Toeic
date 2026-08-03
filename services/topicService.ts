@@ -32,7 +32,7 @@ export async function getTopics(collectionId?: string): Promise<Topic[]> {
 
     if (authError || !user) {
       console.error('Authentication required for getTopics');
-      return [];
+      throw new Error('AUTH_REQUIRED');
     }
 
     let query = supabase
@@ -52,7 +52,7 @@ export async function getTopics(collectionId?: string): Promise<Topic[]> {
       throw new Error('Không thể tải học phần. Vui lòng thử lại.');
     }
 
-    const topics = data || [];
+    const topics = (data || []) as Topic[];
 
     // Compute vocabulary counts from Supabase
     // Use a single query to count vocabularies for all topics
@@ -74,18 +74,12 @@ export async function getTopics(collectionId?: string): Promise<Topic[]> {
 
     if (vocabError) {
       console.error('Supabase vocabulary count error:', vocabError.message);
-      // Return topics with zero counts if vocabulary query fails
-      return topics.map(topic => ({
-        ...topic,
-        total_words: 0,
-        mastered_words: 0,
-        learning_words: 0,
-      }));
+      throw new Error('Unable to load vocabulary counts. Please try again.');
     }
 
     // Count vocabularies per topic
     const vocabCounts = new Map<string, number>();
-    (vocabData || []).forEach(v => {
+    ((vocabData || []) as Array<{ topic_id: string }>).forEach(v => {
       vocabCounts.set(v.topic_id, (vocabCounts.get(v.topic_id) || 0) + 1);
     });
 
