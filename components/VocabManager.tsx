@@ -28,6 +28,9 @@ import {
 } from 'lucide-react';
 import { Collection, Vocabulary, Topic, LearningStatus } from '../lib/types';
 import { AddVocabModal } from './AddVocabModal';
+import gsap from 'gsap';
+import { motionTokens } from '../lib/animation/motionTokens';
+import { usePrefersReducedMotion } from '../hooks/use-prefers-reduced-motion';
 
 type VocabularyUpdate = Partial<Pick<Vocabulary,
   'word' | 'phonetic_uk' | 'phonetic_us' | 'part_of_speech' |
@@ -99,6 +102,8 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
 
   const [editingTopic, setEditingTopic] = useState<Topic | null>(null);
   const [newTopicTitle, setNewTopicTitle] = useState<string>('');
+  const wordsModalRef = useRef<HTMLDivElement>(null);
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   // Audio pronunciation helper
   const handleSpeak = (text: string, lang: 'en-US' | 'en-GB' = 'en-US') => {
@@ -148,6 +153,34 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
       return () => window.removeEventListener('keydown', handleEsc);
     }
   }, [viewWordsTopic, editingVocabulary, editingCollection, editingTopic]);
+
+  useEffect(() => {
+    if (!viewWordsTopic || !wordsModalRef.current) return;
+
+    const ctx = gsap.context(() => {
+      const modal = wordsModalRef.current;
+      if (!modal) return;
+
+      if (prefersReducedMotion) {
+        gsap.set(modal, { clearProps: 'all' });
+        return;
+      }
+
+      gsap.fromTo(
+        modal,
+        { autoAlpha: 0, y: motionTokens.distance.medium },
+        {
+          autoAlpha: 1,
+          y: 0,
+          duration: motionTokens.duration.normal,
+          ease: motionTokens.ease.standard,
+          clearProps: 'transform,opacity,visibility',
+        }
+      );
+    }, wordsModalRef);
+
+    return () => ctx.revert();
+  }, [prefersReducedMotion, viewWordsTopic]);
 
   // Group topics by collection
   const collectionGroupMap = React.useMemo(() => {
@@ -687,6 +720,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
           onClick={() => setViewWordsTopic(null)}
         >
           <div
+            ref={wordsModalRef}
             className="relative w-full max-w-4xl max-h-[90dvh] bg-white border border-[#FCE7F3] rounded-[20px] sm:rounded-[32px] shadow-2xl overflow-hidden flex flex-col p-4 sm:p-6 space-y-4"
             onClick={(e) => e.stopPropagation()}
             role="dialog"

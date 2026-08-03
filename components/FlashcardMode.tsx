@@ -34,6 +34,9 @@ import { applyRatingToQueue } from '../lib/session/queueTransition';
 import type { StudySessionSnapshot } from '../lib/session/types';
 import { createClient } from '@/lib/supabase/client';
 import { AddVocabModal } from './AddVocabModal';
+import gsap from 'gsap';
+import { motionTokens } from '../lib/animation/motionTokens';
+import { usePrefersReducedMotion } from '../hooks/use-prefers-reduced-motion';
 
 type VocabularyUpdate = Partial<Pick<Vocabulary,
   'word' | 'phonetic_uk' | 'phonetic_us' | 'part_of_speech' |
@@ -94,6 +97,12 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
   const [isFlipped, setIsFlipped] = useState<boolean>(false);
   const [isCompleted, setIsCompleted] = useState<boolean>(false);
+  const cardTransitionRef = useRef<HTMLDivElement>(null);
+  const completionRef = useRef<HTMLDivElement>(null);
+  const typingInputRef = useRef<HTMLInputElement>(null);
+  const typingFeedbackRef = useRef<HTMLDivElement>(null);
+  const shouldAnimateCardRef = useRef(false);
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   // Edit vocabulary modal state
   const [showEditModal, setShowEditModal] = useState<boolean>(false);
@@ -414,6 +423,64 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   // Use safe index directly, sync state in next render to avoid cascading updates
   const currentVocab = activeVocabs[safeIndex];
 
+  useEffect(() => {
+    const card = cardTransitionRef.current;
+    if (!card || !shouldAnimateCardRef.current) return;
+
+    shouldAnimateCardRef.current = false;
+    const ctx = gsap.context(() => {
+      if (prefersReducedMotion) {
+        gsap.set(card, { clearProps: 'transform,opacity' });
+        return;
+      }
+
+      gsap.fromTo(
+        card,
+        { x: motionTokens.distance.large, autoAlpha: 0 },
+        {
+          x: 0,
+          autoAlpha: 1,
+          duration: motionTokens.duration.fast,
+          ease: motionTokens.ease.standard,
+          clearProps: 'transform,opacity',
+        }
+      );
+    }, card);
+
+    return () => ctx.revert();
+  }, [safeIndex, currentVocab?.id, prefersReducedMotion]);
+
+  useEffect(() => {
+    if (!isCompleted || !completionRef.current) return;
+
+    const ctx = gsap.context(() => {
+      const completion = completionRef.current;
+      if (!completion) return;
+
+      const targets = completion.querySelectorAll<HTMLElement>('[data-completion-item]');
+      if (prefersReducedMotion) {
+        gsap.set(targets, { clearProps: 'all' });
+        return;
+      }
+
+      gsap.timeline({
+        defaults: {
+          duration: motionTokens.duration.normal,
+          ease: motionTokens.ease.emphasized,
+        },
+      })
+        .fromTo(targets[0], { autoAlpha: 0, scale: 0.96 }, { autoAlpha: 1, scale: 1 })
+        .fromTo(
+          Array.from(targets).slice(1),
+          { autoAlpha: 0, y: motionTokens.distance.small },
+          { autoAlpha: 1, y: 0, stagger: 0.05 },
+          '-=0.12'
+        );
+    }, completionRef);
+
+    return () => ctx.revert();
+  }, [isCompleted, prefersReducedMotion]);
+
   // Sync currentIndex after render completes if it was out of bounds
 
   // Derive Quiz options dynamically using pure seeded shuffle
@@ -434,6 +501,96 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       correctQuizIndex: shuffled.indexOf(currentVocab.meaning),
     };
   }, [currentVocab, activeVocabs]);
+
+  useEffect(() => {
+    if (!quizAnswered || selectedQuizIndex === null || !cardTransitionRef.current) return;
+
+    const ctx = gsap.context(() => {
+      const selectedOption = cardTransitionRef.current?.querySelector<HTMLElement>(
+        `[data-flash-quiz-option="${selectedQuizIndex}"]`
+      );
+      const feedback = cardTransitionRef.current?.querySelector<HTMLElement>('[data-flash-quiz-feedback]');
+      if (!selectedOption || !feedback) return;
+
+      if (prefersReducedMotion) {
+        gsap.set([selectedOption, feedback], { clearProps: 'all' });
+        return;
+      }
+
+      const timeline = gsap.timeline({
+        defaults: {
+          duration: motionTokens.duration.instant,
+          ease: motionTokens.ease.standard,
+        },
+      });
+
+      if (selectedQuizIndex === correctQuizIndex) {
+        timeline.fromTo(
+          selectedOption,
+          { scale: 0.985 },
+          { scale: 1, duration: motionTokens.duration.fast }
+        );
+      } else {
+        timeline
+          .to(selectedOption, { x: -4 })
+          .to(selectedOption, { x: 4 })
+          .to(selectedOption, { x: 0 });
+      }
+
+      timeline.fromTo(
+        feedback,
+        { autoAlpha: 0, y: motionTokens.distance.small },
+        { autoAlpha: 1, y: 0, duration: motionTokens.duration.fast },
+        '<'
+      );
+    }, cardTransitionRef);
+
+    return () => ctx.revert();
+  }, [correctQuizIndex, prefersReducedMotion, quizAnswered, selectedQuizIndex]);
+
+  useEffect(() => {
+    if (!typingSubmitted || isTypingCorrect === null || !cardTransitionRef.current) return;
+
+    const ctx = gsap.context(() => {
+      const input = typingInputRef.current;
+      const feedback = typingFeedbackRef.current;
+      if (!input || !feedback) return;
+
+      if (prefersReducedMotion) {
+        gsap.set([input, feedback], { clearProps: 'all' });
+        return;
+      }
+
+      const timeline = gsap.timeline({
+        defaults: {
+          duration: motionTokens.duration.instant,
+          ease: motionTokens.ease.standard,
+        },
+      });
+
+      if (isTypingCorrect) {
+        timeline.fromTo(
+          input,
+          { scale: 0.985 },
+          { scale: 1, duration: motionTokens.duration.fast }
+        );
+      } else {
+        timeline
+          .to(input, { x: -4 })
+          .to(input, { x: 4 })
+          .to(input, { x: 0 });
+      }
+
+      timeline.fromTo(
+        feedback,
+        { autoAlpha: 0, y: motionTokens.distance.small },
+        { autoAlpha: 1, y: 0, duration: motionTokens.duration.fast },
+        '<'
+      );
+    }, cardTransitionRef);
+
+    return () => ctx.revert();
+  }, [isTypingCorrect, prefersReducedMotion, typingSubmitted]);
 
   // Text-to-Speech
   const playPronunciation = useCallback((text: string, accent: 'en-US' | 'en-GB' = voiceAccent) => {
@@ -523,6 +680,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     // 4. OPTIMISTIC UPDATE - Card transitions INSTANTLY (< 10ms)
     // EXCEPT for final card: do not show completion until save succeeds
     if (!transition.isComplete) {
+      shouldAnimateCardRef.current = true;
       setStudyQueue(transition.queue);
       setCurrentIndex(transition.currentIndex);
     }
@@ -549,15 +707,17 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
         if (userId) {
           clearStudySession(userId);
         }
-        try {
-          confetti({
-            particleCount: 100,
-            spread: 70,
-            origin: { y: 0.6 },
-            colors: ['#ED4F8E', '#F472B6', '#FCE7F3', '#3B82F6', '#10B981'],
-          });
-        } catch {
-          // Fallback
+        if (!prefersReducedMotion) {
+          try {
+            confetti({
+              particleCount: 100,
+              spread: 70,
+              origin: { y: 0.6 },
+              colors: ['#ED4F8E', '#F472B6', '#FCE7F3', '#3B82F6', '#10B981'],
+            });
+          } catch {
+            // Fallback
+          }
         }
       } else {
         // Save session with exact transition result
@@ -579,6 +739,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       }
     } catch (err) {
       // 7. ROLLBACK on save failure - revert to previous card
+      shouldAnimateCardRef.current = false;
       setStudyQueue(previousQueue);
       setCurrentIndex(previousIndex);
       setSessionStats(previousStats);
@@ -592,7 +753,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       ratingSubmitLockRef.current = false;
       setIsSubmitting(false);
     }
-  }, [currentVocab, safeIndex, onUpdateProgress, studyQueue, sessionStats, filterTopic, filterStatus, getUserId]);
+  }, [currentVocab, safeIndex, onUpdateProgress, studyQueue, sessionStats, filterTopic, filterStatus, getUserId, prefersReducedMotion]);
 
   // Handle Rating Selection from 4 evaluation buttons
   const handleSelectSrsRating = useCallback((srsRating: SrsRating) => {
@@ -903,12 +1064,12 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   // Session Completed View
   if (isCompleted) {
     return (
-      <div className="max-w-2xl mx-auto my-8 p-8 bg-white rounded-[32px] border border-[#FCE7F3] shadow-lg text-center space-y-6 animate-fadeIn">
-        <div className="w-20 h-20 mx-auto bg-gradient-to-tr from-[#ED4F8E] to-[#F472B6] rounded-[28px] flex items-center justify-center text-white shadow-md animate-bounce">
+      <div ref={completionRef} data-session-completion className="max-w-2xl mx-auto my-8 p-8 bg-white rounded-[32px] border border-[#FCE7F3] shadow-lg text-center space-y-6 animate-fadeIn">
+        <div data-completion-item className="w-20 h-20 mx-auto bg-gradient-to-tr from-[#ED4F8E] to-[#F472B6] rounded-[28px] flex items-center justify-center text-white shadow-md">
           <Award className="w-10 h-10" />
         </div>
 
-        <div className="space-y-2">
+        <div data-completion-item className="space-y-2">
           <span className="px-3.5 py-1 rounded-full bg-[#FFF1F2] text-[#ED4F8E] text-xs font-bold uppercase tracking-wide border border-[#FCE7F3]">
             Hoàn Thành Phiên Học
           </span>
@@ -920,7 +1081,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 p-4 rounded-[24px] bg-[#FFF5F7] border border-[#FCE7F3] text-left">
+        <div data-completion-item className="grid grid-cols-2 gap-4 p-4 rounded-[24px] bg-[#FFF5F7] border border-[#FCE7F3] text-left">
           <div className="p-4 bg-white rounded-2xl border border-[#FCE7F3] space-y-1">
             <div className="flex items-center gap-2 text-[#059669] text-xs font-bold">
               <CheckCircle2 className="w-4 h-4 text-[#059669]" />
@@ -938,7 +1099,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+        <div data-completion-item className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
           <button
             onClick={restartSession}
             className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-gradient-to-r from-[#ED4F8E] to-[#F472B6] text-white font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer hover:opacity-95"
@@ -1129,7 +1290,11 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
         {/* SUB-MODE 1: FLASHCARD */}
         {subMode === 'flashcard' && (
           <div
+            ref={cardTransitionRef}
             key={currentVocab?.id}
+            className="relative w-full min-h-[300px] sm:min-h-[320px]"
+          >
+            <div
             onClick={() => {
               setIsFlipped((prev) => {
                 const nextState = !prev;
@@ -1144,15 +1309,15 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
               });
             }}
             className="relative w-full min-h-[300px] sm:min-h-[320px] [perspective:1000px] cursor-pointer select-none group"
-          >
-            {/* 3D Rotating Container */}
-            <div
-              className={`w-full h-full min-h-[300px] sm:min-h-[320px] relative transition-transform duration-500 [transform-style:preserve-3d] ${
-                isFlipped ? '[transform:rotateY(180deg)]' : ''
-              }`}
             >
+              {/* 3D Rotating Container: CSS owns this transform exclusively. */}
+              <div
+                className={`w-full h-full min-h-[300px] sm:min-h-[320px] relative transition-transform duration-500 [transform-style:preserve-3d] ${
+                  isFlipped ? '[transform:rotateY(180deg)]' : '[transform:rotateY(0deg)]'
+                }`}
+              >
               {/* FRONT SIDE */}
-              <div className="absolute inset-0 w-full h-full flex flex-col items-center justify-between text-center p-6 sm:p-8 rounded-3xl bg-gradient-to-b from-[#FFFDFE] via-white to-[#FFF5F7] border border-[#FCE7F3] shadow-xs hover:shadow-md transition-shadow [backface-visibility:hidden]">
+              <div className="absolute inset-0 w-full h-full flex flex-col items-center justify-between text-center p-6 sm:p-8 rounded-3xl bg-gradient-to-b from-[#FFFDFE] via-white to-[#FFF5F7] border border-[#FCE7F3] shadow-xs hover:shadow-md transition-shadow backface-hidden">
                 <div className="space-y-4 my-auto">
                   <div className="flex items-center justify-center gap-2 flex-wrap">
                     <h2 className="text-3xl sm:text-5xl font-black text-gray-900 tracking-tight break-words max-w-full">
@@ -1204,7 +1369,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
               </div>
 
               {/* BACK SIDE */}
-              <div className="absolute inset-0 w-full h-full flex flex-col justify-between text-left p-6 sm:p-8 rounded-3xl bg-gradient-to-b from-[#FFF5F7] via-white to-[#FFF0F5] border border-[#FCE7F3] shadow-xs hover:shadow-md transition-shadow [backface-visibility:hidden] [transform:rotateY(180deg)] overflow-y-auto">
+              <div className="absolute inset-0 w-full h-full flex flex-col justify-between text-left p-6 sm:p-8 rounded-3xl bg-gradient-to-b from-[#FFF5F7] via-white to-[#FFF0F5] border border-[#FCE7F3] shadow-xs hover:shadow-md transition-shadow backface-hidden [transform:rotateY(180deg)] overflow-y-auto">
                 <div className="space-y-4 my-auto w-full">
                   <div className="text-center">
                     <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#ED4F8E] bg-[#FFF1F2] px-3 py-1 rounded-full border border-[#FCE7F3]">
@@ -1265,6 +1430,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
                 </div>
               </div>
             </div>
+            </div>
           </div>
         )}
 
@@ -1309,6 +1475,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
                 return (
                   <button
                     key={idx}
+                    data-flash-quiz-option={idx}
                     disabled={quizAnswered}
                     onClick={() => handleQuizSelect(idx)}
                     className={`w-full p-3.5 rounded-2xl border text-left text-xs sm:text-sm transition-all flex items-center justify-between cursor-pointer ${btnStyle}`}
@@ -1327,7 +1494,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
             {/* Banner feedback */}
             {quizAnswered && (
-              <div className={`p-3.5 rounded-2xl text-center text-xs font-extrabold flex items-center justify-center gap-2 ${
+              <div data-flash-quiz-feedback className={`p-3.5 rounded-2xl text-center text-xs font-extrabold flex items-center justify-center gap-2 ${
                 selectedQuizIndex === correctQuizIndex
                   ? 'bg-[#D1FAE5] text-[#059669]'
                   : 'bg-[#FFE4E6] text-[#E11D48]'
@@ -1370,6 +1537,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
             <div className="max-w-md mx-auto space-y-3">
               <div className="relative">
                 <input
+                  ref={typingInputRef}
                   type="text"
                   placeholder="Gõ từ tiếng Anh..."
                   value={typedInput}
@@ -1412,7 +1580,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
                   Kiểm tra
                 </button>
               ) : (
-                <div className={`p-3.5 rounded-2xl text-xs font-extrabold flex items-center justify-center gap-2 ${
+                <div ref={typingFeedbackRef} className={`p-3.5 rounded-2xl text-xs font-extrabold flex items-center justify-center gap-2 ${
                   isTypingCorrect ? 'bg-[#D1FAE5] text-[#059669]' : 'bg-[#FFE4E6] text-[#E11D48]'
                 }`}>
                   {isTypingCorrect ? (

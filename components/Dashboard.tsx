@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Sparkles,
   CheckCircle2,
@@ -39,6 +39,9 @@ import {
   getWeekActivity,
   type DashboardMetrics
 } from '../services/dashboardService';
+import gsap from 'gsap';
+import { motionTokens } from '../lib/animation/motionTokens';
+import { usePrefersReducedMotion } from '../hooks/use-prefers-reduced-motion';
 
 interface DashboardProps {
   topics: Topic[];
@@ -170,6 +173,59 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // Stable timestamp for due-time calculations
   const [nowMs] = useState(() => Date.now());
+  const dashboardRef = useRef<HTMLDivElement>(null);
+  const hasAnimatedDashboardRef = useRef(false);
+  const prefersReducedMotion = usePrefersReducedMotion();
+
+  useEffect(() => {
+    if (isLoadingMetrics || hasAnimatedDashboardRef.current || !dashboardRef.current) return;
+
+    hasAnimatedDashboardRef.current = true;
+    const ctx = gsap.context(() => {
+      const entranceTargets = dashboardRef.current?.querySelectorAll<HTMLElement>('[data-dashboard-entrance]');
+      const statTargets = dashboardRef.current?.querySelectorAll<HTMLElement>('[data-dashboard-stat]');
+      const progressTarget = dashboardRef.current?.querySelector<HTMLElement>('[data-dashboard-progress]');
+
+      if (!entranceTargets || !statTargets) return;
+
+      if (prefersReducedMotion) {
+        gsap.set([...entranceTargets, ...statTargets], { clearProps: 'all' });
+        if (progressTarget) gsap.set(progressTarget, { clearProps: 'transform,transformOrigin' });
+        return;
+      }
+
+      const timeline = gsap.timeline({
+        defaults: {
+          duration: motionTokens.duration.normal,
+          ease: motionTokens.ease.standard,
+        },
+      });
+
+      timeline
+        .fromTo(
+          entranceTargets,
+          { autoAlpha: 0, y: motionTokens.distance.medium },
+          { autoAlpha: 1, y: 0 }
+        )
+        .fromTo(
+          statTargets,
+          { autoAlpha: 0, y: motionTokens.distance.small },
+          { autoAlpha: 1, y: 0, stagger: 0.04 },
+          '-=0.12'
+        );
+
+      if (progressTarget) {
+        timeline.fromTo(
+          progressTarget,
+          { scaleX: 0, transformOrigin: 'left center' },
+          { scaleX: 1, duration: motionTokens.duration.slow, ease: motionTokens.ease.emphasized },
+          '-=0.16'
+        );
+      }
+    }, dashboardRef);
+
+    return () => ctx.revert();
+  }, [isLoadingMetrics, prefersReducedMotion]);
 
   // ESC key handler for goal modal
   useEffect(() => {
@@ -362,9 +418,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
   });
 
   return (
-    <div className="space-y-5 sm:space-y-8 pb-8 sm:pb-12">
+    <div ref={dashboardRef} className="space-y-5 sm:space-y-8 pb-8 sm:pb-12">
       {/* Hero Welcome Banner */}
-      <div className="relative overflow-hidden rounded-[20px] sm:rounded-[36px] bg-gradient-to-r from-[#F472B6] via-[#FF85A1] to-[#FFB6C1] p-5 sm:p-8 lg:p-10 text-white shadow-lg shadow-pink-100">
+      <div data-dashboard-entrance className="relative overflow-hidden rounded-[20px] sm:rounded-[36px] bg-gradient-to-r from-[#F472B6] via-[#FF85A1] to-[#FFB6C1] p-5 sm:p-8 lg:p-10 text-white shadow-lg shadow-pink-100">
         <div className="absolute top-10 left-10 w-32 h-32 bg-white/20 rounded-full blur-2xl pointer-events-none" />
         <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-white/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 max-w-3xl space-y-2 sm:space-y-3">
@@ -424,7 +480,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
 
         {/* Card 1: Chuỗi Ngày Học Tập (Streak Tracker) */}
-        <div className="p-4 sm:p-6 rounded-[20px] sm:rounded-[32px] bg-white border border-[#FCE7F3] shadow-2xs space-y-4 sm:space-y-5 flex flex-col justify-between">
+        <div data-dashboard-entrance className="p-4 sm:p-6 rounded-[20px] sm:rounded-[32px] bg-white border border-[#FCE7F3] shadow-2xs space-y-4 sm:space-y-5 flex flex-col justify-between">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 sm:gap-2.5 text-gray-900 font-extrabold text-base sm:text-xl">
               <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl sm:rounded-2xl bg-orange-100 flex items-center justify-center text-orange-500 shadow-2xs shrink-0">
@@ -497,7 +553,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         {/* Card 2: Mục Tiêu Hôm Nay Section */}
-        <div className="p-4 sm:p-6 rounded-[20px] sm:rounded-[32px] bg-white border border-[#FCE7F3] shadow-2xs space-y-4 sm:space-y-5 flex flex-col justify-between">
+        <div data-dashboard-entrance className="p-4 sm:p-6 rounded-[20px] sm:rounded-[32px] bg-white border border-[#FCE7F3] shadow-2xs space-y-4 sm:space-y-5 flex flex-col justify-between">
           {/* Card Header */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 sm:gap-2.5 text-gray-900 font-extrabold text-base sm:text-xl">
@@ -559,6 +615,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 {/* Progress Bar */}
                 <div className="w-full h-1.5 sm:h-2 bg-[#FCE7F3] rounded-full overflow-hidden max-w-xs mx-auto">
                   <div
+                    data-dashboard-progress
                     style={{ width: `${newWordsPercent}%` }}
                     className="h-full bg-gradient-to-r from-[#ED4F8E] to-[#F472B6] rounded-full transition-all duration-500"
                   />
@@ -844,7 +901,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <div className="space-y-4 sm:space-y-5">
           {/* Top 4 Mini Stat Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3" role="status" aria-live="polite" aria-busy={isLoadingMetrics}>
-            <div className="p-3 sm:p-5 rounded-[20px] sm:rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex items-center justify-between">
+            <div data-dashboard-stat className="p-3 sm:p-5 rounded-[20px] sm:rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex items-center justify-between">
               <div>
                 <p className="text-[10px] sm:text-xs font-semibold text-gray-500">Tổng thể</p>
                 {isLoadingMetrics ? (
@@ -860,7 +917,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </div>
             </div>
 
-            <div className="p-3 sm:p-5 rounded-[20px] sm:rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex items-center justify-between">
+            <div data-dashboard-stat className="p-3 sm:p-5 rounded-[20px] sm:rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex items-center justify-between">
               <div>
                 <p className="text-[10px] sm:text-xs font-semibold text-gray-500">Đã học</p>
                 {isLoadingMetrics ? (
@@ -876,7 +933,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </div>
             </div>
 
-            <div className="p-3 sm:p-5 rounded-[20px] sm:rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex items-center justify-between">
+            <div data-dashboard-stat className="p-3 sm:p-5 rounded-[20px] sm:rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex items-center justify-between">
               <div>
                 <p className="text-[10px] sm:text-xs font-semibold text-gray-500">Thành thạo</p>
                 {isLoadingMetrics ? (
@@ -892,7 +949,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </div>
             </div>
 
-            <div className="p-3 sm:p-5 rounded-[20px] sm:rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex items-center justify-between">
+            <div data-dashboard-stat className="p-3 sm:p-5 rounded-[20px] sm:rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex items-center justify-between">
               <div>
                 <p className="text-[10px] sm:text-xs font-semibold text-gray-500">Cần ôn ngay</p>
                 {isLoadingMetrics ? (
