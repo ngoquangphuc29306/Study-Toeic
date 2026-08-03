@@ -75,7 +75,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#F472B6] to-[#FFB6C1] p-0.5 shadow-md shadow-pink-100 group-hover:scale-105 transition-transform">
             <div className="w-full h-full bg-white rounded-[10px] flex items-center justify-center">
-              <BookOpen className="w-5 h-5 text-[#F472B6]" />
+              <img src="/logo.svg" alt="EasyTOEIC" className="w-5 h-5"/>
             </div>
           </div>
           <div className="hidden min-[375px]:block sm:block">

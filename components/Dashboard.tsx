@@ -28,7 +28,9 @@ import {
   Volume2,
   RotateCcw,
   Flame,
-  Check
+  Check,
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import { Topic, StudyStats, Vocabulary } from '../lib/types';
 import { SrsRating } from '../services/vocabService';
@@ -156,6 +158,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [activeDetailView, setActiveDetailView] = useState<'pending' | 'mastered' | 'difficult' | null>(null);
   const [detailSearchTerm, setDetailSearchTerm] = useState('');
 
+  // Relearn confirmation modal state
+  const [relearnConfirmModal, setRelearnConfirmModal] = useState<{
+    isOpen: boolean;
+    vocabId: string;
+    vocabWord: string;
+  }>({ isOpen: false, vocabId: '', vocabWord: '' });
+  const [isRelearnSubmitting, setIsRelearnSubmitting] = useState<boolean>(false);
+  const [relearnError, setRelearnError] = useState<string | null>(null);
+  const [relearnSuccess, setRelearnSuccess] = useState<string | null>(null);
+
   // Stable timestamp for due-time calculations
   const [nowMs] = useState(() => Date.now());
 
@@ -172,11 +184,51 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return () => window.removeEventListener('keydown', handleEsc);
   }, [isGoalModalOpen]);
 
+  // ESC key handler for relearn confirmation modal
+  useEffect(() => {
+    if (!relearnConfirmModal.isOpen) return;
+
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isRelearnSubmitting) {
+        setRelearnConfirmModal({ isOpen: false, vocabId: '', vocabWord: '' });
+      }
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [relearnConfirmModal.isOpen, isRelearnSubmitting]);
+
+  // Auto-dismiss success message after 4 seconds
+  useEffect(() => {
+    if (!relearnSuccess) return;
+    const timer = setTimeout(() => setRelearnSuccess(null), 4000);
+    return () => clearTimeout(timer);
+  }, [relearnSuccess]);
+
   const handlePlayAudio = (word: string) => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       const utterance = new SpeechSynthesisUtterance(word);
       utterance.lang = 'en-US';
       window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  // Handler for relearn action with confirmation
+  const handleRelearnVocab = async () => {
+    if (!relearnConfirmModal.vocabId || !onUpdateProgress) return;
+
+    setIsRelearnSubmitting(true);
+    setRelearnError(null);
+
+    try {
+      await onUpdateProgress(relearnConfirmModal.vocabId, 'learning', 'again');
+
+      setRelearnSuccess(`Đã chuyển từ "${relearnConfirmModal.vocabWord}" về danh sách học lại. Từ này sẽ xuất hiện trong phần "Ôn tập" với lịch ôn tập mới.`);
+      setRelearnConfirmModal({ isOpen: false, vocabId: '', vocabWord: '' });
+    } catch (error) {
+      setRelearnError('Không thể chuyển từ về danh sách học lại. Vui lòng thử lại.');
+      console.error('Relearn error:', error);
+    } finally {
+      setIsRelearnSubmitting(false);
     }
   };
 
@@ -661,13 +713,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       </td>
                       <td className="py-3 px-3 sm:py-3.5 sm:px-5 text-right">
                         <button
-                          onClick={async () => {
-                            if (onUpdateProgress) {
-                              await onUpdateProgress(item.id, 'learning', 'again');
-                            }
-                            alert(`Đã chuyển từ "${item.word}" về danh sách học lại.`);
+                          onClick={() => {
+                            setRelearnConfirmModal({
+                              isOpen: true,
+                              vocabId: item.id,
+                              vocabWord: item.word,
+                            });
+                            setRelearnError(null);
                           }}
-                          className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl border border-[#FCE7F3] bg-white hover:bg-[#FFF1F2] text-gray-700 hover:text-[#ED4F8E] font-bold text-[11px] transition-all cursor-pointer shadow-2xs"
+                          disabled={isRelearnSubmitting}
+                          className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl border border-[#FCE7F3] bg-white hover:bg-[#FFF1F2] text-gray-700 hover:text-[#ED4F8E] font-bold text-[11px] transition-all cursor-pointer shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <RotateCcw className="w-3 h-3" />
                           <span>Học lại</span>
@@ -1045,6 +1100,128 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Relearn Confirmation */}
+      {relearnConfirmModal.isOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn"
+          onClick={() => {
+            if (!isRelearnSubmitting) {
+              setRelearnConfirmModal({ isOpen: false, vocabId: '', vocabWord: '' });
+            }
+          }}
+        >
+          <div
+            className="relative w-full max-w-md bg-white border border-[#FCE7F3] rounded-[20px] sm:rounded-[28px] p-4 sm:p-6 space-y-4 sm:space-y-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="relearn-modal-title"
+          >
+            {/* Modal Header */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <h3 id="relearn-modal-title" className="text-base sm:text-lg font-extrabold text-gray-900 flex items-center gap-2">
+                  <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5 text-[#ED4F8E] shrink-0" />
+                  <span>Xác nhận học lại</span>
+                </h3>
+                <p className="text-xs text-gray-500">
+                  Bạn có chắc muốn học lại từ này?
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  if (!isRelearnSubmitting) {
+                    setRelearnConfirmModal({ isOpen: false, vocabId: '', vocabWord: '' });
+                  }
+                }}
+                disabled={isRelearnSubmitting}
+                aria-label="Đóng"
+                className="p-2 sm:p-2.5 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 transition-colors cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-4 rounded-2xl bg-[#FFF5F7] border border-[#FCE7F3] space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center text-[#ED4F8E] shadow-xs shrink-0">
+                  <Volume2 className="w-4 h-4" />
+                </div>
+                <p className="font-bold text-gray-900 text-sm">
+                  {relearnConfirmModal.vocabWord}
+                </p>
+              </div>
+              <div className="text-xs text-gray-600 leading-relaxed pl-10">
+                Từ này sẽ được chuyển về danh sách <span className="font-bold text-[#ED4F8E]">&quot;Đang học&quot;</span> với lịch ôn tập mới. Bạn sẽ thấy từ này trong phần <span className="font-bold">&quot;Từ cần ôn ngay&quot;</span> hoặc <span className="font-bold">&quot;Từ chưa đến hạn&quot;</span>.
+              </div>
+            </div>
+
+            {/* Error Message */}
+            {relearnError && (
+              <div className="p-3.5 rounded-2xl bg-[#FFE4E6] border border-[#E11D48] text-[#E11D48] text-xs font-bold flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  <span>{relearnError}</span>
+                </div>
+                <button
+                  onClick={() => setRelearnError(null)}
+                  className="text-[#E11D48] hover:text-[#BE123C] cursor-pointer"
+                  aria-label="Đóng thông báo lỗi"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#FCE7F3]">
+              <button
+                onClick={() => {
+                  if (!isRelearnSubmitting) {
+                    setRelearnConfirmModal({ isOpen: false, vocabId: '', vocabWord: '' });
+                  }
+                }}
+                disabled={isRelearnSubmitting}
+                className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl bg-gray-100 text-gray-700 font-bold hover:bg-gray-200 transition-colors cursor-pointer text-xs sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={handleRelearnVocab}
+                disabled={isRelearnSubmitting}
+                className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-[#ED4F8E] to-[#F472B6] text-white font-bold hover:opacity-95 shadow-2xs transition-all cursor-pointer text-xs sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isRelearnSubmitting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                <span>{isRelearnSubmitting ? 'Đang xử lý...' : 'Xác nhận'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Toast */}
+      {relearnSuccess && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-md animate-fadeIn">
+          <div className="p-4 rounded-2xl bg-[#D1FAE5] border border-[#059669] text-[#059669] shadow-2xl flex items-start gap-3">
+            <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center text-[#059669] shrink-0 shadow-xs">
+              <Check className="w-4 h-4" />
+            </div>
+            <div className="flex-1 space-y-1">
+              <p className="text-sm font-bold">Thành công!</p>
+              <p className="text-xs leading-relaxed">{relearnSuccess}</p>
+            </div>
+            <button
+              onClick={() => setRelearnSuccess(null)}
+              className="text-[#059669] hover:text-[#047857] cursor-pointer shrink-0"
+              aria-label="Đóng thông báo"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </div>
       )}

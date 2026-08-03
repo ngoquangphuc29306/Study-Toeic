@@ -38,7 +38,7 @@ interface FlashcardModeProps {
   topics: Topic[];
   selectedTopicId: string;
   initialStatus?: 'all' | 'new' | 'learning' | 'mastered';
-  onUpdateProgress: (vocabId: string, status: 'learning' | 'mastered', rating?: SrsRating) => void;
+  onUpdateProgress: (vocabId: string, status: 'learning' | 'mastered', rating?: SrsRating) => Promise<void>;
   onBackToDashboard: () => void;
   onSwitchToQuiz: (topicId: string) => void;
   onDeleteVocabulary?: (vocabId: string) => void;
@@ -169,6 +169,9 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   // Evaluation / Rating Buttons State
   const [showRatingButtons, setShowRatingButtons] = useState<boolean>(false);
 
+  // Track if user has revealed answer (for showing rating buttons)
+  const [hasRevealedAnswer, setHasRevealedAnswer] = useState<boolean>(false);
+
   // Settings & Modals state matching image features
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [showReportModal, setShowReportModal] = useState<boolean>(false);
@@ -220,6 +223,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     const resetInteractionState = () => {
       setIsFlipped(false);
       setShowRatingButtons(false);
+      setHasRevealedAnswer(false);
 
       setTypedInput('');
       setTypingSubmitted(false);
@@ -465,43 +469,61 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
 
+  // Synchronous ref lock for duplicate submission prevention
+  const ratingSubmitLockRef = useRef<boolean>(false);
+
   // Handle Progress Rating with SRS
+  // Hotfix UX: Optimistic card transition with sequential save
   const handleRating = useCallback(async (isMastered: boolean, rating?: SrsRating) => {
-    if (!currentVocab || isSubmitting) return;
+    if (!currentVocab || ratingSubmitLockRef.current) return;
 
     const srsRating: SrsRating = rating || (isMastered ? 'mastered' : 'good');
     const newStatus = isMastered || srsRating === 'mastered' ? 'mastered' : 'learning';
 
-    // Disable buttons and clear previous errors
+    // 1. Acquire synchronous lock and disable buttons (prevent double-click/double-submit)
+    ratingSubmitLockRef.current = true;
     setIsSubmitting(true);
     setSubmissionError(null);
 
-    try {
-      // Submit rating via service (handles RPC + idempotency)
-      await onUpdateProgress(currentVocab.id, newStatus, srsRating);
+    // 2. Calculate queue transition IMMEDIATELY (before any await)
+    const transition = applyRatingToQueue(
+      srsRating,
+      studyQueue,
+      safeIndex,
+      currentVocab.id
+    );
 
-      // Update session stats on success
-      setSessionStats((prev) => ({
-        mastered: isMastered || srsRating === 'mastered' ? prev.mastered + 1 : prev.mastered,
-        needsReview: !isMastered && srsRating !== 'mastered' ? prev.needsReview + 1 : prev.needsReview,
-      }));
+    // 3. Store previous state for rollback on save failure
+    const previousQueue = studyQueue;
+    const previousIndex = safeIndex;
+    const previousStats = sessionStats;
+    const ratedVocabId = currentVocab.id;
 
-      // Phase 6 Fix: Calculate queue transition ONCE, use for both state and snapshot
-      const transition = applyRatingToQueue(
-        srsRating,
-        studyQueue,
-        safeIndex,
-        currentVocab.id
-      );
-
-      // Apply transition to React state
+    // 4. OPTIMISTIC UPDATE - Card transitions INSTANTLY (< 10ms)
+    // EXCEPT for final card: do not show completion until save succeeds
+    if (!transition.isComplete) {
       setStudyQueue(transition.queue);
       setCurrentIndex(transition.currentIndex);
+    }
+    setSessionStats((prev) => ({
+      mastered: isMastered || srsRating === 'mastered' ? prev.mastered + 1 : prev.mastered,
+      needsReview: !isMastered && srsRating !== 'mastered' ? prev.needsReview + 1 : prev.needsReview,
+    }));
 
-      // Check if session is completed
+    // 5. BACKGROUND SAVE - Does not block card transition (except for final card)
+    // ratingSubmitLockRef stays true, preventing rating next card until save completes
+    try {
+      // Submit rating via service (handles RPC + idempotency)
+      await onUpdateProgress(ratedVocabId, newStatus, srsRating);
+
+      // 6. Save session snapshot AFTER server confirms
       if (transition.isComplete) {
+        // Final card: Show completion ONLY after save succeeds
         setIsCompleted(true);
-        // Phase 6 Fix: Clear session on completion
+        setStudyQueue(transition.queue);
+        setCurrentIndex(transition.currentIndex);
+
+        // Clear session on completion
         const userId = await getUserId();
         if (userId) {
           clearStudySession(userId);
@@ -517,7 +539,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
           // Fallback
         }
       } else {
-        // Phase 6 Fix: Save session AFTER RPC success with exact transition result
+        // Save session with exact transition result
         const userId = await getUserId();
         if (userId && transition.queue.length > 0) {
           const snapshot: StudySessionSnapshot = {
@@ -535,17 +557,25 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
         }
       }
     } catch (err) {
+      // 7. ROLLBACK on save failure - revert to previous card
+      setStudyQueue(previousQueue);
+      setCurrentIndex(previousIndex);
+      setSessionStats(previousStats);
+
       // Show safe error message
       const message = err instanceof Error ? err.message : 'Không thể lưu kết quả. Vui lòng thử lại.';
       setSubmissionError(message);
       console.error('handleRating error:', err);
     } finally {
+      // 8. Release lock and re-enable buttons only after save completes (or fails)
+      ratingSubmitLockRef.current = false;
       setIsSubmitting(false);
     }
-  }, [currentVocab, safeIndex, onUpdateProgress, isSubmitting, studyQueue, filterTopic, filterStatus, getUserId]);
+  }, [currentVocab, safeIndex, onUpdateProgress, studyQueue, sessionStats, filterTopic, filterStatus, getUserId]);
 
   // Handle Rating Selection from 4 evaluation buttons
   const handleSelectSrsRating = useCallback((srsRating: SrsRating) => {
+    if (ratingSubmitLockRef.current) return;
     setShowRatingButtons(false);
     const isMastered = srsRating === 'mastered';
     handleRating(isMastered, srsRating);
@@ -554,6 +584,9 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
   // Handle "Chưa nhớ" -> Immediately transition to next exercise step
   const handleNotRemembered = useCallback(() => {
+    // Block during rating submission to prevent state corruption
+    if (ratingSubmitLockRef.current) return;
+
     setShowRatingButtons(false);
 
     // Phase 9.10A.4: Special case for pronunciation mode
@@ -584,38 +617,47 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
   // Handle Delete current vocabulary item
   const handleDeleteCurrentVocab = useCallback(() => {
-    if (!currentVocab) return;
-    if (window.confirm(`Bạn có chắc chắn muốn xóa từ vựng "${currentVocab.word}" khỏi bài học này?`)) {
-      if (onDeleteVocabulary) {
-        onDeleteVocabulary(currentVocab.id);
-      }
-      // After deletion, activeVocabs will shrink on next render
-      // If we're deleting the last item or beyond, move index back
-      if (currentIndex >= activeVocabs.length - 1) {
-        setCurrentIndex(Math.max(0, activeVocabs.length - 2));
-      }
+    if (ratingSubmitLockRef.current || !currentVocab) return;
+
+    const confirmed = window.confirm(
+      `Bạn có chắc chắn muốn xóa từ vựng "${currentVocab.word}" khỏi bài học này?`
+    );
+
+    if (!confirmed) return;
+
+    if (onDeleteVocabulary) {
+      onDeleteVocabulary(currentVocab.id);
+    }
+
+    if (currentIndex >= activeVocabs.length - 1) {
+      setCurrentIndex(Math.max(0, activeVocabs.length - 2));
     }
   }, [currentVocab, onDeleteVocabulary, currentIndex, activeVocabs.length]);
 
   // Handle Quiz selection
   const handleQuizSelect = useCallback((idx: number) => {
-    if (quizAnswered) return;
+    if (quizAnswered || ratingSubmitLockRef.current) return;
     setSelectedQuizIndex(idx);
     setQuizAnswered(true);
+    // Mark answer as revealed after user selects an option
+    setHasRevealedAnswer(true);
   }, [quizAnswered]);
 
   // Handle Typing Check
   const handleCheckTyping = useCallback(() => {
-    if (!currentVocab || typingSubmitted) return;
+    if (!currentVocab || typingSubmitted || ratingSubmitLockRef.current) return;
     const cleanInput = typedInput.trim().toLowerCase();
     const cleanWord = currentVocab.word.trim().toLowerCase();
     const correct = cleanInput === cleanWord;
     setIsTypingCorrect(correct);
     setTypingSubmitted(true);
+    // Mark answer as revealed after checking typing result
+    setHasRevealedAnswer(true);
   }, [currentVocab, typingSubmitted, typedInput]);
 
   // Handle Speech Pronunciation
   const handleStartRecording = () => {
+    if (ratingSubmitLockRef.current) return;
     setIsRecording(true);
     setTranscriptText('');
 
@@ -644,6 +686,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
           setPronounceSubmitted(true);
           const isCorrect = result.toLowerCase().includes(currentVocab?.word.toLowerCase() || '');
           setIsPronounceCorrect(isCorrect);
+          setHasRevealedAnswer(true);
         };
 
         recognition.onerror = () => {
@@ -652,6 +695,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
             setPronounceSubmitted(true);
             setIsPronounceCorrect(true);
             setTranscriptText(currentVocab?.word || '');
+            setHasRevealedAnswer(true);
           }, 1500);
         };
 
@@ -667,6 +711,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       setPronounceSubmitted(true);
       setIsPronounceCorrect(true);
       setTranscriptText(currentVocab?.word || '');
+      setHasRevealedAnswer(true);
     }, 1800);
   };
 
@@ -679,21 +724,29 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
         e.preventDefault();
         setIsFlipped((prev) => {
           const nextState = !prev;
-          if (nextState && autoPlayAudio) {
-            playPronunciation(currentVocab.word);
+          if (nextState) {
+            // Mark answer as revealed when flipping to back side
+            setHasRevealedAnswer(true);
+            if (autoPlayAudio) {
+              playPronunciation(currentVocab.word);
+            }
           }
           return nextState;
         });
       } else if (e.code === 'Tab') {
         e.preventDefault();
-        setShowRatingButtons(true);
+        if (!ratingSubmitLockRef.current) {
+          setShowRatingButtons(true);
+        }
       } else if (e.code === 'Enter') {
         if (subMode === 'typing' && !typingSubmitted) {
           e.preventDefault();
           handleCheckTyping();
         } else if (subMode === 'typing' && typingSubmitted) {
           e.preventDefault();
-          handleRating(isTypingCorrect === true);
+          if (!ratingSubmitLockRef.current) {
+            handleRating(isTypingCorrect === true);
+          }
         } else {
           e.preventDefault();
           handleNotRemembered();
@@ -709,16 +762,16 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
-    isCompleted, 
-    currentVocab, 
-    subMode, 
-    typingSubmitted, 
-    isTypingCorrect, 
-    showSettingsModal, 
-    showReportModal, 
-    autoPlayAudio, 
-    quizOptions.length, 
-    handleRating, 
+    isCompleted,
+    currentVocab,
+    subMode,
+    typingSubmitted,
+    isTypingCorrect,
+    showSettingsModal,
+    showReportModal,
+    autoPlayAudio,
+    quizOptions.length,
+    handleRating,
     handleNotRemembered,
     playPronunciation,
     handleCheckTyping,
@@ -952,13 +1005,19 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => handleRating(currentVocab.status !== 'mastered')}
-              title={currentVocab.status === 'mastered' ? 'Đã thuộc' : 'Đánh dấu đã thuộc'}
+              onClick={() => {
+                if (ratingSubmitLockRef.current) return;
+                if (!hasRevealedAnswer) return;
+                if (currentVocab.status === 'mastered') return;
+                handleRating(true, 'mastered');
+              }}
+              disabled={isSubmitting || !hasRevealedAnswer || currentVocab.status === 'mastered'}
+              title={currentVocab.status === 'mastered' ? 'Đã thuộc' : 'Đánh dấu đã thuộc'}
               className={`p-2 sm:p-2.5 rounded-xl border transition-all cursor-pointer ${
                 currentVocab.status === 'mastered'
                   ? 'bg-[#D1FAE5] border-[#059669] text-[#059669]'
                   : 'bg-white border-[#FCE7F3] text-gray-400 hover:text-[#059669] hover:bg-[#D1FAE5]/40'
-              }`}
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
             >
               <CheckCircle2 className="w-4 h-4" />
             </button>
@@ -966,7 +1025,12 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
             {/* Trash bin button to delete word from current section */}
             <button
               onClick={handleDeleteCurrentVocab}
-              title="Xóa từ vựng khỏi bài học này"
+              disabled={isSubmitting}
+              title={
+                isSubmitting
+                  ? 'Đang lưu kết quả, chưa thể xóa từ'
+                  : 'Xóa từ vựng khỏi bài học này'
+              }
               className="p-2 sm:p-2.5 rounded-xl bg-white border border-[#FCE7F3] text-gray-400 hover:text-[#E11D48] hover:bg-[#FFE4E6] transition-all cursor-pointer"
             >
               <Trash2 className="w-4 h-4" />
@@ -998,8 +1062,12 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
             onClick={() => {
               setIsFlipped((prev) => {
                 const nextState = !prev;
-                if (nextState && autoPlayAudio) {
-                  playPronunciation(currentVocab.word);
+                if (nextState) {
+                  // Mark answer as revealed when flipping to back side
+                  setHasRevealedAnswer(true);
+                  if (autoPlayAudio) {
+                    playPronunciation(currentVocab.word);
+                  }
                 }
                 return nextState;
               });
@@ -1323,6 +1391,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
                     onClick={() => {
                       setPronounceSubmitted(true);
                       setIsPronounceCorrect(true);
+                      setHasRevealedAnswer(true);
                     }}
                     className="text-xs text-gray-400 hover:text-gray-700 font-medium cursor-pointer"
                   >
@@ -1392,7 +1461,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
                         Nói lại
                       </button>
                       <button
-                        onClick={() => handleRating(true)}
+                        onClick={handleNotRemembered}
                         className="px-4 py-2 rounded-xl bg-gray-100 text-gray-600 font-bold text-xs hover:bg-gray-200 cursor-pointer"
                       >
                         Bỏ qua
@@ -1425,19 +1494,16 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
           </div>
         )}
 
-        {/* Loading indicator */}
-        {isSubmitting && (
-          <div className="p-3.5 rounded-2xl bg-[#F0F9FF] border border-[#0284C7] text-[#0284C7] text-xs font-bold flex items-center justify-center gap-2">
-            <RefreshCw className="w-4 h-4 animate-spin" />
-            <span>Đang lưu kết quả...</span>
-          </div>
-        )}
-
-        {!showRatingButtons ? (
+        {/* Only show rating buttons after user has revealed answer */}
+        {hasRevealedAnswer && !showRatingButtons ? (
           /* Initial 2 Buttons: "Đã thuộc" (triggers 4 rating buttons) & "Chưa nhớ" (transitions exercise) */
           <div className="grid grid-cols-2 gap-3">
             <button
-              onClick={() => setShowRatingButtons(true)}
+              onClick={() => {
+                if (!ratingSubmitLockRef.current) {
+                  setShowRatingButtons(true);
+                }
+              }}
               disabled={isSubmitting}
               className="py-3.5 px-4 rounded-2xl bg-white border-2 border-[#059669] text-[#059669] hover:bg-[#D1FAE5]/40 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -1453,7 +1519,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
               <span>Chưa nhớ</span>
             </button>
           </div>
-        ) : (
+        ) : hasRevealedAnswer && showRatingButtons ? (
           /* 4 Rating/Evaluation Buttons revealed when clicking "Đã thuộc" */
           <div className="space-y-2 animate-fadeIn">
             <div className="flex items-center justify-between px-1">
@@ -1511,15 +1577,19 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
               </button>
             </div>
           </div>
-        )}
+        ) : null}
 
         {/* Shortcut hints */}
-        <p className="text-center text-[11px] text-gray-400 font-semibold hidden sm:block">
-          Ấn &quot;Đã thuộc&quot; để hiện 4 nút đánh giá · Ấn &quot;Chưa nhớ&quot; để qua phần bài tập khác (Flashcard → Trắc nghiệm → Gõ từ → Phát âm)
-        </p>
-        <p className="text-center text-[10px] text-gray-400 font-semibold sm:hidden">
-          Ấn &quot;Đã thuộc&quot; để đánh giá hoặc &quot;Chưa nhớ&quot; để luyện thêm
-        </p>
+        {hasRevealedAnswer && (
+          <>
+            <p className="text-center text-[11px] text-gray-400 font-semibold hidden sm:block">
+              Ấn &quot;Đã thuộc&quot; để hiện 4 nút đánh giá · Ấn &quot;Chưa nhớ&quot; để qua phần bài tập khác (Flashcard → Trắc nghiệm → Gõ từ → Phát âm)
+            </p>
+            <p className="text-center text-[10px] text-gray-400 font-semibold sm:hidden">
+              Ấn &quot;Đã thuộc&quot; để đánh giá hoặc &quot;Chưa nhớ&quot; để luyện thêm
+            </p>
+          </>
+        )}
       </div>
 
       {/* Mode Index & Bottom Vocabulary Counters */}
