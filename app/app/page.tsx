@@ -622,6 +622,7 @@ export default function AppPage() {
             onSelectTopicForFlashcard={handleSelectTopicForFlashcard}
             onSelectTopicForQuiz={handleSelectTopicForQuiz}
             onOpenAddModal={() => setIsAddModalOpen(true)}
+            onUpdateProgress={handleUpdateProgress}
           />
         )}
 
@@ -731,7 +732,7 @@ export default function AppPage() {
       <footer className="border-t border-[#FCE7F3] bg-white/70 py-6 text-center text-xs text-gray-500 mt-auto">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-center gap-3">
           <p className="font-medium text-gray-600">
-            EasyTOEIC Phase 1 — Subsystem Học Từ Vựng TOEIC với Spaced Repetition & Soft Clean Minimalist UI
+            EasyTOEIC — Nâng cao từ vựng TOEIC với Spaced Repetition & Giao diện Tối giản, Sạch sẽ
           </p>
         </div>
       </footer>
