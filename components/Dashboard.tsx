@@ -14,7 +14,7 @@ import {
   Plane,
   CreditCard,
   TrendingUp,
-  HelpCircle,
+  GitCompareArrows,
   PlusCircle,
   ArrowRight,
   Target,
@@ -51,7 +51,7 @@ interface DashboardProps {
   weekActivity: Array<{ date: string; count: number }>; // Phase 9.8: Passed from parent
   isLoadingMetrics: boolean; // Phase 9.8: Passed from parent
   onSelectTopicForFlashcard: (topicId: string, initialStatus?: 'all' | 'new' | 'learning' | 'mastered') => void;
-  onSelectTopicForQuiz: (topicId: string) => void;
+  onSelectTopicForSynonyms: (topicId: string) => void;
   onOpenCollectionModal: () => void;
   onUpdateProgress?: (vocabId: string, status: 'learning' | 'mastered', rating?: SrsRating) => void;
 }
@@ -73,7 +73,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   weekActivity,
   isLoadingMetrics,
   onSelectTopicForFlashcard,
-  onSelectTopicForQuiz,
+  onSelectTopicForSynonyms,
   onOpenCollectionModal,
   onUpdateProgress,
 }) => {
@@ -452,14 +452,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </button>
 
           <button
-            onClick={() => onSelectTopicForQuiz('all')}
+            onClick={() => onSelectTopicForSynonyms('all')}
             className="flex items-center justify-between p-3 sm:p-4 rounded-2xl bg-white/95 hover:bg-white text-gray-800 font-semibold text-sm shadow-xs transition-all hover:scale-[1.01] cursor-pointer group"
           >
             <div className="flex items-center gap-2 sm:gap-3">
               <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#FFF1F2] flex items-center justify-center text-[#F472B6] shrink-0">
-                <HelpCircle className="w-4 h-4 text-[#F472B6]" />
+                <GitCompareArrows className="w-4 h-4 text-[#F472B6]" />
               </div>
-              <span className="text-gray-800 font-bold text-xs sm:text-sm">Quiz Tổng Hợp</span>
+              <span className="text-gray-800 font-bold text-xs sm:text-sm">Luyện Từ Đồng Nghĩa</span>
             </div>
             <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#F472B6] group-hover:translate-x-1 transition-transform shrink-0" />
           </button>

@@ -6,7 +6,7 @@ import {
   Volume2,
   RotateCw,
   CheckCircle2,
-  HelpCircle,
+  GitCompareArrows,
   BookOpen,
   Award,
   RefreshCw,
@@ -51,7 +51,7 @@ interface FlashcardModeProps {
   initialStatus?: 'all' | 'new' | 'learning' | 'mastered';
   onUpdateProgress: (vocabId: string, status: 'learning' | 'mastered', rating?: SrsRating) => Promise<void>;
   onBackToDashboard: () => void;
-  onSwitchToQuiz: (topicId: string) => void;
+  onSwitchToSynonyms: (topicId: string) => void;
   onDeleteVocabulary?: (vocabId: string) => void;
   onEditVocabulary?: (vocabId: string, updates: VocabularyUpdate) => Promise<void>;
 }
@@ -81,7 +81,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   initialStatus,
   onUpdateProgress,
   onBackToDashboard,
-  onSwitchToQuiz,
+  onSwitchToSynonyms,
   onDeleteVocabulary,
   onEditVocabulary,
 }) => {
@@ -1109,11 +1109,11 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
           </button>
 
           <button
-            onClick={() => onSwitchToQuiz(filterTopic)}
+            onClick={() => onSwitchToSynonyms(filterTopic)}
             className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-[#FFF1F2] border border-[#FCE7F3] text-[#ED4F8E] font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer hover:bg-[#FFE4E6]"
           >
-            <HelpCircle className="w-4 h-4" />
-            Làm Bài Quiz Ngay
+            <GitCompareArrows className="w-4 h-4" />
+            Luyện Từ Đồng Nghĩa Ngay
           </button>
 
           <button

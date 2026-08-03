@@ -872,7 +872,7 @@ export default function AppPage() {
     setActiveTab('flashcard');
   };
 
-  const handleSelectTopicForQuiz = (topicId: string) => {
+  const handleSelectTopicForSynonyms = (topicId: string) => {
     setSelectedTopicId(topicId);
     setActiveTab('synonyms');
   };
@@ -997,7 +997,7 @@ export default function AppPage() {
             weekActivity={weekActivity}
             isLoadingMetrics={isLoadingDashboardMetrics}
             onSelectTopicForFlashcard={handleSelectTopicForFlashcard}
-            onSelectTopicForQuiz={handleSelectTopicForQuiz}
+            onSelectTopicForSynonyms={handleSelectTopicForSynonyms}
             onOpenCollectionModal={() => {
               setCollectionModalMode('collection');
               setCollectionModalDefaultId(undefined);
@@ -1015,7 +1015,7 @@ export default function AppPage() {
             initialStatus={initialFlashcardStatus}
             onUpdateProgress={handleUpdateProgress}
             onBackToDashboard={() => setActiveTab('dashboard')}
-            onSwitchToQuiz={handleSelectTopicForQuiz}
+            onSwitchToSynonyms={handleSelectTopicForSynonyms}
             onDeleteVocabulary={handleDeleteVocabulary}
             onEditVocabulary={handleUpdateVocabulary}
           />
@@ -1045,7 +1045,7 @@ export default function AppPage() {
             onUpdateTopic={handleUpdateTopic}
             onUpdateCollection={handleUpdateCollection}
             onSelectTopicForFlashcard={handleSelectTopicForFlashcard}
-            onSelectTopicForQuiz={handleSelectTopicForQuiz}
+            onSelectTopicForSynonyms={handleSelectTopicForSynonyms}
             onOpenAddModalWithTopic={(topicId) => {
               setDefaultModalTopicId(topicId);
               setIsAddModalOpen(true);
