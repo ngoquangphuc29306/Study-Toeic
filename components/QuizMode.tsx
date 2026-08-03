@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { 
   HelpCircle, 
   CheckCircle2, 
@@ -13,6 +13,9 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Vocabulary, Topic, QuizQuestion } from '../lib/types';
+import gsap from 'gsap';
+import { motionTokens } from '../lib/animation/motionTokens';
+import { usePrefersReducedMotion } from '../hooks/use-prefers-reduced-motion';
 
 interface QuizModeProps {
   vocabularies: Vocabulary[];
@@ -116,6 +119,87 @@ export const QuizMode: React.FC<QuizModeProps> = ({
   const [score, setScore] = useState<number>(0);
   const [quizFinished, setQuizFinished] = useState<boolean>(false);
   const [incorrectItems, setIncorrectItems] = useState<Vocabulary[]>([]);
+  const currentQ = questions[currentQuestionIndex];
+  const quizRef = useRef<HTMLDivElement>(null);
+  const completionRef = useRef<HTMLDivElement>(null);
+  const prefersReducedMotion = usePrefersReducedMotion();
+
+  useEffect(() => {
+    if (!isAnswered || selectedOptionIndex === null || !currentQ || !quizRef.current) return;
+
+    const ctx = gsap.context(() => {
+      const selectedOption = quizRef.current?.querySelector<HTMLElement>(
+        `[data-quiz-option="${selectedOptionIndex}"]`
+      );
+      const feedback = quizRef.current?.querySelector<HTMLElement>('[data-quiz-feedback]');
+      if (!selectedOption || !feedback) return;
+
+      if (prefersReducedMotion) {
+        gsap.set([selectedOption, feedback], { clearProps: 'all' });
+        return;
+      }
+
+      const isCorrect = selectedOptionIndex === currentQ.correctAnswerIndex;
+      const timeline = gsap.timeline({
+        defaults: {
+          duration: motionTokens.duration.instant,
+          ease: motionTokens.ease.standard,
+        },
+      });
+
+      if (isCorrect) {
+        timeline.fromTo(
+          selectedOption,
+          { scale: 0.985 },
+          { scale: 1, duration: motionTokens.duration.fast }
+        );
+      } else {
+        timeline
+          .to(selectedOption, { x: -4 })
+          .to(selectedOption, { x: 4 })
+          .to(selectedOption, { x: 0 });
+      }
+
+      timeline.fromTo(
+        feedback,
+        { autoAlpha: 0, y: motionTokens.distance.small },
+        { autoAlpha: 1, y: 0, duration: motionTokens.duration.fast },
+        '<'
+      );
+    }, quizRef);
+
+    return () => ctx.revert();
+  }, [currentQ, isAnswered, prefersReducedMotion, selectedOptionIndex]);
+
+  useEffect(() => {
+    if (!quizFinished || !completionRef.current) return;
+
+    const ctx = gsap.context(() => {
+      const targets = completionRef.current?.querySelectorAll<HTMLElement>('[data-quiz-completion-item]');
+      if (!targets) return;
+
+      if (prefersReducedMotion) {
+        gsap.set(targets, { clearProps: 'all' });
+        return;
+      }
+
+      gsap.timeline({
+        defaults: {
+          duration: motionTokens.duration.normal,
+          ease: motionTokens.ease.emphasized,
+        },
+      })
+        .fromTo(targets[0], { autoAlpha: 0, scale: 0.96 }, { autoAlpha: 1, scale: 1 })
+        .fromTo(
+          Array.from(targets).slice(1),
+          { autoAlpha: 0, y: motionTokens.distance.small },
+          { autoAlpha: 1, y: 0, stagger: 0.05 },
+          '-=0.12'
+        );
+    }, completionRef);
+
+    return () => ctx.revert();
+  }, [prefersReducedMotion, quizFinished]);
 
   const handleTopicChange = (newTopicId: string) => {
     setFilterTopic(newTopicId);
@@ -137,8 +221,6 @@ export const QuizMode: React.FC<QuizModeProps> = ({
     setIncorrectItems([]);
     setQuestions(createQuestionsForTopic(filterTopic, vocabularies));
   };
-
-  const currentQ = questions[currentQuestionIndex];
 
   // Handle Option Select
   const handleSelectOption = (index: number) => {
@@ -166,17 +248,19 @@ export const QuizMode: React.FC<QuizModeProps> = ({
     } else {
       setQuizFinished(true);
       try {
-        confetti({
-          particleCount: 120,
-          spread: 80,
-          origin: { y: 0.5 },
-          colors: ['#F472B6', '#10B981', '#F59E0B', '#6366F1'],
-        });
+        if (!prefersReducedMotion) {
+          confetti({
+            particleCount: 120,
+            spread: 80,
+            origin: { y: 0.5 },
+            colors: ['#F472B6', '#10B981', '#F59E0B', '#6366F1'],
+          });
+        }
       } catch {
         // Fallback if confetti fails
       }
     }
-  }, [currentQuestionIndex, questions.length]);
+  }, [currentQuestionIndex, questions.length, prefersReducedMotion]);
 
   const poolVocabs = filterTopic === 'all' 
     ? vocabularies 
@@ -204,12 +288,12 @@ export const QuizMode: React.FC<QuizModeProps> = ({
     const scorePercent = Math.round((score / totalQ) * 100);
 
     return (
-      <div className="max-w-2xl mx-auto my-8 p-8 bg-white rounded-3xl border border-pink-100 shadow-lg text-center space-y-6">
-        <div className="w-20 h-20 mx-auto bg-gradient-to-tr from-rose-400 to-pink-500 rounded-3xl flex items-center justify-center text-white shadow-md animate-bounce">
+      <div ref={completionRef} className="max-w-2xl mx-auto my-8 p-8 bg-white rounded-3xl border border-pink-100 shadow-lg text-center space-y-6">
+        <div data-quiz-completion-item className="w-20 h-20 mx-auto bg-gradient-to-tr from-rose-400 to-pink-500 rounded-3xl flex items-center justify-center text-white shadow-md">
           <Award className="w-10 h-10" />
         </div>
 
-        <div className="space-y-2">
+        <div data-quiz-completion-item className="space-y-2">
           <span className="px-3 py-1 rounded-full bg-pink-100 text-pink-700 text-xs font-bold uppercase tracking-wide">
             Kết Quả Bài Quiz
           </span>
@@ -222,7 +306,7 @@ export const QuizMode: React.FC<QuizModeProps> = ({
         </div>
 
         {/* Score Progress Bar */}
-        <div className="w-full h-4 bg-gray-100 rounded-full overflow-hidden p-0.5 border border-gray-200">
+        <div data-quiz-completion-item className="w-full h-4 bg-gray-100 rounded-full overflow-hidden p-0.5 border border-gray-200">
           <div
             style={{ width: `${scorePercent}%` }}
             className={`h-full rounded-full transition-all duration-700 ${
@@ -237,7 +321,7 @@ export const QuizMode: React.FC<QuizModeProps> = ({
 
         {/* Incorrect items warning */}
         {incorrectItems.length > 0 && (
-          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-100 text-left space-y-2">
+          <div data-quiz-completion-item className="p-4 rounded-2xl bg-rose-50 border border-rose-100 text-left space-y-2">
             <h4 className="text-xs font-bold text-rose-800 flex items-center gap-1.5">
               <XCircle className="w-4 h-4 text-rose-500" />
               Các từ bạn đã làm sai ({incorrectItems.length} từ):
@@ -253,7 +337,7 @@ export const QuizMode: React.FC<QuizModeProps> = ({
         )}
 
         {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+        <div data-quiz-completion-item className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
           <button
             onClick={restartQuiz}
             className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-pink-500 hover:bg-pink-600 text-white font-bold text-sm shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
@@ -284,7 +368,7 @@ export const QuizMode: React.FC<QuizModeProps> = ({
   if (!currentQ) return null;
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 pb-12">
+    <div ref={quizRef} className="max-w-2xl mx-auto space-y-6 pb-12">
       {/* Header controls */}
       <div className="flex items-center justify-between gap-4">
         <button
@@ -357,6 +441,7 @@ export const QuizMode: React.FC<QuizModeProps> = ({
                 key={idx}
                 disabled={isAnswered}
                 onClick={() => handleSelectOption(idx)}
+                data-quiz-option={idx}
                 className={`w-full p-4 rounded-2xl border-2 text-left text-sm transition-all flex items-center justify-between cursor-pointer ${optionStyle}`}
               >
                 <div className="flex items-center gap-3">
@@ -379,7 +464,7 @@ export const QuizMode: React.FC<QuizModeProps> = ({
 
         {/* Explanation Card after answer */}
         {isAnswered && (
-          <div className="p-4 rounded-2xl bg-[#FFF1F2] border border-[#FCE7F3] space-y-2 animate-fadeIn">
+          <div data-quiz-feedback className="p-4 rounded-2xl bg-[#FFF1F2] border border-[#FCE7F3] space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-[#F472B6]">Giải Thích Từ Vựng:</span>
               <span className="text-xs font-semibold text-gray-600">
