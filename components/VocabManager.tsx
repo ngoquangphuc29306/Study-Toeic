@@ -6,6 +6,7 @@ import {
   Search,
   MoreVertical,
   Edit3,
+  Pencil,
   Trash2,
   List,
   Upload,
@@ -26,6 +27,13 @@ import {
   Download
 } from 'lucide-react';
 import { Collection, Vocabulary, Topic, LearningStatus } from '../lib/types';
+import { AddVocabModal } from './AddVocabModal';
+
+type VocabularyUpdate = Partial<Pick<Vocabulary,
+  'word' | 'phonetic_uk' | 'phonetic_us' | 'part_of_speech' |
+  'meaning' | 'example' | 'example_translation' | 'synonyms' |
+  'collocations' | 'audio_url' | 'note'
+>>;
 
 interface VocabManagerProps {
   collections: Collection[];
@@ -33,6 +41,7 @@ interface VocabManagerProps {
   vocabularies: Vocabulary[];
   onUpdateStatus: (vocabId: string, status: LearningStatus) => void;
   onDeleteVocabulary: (vocabId: string) => Promise<void>;
+  onEditVocabulary: (vocabId: string, updates: VocabularyUpdate) => Promise<void>;
   onDeleteTopic: (topicId: string) => Promise<void>;
   onDeleteCollection: (colId: string) => Promise<void>;
   onUpdateTopic?: (topicId: string, updates: Partial<Topic>) => Promise<void>;
@@ -48,8 +57,6 @@ interface VocabManagerProps {
   onExportJSON?: () => void;
   isExportingCSV?: boolean;
   isExportingJSON?: boolean;
-  deleteError?: string;
-  onClearDeleteError?: () => void;
 }
 
 export const VocabManager: React.FC<VocabManagerProps> = ({
@@ -58,6 +65,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
   vocabularies,
   onUpdateStatus,
   onDeleteVocabulary,
+  onEditVocabulary,
   onDeleteTopic,
   onDeleteCollection,
   onUpdateTopic,
@@ -73,8 +81,6 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
   onExportJSON,
   isExportingCSV = false,
   isExportingJSON = false,
-  deleteError,
-  onClearDeleteError,
 }) => {
   // Active dropdown state tracking
   const [activeManageDropdown, setActiveManageDropdown] = useState<string | null>(null);
@@ -85,6 +91,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
   // Modal view for "Xem danh sách từ"
   const [viewWordsTopic, setViewWordsTopic] = useState<Topic | null>(null);
   const [modalSearch, setModalSearch] = useState<string>('');
+  const [editingVocabulary, setEditingVocabulary] = useState<Vocabulary | null>(null);
 
   // Modals for Renaming
   const [editingCollection, setEditingCollection] = useState<Collection | null>(null);
@@ -126,6 +133,8 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
       if (e.key === 'Escape') {
         if (viewWordsTopic) {
           setViewWordsTopic(null);
+        } else if (editingVocabulary) {
+          setEditingVocabulary(null);
         } else if (editingCollection) {
           setEditingCollection(null);
         } else if (editingTopic) {
@@ -138,7 +147,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
       window.addEventListener('keydown', handleEsc);
       return () => window.removeEventListener('keydown', handleEsc);
     }
-  }, [viewWordsTopic, editingCollection, editingTopic]);
+  }, [viewWordsTopic, editingVocabulary, editingCollection, editingTopic]);
 
   // Group topics by collection
   const collectionGroupMap = React.useMemo(() => {
@@ -184,27 +193,6 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
 
   return (
     <div className="bg-white text-gray-800 rounded-[32px] p-4 sm:p-6 lg:p-8 space-y-8 font-sans shadow-sm border border-[#FCE7F3]">
-
-      {/* Error Alert for Collection Deletion */}
-      {deleteError && (
-        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-start gap-3">
-          <div className="flex-shrink-0 mt-0.5">
-            <X className="w-5 h-5 text-rose-500" />
-          </div>
-          <div className="flex-1">
-            <h4 className="text-sm font-bold text-rose-900 mb-1">Không thể xóa bộ sưu tập</h4>
-            <p className="text-sm text-rose-700">{deleteError}</p>
-          </div>
-          <button
-            onClick={() => {
-              if (onClearDeleteError) onClearDeleteError();
-            }}
-            className="flex-shrink-0 p-1 rounded-lg hover:bg-rose-100 text-rose-400 hover:text-rose-600 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
 
       {/* Top Bar Header */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-6 border-b border-[#FCE7F3]">
@@ -286,6 +274,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                   if (onExportCSV) onExportCSV();
                 }}
                 disabled={isExportingCSV}
+                aria-busy={isExportingCSV}
                 className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-blue-50 text-gray-700 font-semibold cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Download className="w-4 h-4 text-blue-600" />
@@ -298,6 +287,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                   if (onExportJSON) onExportJSON();
                 }}
                 disabled={isExportingJSON}
+                aria-busy={isExportingJSON}
                 className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-blue-50 text-gray-700 font-semibold cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Download className="w-4 h-4 text-blue-600" />
@@ -779,7 +769,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                         <th className="py-3 px-4">Nghĩa</th>
                         <th className="py-3 px-4">Ví Dụ & Dịch</th>
                         <th className="py-3 px-4 text-center">Trạng Thái</th>
-                        <th className="py-3 px-4 text-center">Xóa</th>
+                        <th className="py-3 px-4 text-center">Hành Động</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-rose-100/60">
@@ -840,17 +830,31 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                           </td>
 
                           <td className="py-3.5 px-4 text-center">
-                            <button
-                              onClick={async () => {
-                                if (confirm(`Xóa từ "${item.word}"?`)) {
-                                  await onDeleteVocabulary(item.id);
-                                }
-                              }}
-                              aria-label={`Xóa từ ${item.word}`}
-                              className="p-2 sm:p-1.5 hover:bg-rose-100 rounded-lg text-rose-500 cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setEditingVocabulary(item)}
+                                aria-label={`Chỉnh sửa từ ${item.word}`}
+                                title="Chỉnh sửa từ vựng"
+                                className="p-2 sm:p-1.5 hover:bg-[#FFF1F2] rounded-lg text-[#ED4F8E] cursor-pointer transition-colors"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (confirm(`Xóa từ "${item.word}"?`)) {
+                                    await onDeleteVocabulary(item.id);
+                                  }
+                                }}
+                                aria-label={`Xóa từ ${item.word}`}
+                                title="Xóa từ vựng"
+                                className="p-2 sm:p-1.5 hover:bg-rose-100 rounded-lg text-rose-500 cursor-pointer transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -872,6 +876,19 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
 
           </div>
         </div>
+      )}
+
+      {editingVocabulary && (
+        <AddVocabModal
+          key={`manager-edit-vocabulary-${editingVocabulary.id}`}
+          isOpen={true}
+          onClose={() => setEditingVocabulary(null)}
+          topics={topics}
+          defaultTopicId={editingVocabulary.topic_id}
+          mode="edit"
+          editVocabulary={editingVocabulary}
+          onEditVocabulary={onEditVocabulary}
+        />
       )}
 
       {/* MODAL: Đổi Tên Bộ Từ Vựng (Collection) */}

@@ -7,6 +7,7 @@ import { StudyStats } from '../lib/types';
 import { SignOutButton } from './auth/sign-out-button';
 import { getCurrentProfile } from '@/services/profileService';
 import type { UserProfile } from '@/services/profileService';
+import Image from 'next/image';
 
 interface NavbarProps {
   activeTab: 'dashboard' | 'flashcard' | 'quiz' | 'vocab-manager';
@@ -75,7 +76,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#F472B6] to-[#FFB6C1] p-0.5 shadow-md shadow-pink-100 group-hover:scale-105 transition-transform">
             <div className="w-full h-full bg-white rounded-[10px] flex items-center justify-center">
-              <img src="/logo.svg" alt="EasyTOEIC" className="w-5 h-5"/>
+              <Image src="/logo.svg" alt="EasyTOEIC" width={20} height={20} className="object-contain"/>
             </div>
           </div>
           <div className="hidden min-[375px]:block sm:block">

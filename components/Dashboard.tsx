@@ -49,7 +49,7 @@ interface DashboardProps {
   isLoadingMetrics: boolean; // Phase 9.8: Passed from parent
   onSelectTopicForFlashcard: (topicId: string, initialStatus?: 'all' | 'new' | 'learning' | 'mastered') => void;
   onSelectTopicForQuiz: (topicId: string) => void;
-  onOpenAddModal: () => void;
+  onOpenCollectionModal: () => void;
   onUpdateProgress?: (vocabId: string, status: 'learning' | 'mastered', rating?: SrsRating) => void;
 }
 
@@ -71,7 +71,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   isLoadingMetrics,
   onSelectTopicForFlashcard,
   onSelectTopicForQuiz,
-  onOpenAddModal,
+  onOpenCollectionModal,
   onUpdateProgress,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -409,7 +409,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </button>
 
           <button
-            onClick={onOpenAddModal}
+            onClick={onOpenCollectionModal}
             className="col-span-2 sm:col-span-1 flex items-center justify-between p-3 sm:p-4 rounded-2xl bg-black/10 hover:bg-black/15 backdrop-blur-md text-white font-semibold text-sm shadow-xs transition-all hover:scale-[1.01] cursor-pointer"
           >
             <div className="flex items-center gap-2 sm:gap-3">
@@ -445,9 +445,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div className="flex items-baseline justify-between py-1">
             <div className="space-y-1">
               <div className="flex items-baseline gap-2">
-                <span className="text-3xl sm:text-5xl font-black text-gray-900 tracking-tight">
-                  {isLoadingMetrics ? '...' : (dashboardMetrics?.studyStreak || 0)}
-                </span>
+                {isLoadingMetrics ? (
+                  <div className="h-10 sm:h-14 w-16 sm:w-20 rounded-lg bg-gray-200 animate-pulse" aria-hidden="true" />
+                ) : (
+                  <span className="text-3xl sm:text-5xl font-black text-gray-900 tracking-tight">
+                    {dashboardMetrics?.studyStreak || 0}
+                  </span>
+                )}
                 <span className="text-base sm:text-lg font-bold text-gray-500">ngày liên tiếp</span>
               </div>
               <p className="text-xs text-gray-500 font-medium leading-relaxed">
@@ -523,12 +527,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </div>
 
               <div className="text-center py-1 sm:py-2 space-y-1">
-                <div className="text-2xl sm:text-4xl font-extrabold text-gray-900">
-                  {isLoadingMetrics ? '...' : unlimitedReview
-                    ? `${dashboardMetrics?.uniqueVocabularyStudiedToday || 0}`
-                    : `${dashboardMetrics?.uniqueVocabularyStudiedToday || 0} / ${dailyReviewLimit}`
-                  } <span className="text-xs sm:text-sm font-semibold text-gray-500">{unlimitedReview ? 'từ' : ''}</span>
-                </div>
+                {isLoadingMetrics ? (
+                  <div className="h-10 sm:h-12 w-32 sm:w-40 mx-auto rounded-lg bg-gray-200 animate-pulse" aria-hidden="true" />
+                ) : (
+                  <div className="text-2xl sm:text-4xl font-extrabold text-gray-900">
+                    {unlimitedReview
+                      ? `${dashboardMetrics?.uniqueVocabularyStudiedToday || 0}`
+                      : `${dashboardMetrics?.uniqueVocabularyStudiedToday || 0} / ${dailyReviewLimit}`
+                    } <span className="text-xs sm:text-sm font-semibold text-gray-500">{unlimitedReview ? 'từ' : ''}</span>
+                  </div>
+                )}
                 <div className="text-[10px] sm:text-xs text-[#ED4F8E] font-medium">
                   {unlimitedReview ? 'Không giới hạn' : 'Đã ôn hôm nay'}
                 </div>
@@ -835,13 +843,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {activeDetailView === null && (
         <div className="space-y-4 sm:space-y-5">
           {/* Top 4 Mini Stat Summary Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3" role="status" aria-live="polite" aria-busy={isLoadingMetrics}>
             <div className="p-3 sm:p-5 rounded-[20px] sm:rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex items-center justify-between">
               <div>
                 <p className="text-[10px] sm:text-xs font-semibold text-gray-500">Tổng thể</p>
-                <p className="text-lg sm:text-2xl font-black text-gray-900 mt-0.5 sm:mt-1">
-                  {isLoadingMetrics ? '...' : (dashboardMetrics?.totalVocabulary || 0)}
-                </p>
+                {isLoadingMetrics ? (
+                  <div className="h-7 sm:h-8 w-12 sm:w-16 rounded bg-gray-200 animate-pulse mt-0.5 sm:mt-1" aria-hidden="true" />
+                ) : (
+                  <p className="text-lg sm:text-2xl font-black text-gray-900 mt-0.5 sm:mt-1">
+                    {dashboardMetrics?.totalVocabulary || 0}
+                  </p>
+                )}
               </div>
               <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-[#FFF1F2] flex items-center justify-center text-[#ED4F8E] shrink-0">
                 <Layers className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -851,9 +863,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className="p-3 sm:p-5 rounded-[20px] sm:rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex items-center justify-between">
               <div>
                 <p className="text-[10px] sm:text-xs font-semibold text-gray-500">Đã học</p>
-                <p className="text-lg sm:text-2xl font-black text-gray-900 mt-0.5 sm:mt-1">
-                  {isLoadingMetrics ? '...' : ((dashboardMetrics?.masteredVocabulary || 0) + (dashboardMetrics?.learningVocabulary || 0))}
-                </p>
+                {isLoadingMetrics ? (
+                  <div className="h-7 sm:h-8 w-12 sm:w-16 rounded bg-gray-200 animate-pulse mt-0.5 sm:mt-1" aria-hidden="true" />
+                ) : (
+                  <p className="text-lg sm:text-2xl font-black text-gray-900 mt-0.5 sm:mt-1">
+                    {(dashboardMetrics?.masteredVocabulary || 0) + (dashboardMetrics?.learningVocabulary || 0)}
+                  </p>
+                )}
               </div>
               <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-[#FFF5F7] flex items-center justify-center text-[#F472B6] shrink-0">
                 <BookOpen className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -863,9 +879,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className="p-3 sm:p-5 rounded-[20px] sm:rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex items-center justify-between">
               <div>
                 <p className="text-[10px] sm:text-xs font-semibold text-gray-500">Thành thạo</p>
-                <p className="text-lg sm:text-2xl font-black text-gray-900 mt-0.5 sm:mt-1">
-                  {isLoadingMetrics ? '...' : (dashboardMetrics?.masteredVocabulary || 0)}
-                </p>
+                {isLoadingMetrics ? (
+                  <div className="h-7 sm:h-8 w-12 sm:w-16 rounded bg-gray-200 animate-pulse mt-0.5 sm:mt-1" aria-hidden="true" />
+                ) : (
+                  <p className="text-lg sm:text-2xl font-black text-gray-900 mt-0.5 sm:mt-1">
+                    {dashboardMetrics?.masteredVocabulary || 0}
+                  </p>
+                )}
               </div>
               <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-[#D1FAE5] flex items-center justify-center text-[#059669] shrink-0">
                 <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -875,9 +895,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className="p-3 sm:p-5 rounded-[20px] sm:rounded-[24px] bg-white border border-[#FCE7F3] shadow-2xs flex items-center justify-between">
               <div>
                 <p className="text-[10px] sm:text-xs font-semibold text-gray-500">Cần ôn ngay</p>
-                <p className="text-lg sm:text-2xl font-black text-gray-900 mt-0.5 sm:mt-1">
-                  {isLoadingMetrics ? '...' : (dashboardMetrics?.dueVocabulary || 0)}
-                </p>
+                {isLoadingMetrics ? (
+                  <div className="h-7 sm:h-8 w-12 sm:w-16 rounded bg-gray-200 animate-pulse mt-0.5 sm:mt-1" aria-hidden="true" />
+                ) : (
+                  <p className="text-lg sm:text-2xl font-black text-gray-900 mt-0.5 sm:mt-1">
+                    {dashboardMetrics?.dueVocabulary || 0}
+                  </p>
+                )}
               </div>
               <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-[#F3E8FF] flex items-center justify-center text-[#A855F7] shrink-0">
                 <Clock className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -895,9 +919,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
                 <div>
                   <h3 className="font-extrabold text-xs sm:text-sm text-gray-900">Từ cần ôn ngay</h3>
-                  <p className="text-sm sm:text-lg font-black text-[#A855F7]">
-                    {isLoadingMetrics ? '...' : `${dashboardMetrics?.dueVocabulary || 0} từ đến hạn`}
-                  </p>
+                  {isLoadingMetrics ? (
+                    <div className="h-5 sm:h-7 w-28 sm:w-32 rounded bg-gray-200 animate-pulse mt-1" aria-hidden="true" />
+                  ) : (
+                    <p className="text-sm sm:text-lg font-black text-[#A855F7]">
+                      {dashboardMetrics?.dueVocabulary || 0} từ đến hạn
+                    </p>
+                  )}
                 </div>
               </div>
               <button
@@ -937,9 +965,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
                 <div>
                   <h3 className="font-extrabold text-xs sm:text-sm text-gray-900">Từ đã thành thạo</h3>
-                  <p className="text-sm sm:text-lg font-black text-[#059669]">
-                    {isLoadingMetrics ? '...' : `${dashboardMetrics?.masteredVocabulary || 0} từ`}
-                  </p>
+                  {isLoadingMetrics ? (
+                    <div className="h-5 sm:h-7 w-24 sm:w-28 rounded bg-gray-200 animate-pulse mt-1" aria-hidden="true" />
+                  ) : (
+                    <p className="text-sm sm:text-lg font-black text-[#059669]">
+                      {dashboardMetrics?.masteredVocabulary || 0} từ
+                    </p>
+                  )}
                 </div>
               </div>
               <button
@@ -958,9 +990,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
                 <div>
                   <h3 className="font-extrabold text-xs sm:text-sm text-gray-900">Từ vựng khó nhớ</h3>
-                  <p className="text-sm sm:text-lg font-black text-[#E11D48]">
-                    {isLoadingMetrics ? '...' : `${dashboardMetrics?.difficultVocabulary || 0} từ bạn thường quên`}
-                  </p>
+                  {isLoadingMetrics ? (
+                    <div className="h-5 sm:h-7 w-36 sm:w-40 rounded bg-gray-200 animate-pulse mt-1" aria-hidden="true" />
+                  ) : (
+                    <p className="text-sm sm:text-lg font-black text-[#E11D48]">
+                      {dashboardMetrics?.difficultVocabulary || 0} từ bạn thường quên
+                    </p>
+                  )}
                 </div>
               </div>
               <button

@@ -9,6 +9,8 @@ import { AddVocabModal } from '../../components/AddVocabModal';
 import { CollectionModal } from '../../components/CollectionModal';
 import { ExcelImportModal } from '../../components/ExcelImportModal';
 import { SqlScriptModal } from '../../components/SqlScriptModal';
+import { useToast } from '../../contexts/ToastContext';
+import { updateVocabulary } from '../../services/vocabularyService';
 
 // RC15 Code Splitting: Lazy-load tab components that are not rendered by default
 // Only Dashboard renders on initial page load; other tabs load on demand
@@ -75,9 +77,26 @@ import {
 import { Collection, Topic, Vocabulary, StudyStats, LearningStatus } from '../../lib/types';
 
 type CreateModalMode = 'collection' | 'section';
+type VocabularyUpdate = Partial<
+  Pick<
+    Vocabulary,
+    | 'word'
+    | 'phonetic_uk'
+    | 'phonetic_us'
+    | 'part_of_speech'
+    | 'meaning'
+    | 'example'
+    | 'example_translation'
+    | 'synonyms'
+    | 'collocations'
+    | 'audio_url'
+    | 'note'
+  >
+>;
 
 export default function AppPage() {
   const router = useRouter();
+  const { showToast } = useToast();
 
   // Auth state
   const [authStatus, setAuthStatus] = useState<'checking' | 'authenticated' | 'unauthenticated'>('checking');
@@ -114,7 +133,6 @@ export default function AppPage() {
   const [isExcelModalOpen, setIsExcelModalOpen] = useState<boolean>(false);
   const [isSqlModalOpen, setIsSqlModalOpen] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [deleteError, setDeleteError] = useState<string>('');
 
   // Helper to re-fetch data
   // RC2 Fix: Used only for mutations (add/update/delete), NOT for initial load
@@ -189,7 +207,6 @@ export default function AppPage() {
         setWeekActivity([]);
         setIsLoadingDashboardMetrics(true);
         setSelectedTopicId('all');
-        setDeleteError('');
 
         previousUserIdRef.current = null;
 
@@ -229,7 +246,6 @@ export default function AppPage() {
           setWeekActivity([]);
           setIsLoadingDashboardMetrics(true);
           setSelectedTopicId('all');
-          setDeleteError('');
         }
 
         // Update tracked user ID
@@ -383,64 +399,91 @@ export default function AppPage() {
   };
 
   const handleAddCollection = async (newCol: Omit<Collection, 'id'>) => {
-    const col = await addCollection(newCol);
+    try {
+      const col = await addCollection(newCol);
 
-    // Batch Fix Phase 2: Only update collections state, do NOT refetch all app data
-    // Add operation only changes collections table (1 row added)
-    // Topics, vocabularies, stats, metrics, week activity are unchanged
-    setCollections((prevCollections) => [...prevCollections, col]);
+      // Batch Fix Phase 2: Only update collections state, do NOT refetch all app data
+      // Add operation only changes collections table (1 row added)
+      // Topics, vocabularies, stats, metrics, week activity are unchanged
+      setCollections((prevCollections) => [...prevCollections, col]);
 
-    return col;
+      showToast('Tạo bộ sưu tập thành công! ✨', 'success');
+      return col;
+    } catch (err) {
+      console.error('Add collection error:', err);
+      showToast('Không thể tạo bộ sưu tập. Vui lòng thử lại.', 'error');
+      throw err;
+    }
   };
 
   const handleUpdateCollection = async (colId: string, updates: Partial<Collection>) => {
-    // Batch Fix Phase 3: Update local state immediately, then save to server
-    // No refetch needed - only 1 collection modified, no dependencies changed
-    await updateCollection(colId, updates);
-    
-    setCollections((prev) => prev.map((c) => (c.id === colId ? { ...c, ...updates } : c)));
+    try {
+      // Batch Fix Phase 3: Update local state immediately, then save to server
+      // No refetch needed - only 1 collection modified, no dependencies changed
+      await updateCollection(colId, updates);
+
+      setCollections((prev) => prev.map((c) => (c.id === colId ? { ...c, ...updates } : c)));
+      showToast('Cập nhật bộ sưu tập thành công! ✨', 'success');
+    } catch (err) {
+      console.error('Update collection error:', err);
+      showToast('Không thể cập nhật bộ sưu tập. Vui lòng thử lại.', 'error');
+      throw err;
+    }
   };
 
   const handleUpdateTopic = async (topicId: string, updates: Partial<Topic>) => {
-    // Batch Fix Phase 5: Update local state immediately, then save to server
-    // No refetch needed - only 1 topic modified, no dependencies changed
-    await updateTopic(topicId, updates);
+    try {
+      // Batch Fix Phase 5: Update local state immediately, then save to server
+      // No refetch needed - only 1 topic modified, no dependencies changed
+      await updateTopic(topicId, updates);
 
-    setTopics((prev) => prev.map((t) => (t.id === topicId ? { ...t, ...updates } : t)));
+      setTopics((prev) => prev.map((t) => (t.id === topicId ? { ...t, ...updates } : t)));
+      showToast('Cập nhật học phần thành công! ✨', 'success');
+    } catch (err) {
+      console.error('Update topic error:', err);
+      showToast('Không thể cập nhật học phần. Vui lòng thử lại.', 'error');
+      throw err;
+    }
   };
 
   const handleDeleteCollection = async (colId: string) => {
     try {
-      setDeleteError('');
       await deleteCollection(colId);
 
       setCollections((currentCollections) => currentCollections.filter((collection) => collection.id !== colId));
+      showToast('Xóa bộ sưu tập thành công! ✨', 'success');
     } catch (err) {
       if (err instanceof CollectionHasChildrenError) {
-        setDeleteError('Không thể xóa bộ sưu tập này vì vẫn còn chủ đề hoặc từ vựng. Hãy xóa dữ liệu bên trong trước.');
+        showToast('Không thể xóa bộ sưu tập này vì vẫn còn chủ đề hoặc từ vựng. Hãy xóa dữ liệu bên trong trước.', 'error');
       } else if (err instanceof Error) {
-        setDeleteError(err.message);
+        showToast(err.message, 'error');
       } else {
-        setDeleteError('Không thể xóa bộ sưu tập. Vui lòng thử lại.');
+        showToast('Không thể xóa bộ sưu tập. Vui lòng thử lại.', 'error');
       }
       throw err;
     }
   };
 
   const handleAddTopic = async (newTopic: Omit<Topic, 'id'>) => {
-    const topic = await addTopic(newTopic);
+    try {
+      const topic = await addTopic(newTopic);
 
-    // Batch Fix Phase 4: Only update topics state, do NOT refetch all app data
-    // Add operation only changes topics table (1 row added)
-    // Collections, vocabularies, stats, metrics, week activity are unchanged
-    setTopics((prevTopics) => [...prevTopics, topic]);
+      // Batch Fix Phase 4: Only update topics state, do NOT refetch all app data
+      // Add operation only changes topics table (1 row added)
+      // Collections, vocabularies, stats, metrics, week activity are unchanged
+      setTopics((prevTopics) => [...prevTopics, topic]);
 
-    return topic;
+      showToast('Tạo học phần thành công! ✨', 'success');
+      return topic;
+    } catch (err) {
+      console.error('Add topic error:', err);
+      showToast('Không thể tạo học phần. Vui lòng thử lại.', 'error');
+      throw err;
+    }
   };
 
   const handleDeleteTopic = async (topicId: string) => {
     try {
-      setDeleteError('');
       await deleteTopic(topicId);
 
       // RC1 Fix: Only update topics state, do NOT refetch all app data
@@ -452,86 +495,145 @@ export default function AppPage() {
       if (selectedTopicId === topicId) {
         setSelectedTopicId('all');
       }
+
+      showToast('Xóa học phần thành công! ✨', 'success');
     } catch (err) {
       if (err instanceof TopicHasVocabulariesError) {
-        setDeleteError('Không thể xóa học phần này vì vẫn còn từ vựng. Hãy xóa từ vựng bên trong trước.');
+        showToast('Không thể xóa học phần này vì vẫn còn từ vựng. Hãy xóa từ vựng bên trong trước.', 'error');
       } else if (err instanceof Error) {
-        setDeleteError(err.message);
+        showToast(err.message, 'error');
       } else {
-        setDeleteError('Không thể xóa học phần. Vui lòng thử lại.');
+        showToast('Không thể xóa học phần. Vui lòng thử lại.', 'error');
       }
       throw err;
     }
   };
 
   const handleAddVocabulary = async (newVocab: Omit<Vocabulary, 'id'>) => {
-    const createdVocab = await addVocabulary(newVocab);
+    try {
+      const createdVocab = await addVocabulary(newVocab);
 
-    // Batch Fix Phase 6: Add vocabulary with default progress + targeted refetch
-    // New vocabulary has no progress yet (status='new', review_count=0)
-    const vocabWithDefaultProgress: Vocabulary = {
-      ...createdVocab,
-      status: 'new',
-      review_count: 0,
-      last_reviewed_at: undefined,
-      next_review_at: undefined,
-      interval_hours: undefined,
-      again_count: 0,
-      is_difficult: false,
-    };
+      // Batch Fix Phase 6: Add vocabulary with default progress + targeted refetch
+      // New vocabulary has no progress yet (status='new', review_count=0)
+      const vocabWithDefaultProgress: Vocabulary = {
+        ...createdVocab,
+        status: 'new',
+        review_count: 0,
+        last_reviewed_at: undefined,
+        next_review_at: undefined,
+        interval_hours: undefined,
+        again_count: 0,
+        is_difficult: false,
+      };
 
-    setVocabularies((prevVocabs) => [...prevVocabs, vocabWithDefaultProgress]);
+      setVocabularies((prevVocabs) => [...prevVocabs, vocabWithDefaultProgress]);
 
-    // Only refetch aggregates affected by vocabulary count change
-    const [updatedStats, updatedMetrics] = await Promise.all([
-      getStudyStats(),
-      getDashboardMetrics(),
-    ]);
-    setStats(updatedStats);
-    setDashboardMetrics(updatedMetrics);
+      // Only refetch aggregates affected by vocabulary count change
+      const [updatedStats, updatedMetrics] = await Promise.all([
+        getStudyStats(),
+        getDashboardMetrics(),
+      ]);
+      setStats(updatedStats);
+      setDashboardMetrics(updatedMetrics);
+
+      showToast('Thêm từ vựng thành công! ✨', 'success');
+    } catch (err) {
+      console.error('Add vocabulary error:', err);
+      showToast('Không thể thêm từ vựng. Vui lòng thử lại.', 'error');
+      throw err;
+    }
+  };
+
+  const handleUpdateVocabulary = async (
+    vocabId: string,
+    updates: VocabularyUpdate
+  ): Promise<void> => {
+    try {
+      await updateVocabulary(vocabId, updates);
+
+      setVocabularies((currentVocabularies) =>
+        currentVocabularies.map((vocabulary) =>
+          vocabulary.id === vocabId
+            ? { ...vocabulary, ...updates }
+            : vocabulary
+        )
+      );
+
+      showToast(
+        'Cập nhật từ vựng thành công! ✨',
+        'success'
+      );
+    } catch (err) {
+      console.error('Update vocabulary error:', err);
+
+      showToast(
+        err instanceof Error
+          ? err.message
+          : 'Không thể cập nhật từ vựng. Vui lòng thử lại.',
+        'error'
+      );
+
+      throw err;
+    }
   };
 
   const handleBulkAddVocabularies = async (items: Omit<Vocabulary, 'id'>[]) => {
-    const createdVocabs = await bulkAddVocabularies(items);
+    try {
+      const createdVocabs = await bulkAddVocabularies(items);
 
-    // Batch Fix Phase 7: Add all vocabularies with default progress + targeted refetch
-    // New vocabularies have no progress yet (status='new', review_count=0)
-    const vocabsWithDefaultProgress: Vocabulary[] = createdVocabs.map((vocab) => ({
-      ...vocab,
-      status: 'new' as const,
-      review_count: 0,
-      last_reviewed_at: undefined,
-      next_review_at: undefined,
-      interval_hours: undefined,
-      again_count: 0,
-      is_difficult: false,
-    }));
+      // Batch Fix Phase 7: Add all vocabularies with default progress + targeted refetch
+      // New vocabularies have no progress yet (status='new', review_count=0)
+      const vocabsWithDefaultProgress: Vocabulary[] = createdVocabs.map((vocab) => ({
+        ...vocab,
+        status: 'new' as const,
+        review_count: 0,
+        last_reviewed_at: undefined,
+        next_review_at: undefined,
+        interval_hours: undefined,
+        again_count: 0,
+        is_difficult: false,
+      }));
 
-    setVocabularies((prevVocabs) => [...prevVocabs, ...vocabsWithDefaultProgress]);
+      setVocabularies((prevVocabs) => [...prevVocabs, ...vocabsWithDefaultProgress]);
 
-    // Only refetch aggregates affected by vocabulary count change
-    const [updatedStats, updatedMetrics] = await Promise.all([
-      getStudyStats(),
-      getDashboardMetrics(),
-    ]);
-    setStats(updatedStats);
-    setDashboardMetrics(updatedMetrics);
+      // Only refetch aggregates affected by vocabulary count change
+      const [updatedStats, updatedMetrics] = await Promise.all([
+        getStudyStats(),
+        getDashboardMetrics(),
+      ]);
+      setStats(updatedStats);
+      setDashboardMetrics(updatedMetrics);
+
+      showToast(`Import thành công ${createdVocabs.length} từ vựng! ✨`, 'success');
+    } catch (err) {
+      console.error('Bulk add vocabularies error:', err);
+      showToast('Không thể import từ vựng. Vui lòng thử lại.', 'error');
+      throw err;
+    }
   };
 
   const handleDeleteVocabulary = async (vocabId: string) => {
-    await deleteVocabulary(vocabId);
+    try {
+      await deleteVocabulary(vocabId);
 
-    // Batch Fix Phase 8: Remove vocabulary from state + targeted refetch
-    // Deletion affects vocabulary count, so stats and metrics must be refetched
-    setVocabularies((prevVocabs) => prevVocabs.filter((v) => v.id !== vocabId));
+      // Batch Fix Phase 8: Remove vocabulary from state + targeted refetch
+      // Deletion affects vocabulary count, so stats and metrics must be refetched
+      setVocabularies((prevVocabs) => prevVocabs.filter((v) => v.id !== vocabId));
 
-    // Only refetch aggregates affected by vocabulary count change
-    const [updatedStats, updatedMetrics] = await Promise.all([
-      getStudyStats(),
-      getDashboardMetrics(),
-    ]);
-    setStats(updatedStats);
-    setDashboardMetrics(updatedMetrics);
+      // Only refetch aggregates affected by vocabulary count change
+      const [updatedStats, updatedMetrics] = await Promise.all([
+        getStudyStats(),
+        getDashboardMetrics(),
+      ]);
+      setStats(updatedStats);
+      setDashboardMetrics(updatedMetrics);
+
+      showToast('Xóa từ vựng thành công! ✨', 'success');
+    } catch (err) {
+      console.error('Delete vocabulary error:', err);
+      showToast('Không thể xóa từ vựng. Vui lòng thử lại.', 'error');
+      throw err;
+    }
   };
 
   // Switchers
@@ -554,9 +656,10 @@ export default function AppPage() {
     setIsExportingCSV(true);
     try {
       await exportVocabulariesAsCSV();
+      showToast('Xuất file CSV thành công! ✨', 'success');
     } catch (err) {
       console.error('Export CSV error:', err);
-      alert('Không thể xuất file CSV. Vui lòng thử lại.');
+      showToast('Không thể xuất file CSV. Vui lòng thử lại.', 'error');
     } finally {
       setIsExportingCSV(false);
     }
@@ -567,9 +670,10 @@ export default function AppPage() {
     setIsExportingJSON(true);
     try {
       await exportBackupAsJSON();
+      showToast('Xuất file JSON backup thành công! ✨', 'success');
     } catch (err) {
       console.error('Export JSON error:', err);
-      alert('Không thể xuất file JSON backup. Vui lòng thử lại.');
+      showToast('Không thể xuất file JSON backup. Vui lòng thử lại.', 'error');
     } finally {
       setIsExportingJSON(false);
     }
@@ -621,7 +725,11 @@ export default function AppPage() {
             isLoadingMetrics={isLoadingDashboardMetrics}
             onSelectTopicForFlashcard={handleSelectTopicForFlashcard}
             onSelectTopicForQuiz={handleSelectTopicForQuiz}
-            onOpenAddModal={() => setIsAddModalOpen(true)}
+            onOpenCollectionModal={() => {
+              setCollectionModalMode('collection');
+              setCollectionModalDefaultId(undefined);
+              setIsCollectionModalOpen(true);
+            }}
             onUpdateProgress={handleUpdateProgress}
           />
         )}
@@ -636,6 +744,7 @@ export default function AppPage() {
             onBackToDashboard={() => setActiveTab('dashboard')}
             onSwitchToQuiz={handleSelectTopicForQuiz}
             onDeleteVocabulary={handleDeleteVocabulary}
+            onEditVocabulary={handleUpdateVocabulary}
           />
         )}
 
@@ -657,6 +766,7 @@ export default function AppPage() {
             vocabularies={vocabularies}
             onUpdateStatus={handleUpdateProgress}
             onDeleteVocabulary={handleDeleteVocabulary}
+            onEditVocabulary={handleUpdateVocabulary}
             onDeleteTopic={handleDeleteTopic}
             onDeleteCollection={handleDeleteCollection}
             onUpdateTopic={handleUpdateTopic}
@@ -686,8 +796,6 @@ export default function AppPage() {
             onExportJSON={handleExportJSON}
             isExportingCSV={isExportingCSV}
             isExportingJSON={isExportingJSON}
-            deleteError={deleteError}
-            onClearDeleteError={() => setDeleteError('')}
           />
         )}
       </main>
@@ -696,11 +804,9 @@ export default function AppPage() {
       <AddVocabModal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
-        collections={collections}
         topics={topics}
         defaultTopicId={defaultModalTopicId}
         onAddVocabulary={handleAddVocabulary}
-        onAddTopic={handleAddTopic}
       />
 
       <CollectionModal
