@@ -30,7 +30,7 @@ export async function getCollections(): Promise<Collection[]> {
 
     if (authError || !user) {
       console.error('Authentication required for getCollections');
-      return [];
+      throw new Error('AUTH_REQUIRED');
     }
 
     const { data, error } = await supabase

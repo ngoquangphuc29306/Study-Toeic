@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { Navbar } from '../../components/Navbar';
@@ -93,13 +94,19 @@ type VocabularyUpdate = Partial<
     | 'note'
   >
 >;
+type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
+type DataStatus = 'idle' | 'loading' | 'success' | 'error';
+
+const DATA_STALE_MS = 5 * 60 * 1000;
+const RESUME_DEBOUNCE_MS = 750;
 
 export default function AppPage() {
   const router = useRouter();
   const { showToast } = useToast();
 
   // Auth state
-  const [authStatus, setAuthStatus] = useState<'checking' | 'authenticated' | 'unauthenticated'>('checking');
+  const [authStatus, setAuthStatus] = useState<AuthStatus>('loading');
+  const [authUserId, setAuthUserId] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'flashcard' | 'synonyms' | 'vocab-manager'>('dashboard');
   const [selectedTopicId, setSelectedTopicId] = useState<string>('all');
@@ -133,30 +140,112 @@ export default function AppPage() {
   const [isExcelModalOpen, setIsExcelModalOpen] = useState<boolean>(false);
   const [isSqlModalOpen, setIsSqlModalOpen] = useState<boolean>(false);
   const [editingVocabulary, setEditingVocabulary] = useState<Vocabulary | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [dataStatus, setDataStatus] = useState<DataStatus>('idle');
+  const [dataError, setDataError] = useState<string | null>(null);
+  const [lastDataLoadedAt, setLastDataLoadedAt] = useState<number | null>(null);
+  const [deleteError, setDeleteError] = useState<string>('');
+
+  const previousUserIdRef = useRef<string | null>(null);
+  const authStatusRef = useRef<AuthStatus>('loading');
+  const authUserIdRef = useRef<string | null>(null);
+  const dataStatusRef = useRef<DataStatus>('idle');
+  const lastDataLoadedAtRef = useRef<number | null>(null);
+  const hasSuccessfulDataRef = useRef(false);
+  const loadGenerationRef = useRef(0);
+  const loadPromiseRef = useRef<Promise<void> | null>(null);
+  const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sessionCheckResolvedRef = useRef(false);
 
   // Helper to re-fetch data
   // RC2 Fix: Used only for mutations (add/update/delete), NOT for initial load
-  // const refreshAppData = useCallback(async () => {
-  //   try {
-  //     const [fetchedCols, fetchedTopics, fetchedVocab, fetchedStats, fetchedMetrics, fetchedWeek] = await Promise.all([
-  //       getCollections(),
-  //       getTopics(),
-  //       getVocabByTopic('all'),
-  //       getStudyStats(),
-  //       getDashboardMetrics(),
-  //       getWeekActivity(),
-  //     ]);
-  //     setCollections(fetchedCols);
-  //     setTopics(fetchedTopics);
-  //     setVocabularies(fetchedVocab);
-  //     setStats(fetchedStats);
-  //     setDashboardMetrics(fetchedMetrics);
-  //     setWeekActivity(fetchedWeek);
-  //   } catch (err) {
-  //     console.error('Error refreshing EasyTOEIC data:', err);
-  //   }
-  // }, []);
+  const refreshAppData = useCallback(async () => {
+    const currentUserId = authUserIdRef.current;
+    if (authStatusRef.current !== 'authenticated' || !currentUserId) return;
+    if (loadPromiseRef.current) return loadPromiseRef.current;
+
+    const generation = ++loadGenerationRef.current;
+    const hadUsableData = hasSuccessfulDataRef.current;
+    dataStatusRef.current = 'loading';
+    setDataStatus('loading');
+    setDataError(null);
+    if (!hadUsableData) setIsLoadingDashboardMetrics(true);
+
+    const request = (async () => {
+      try {
+        const [fetchedCols, fetchedTopics, fetchedVocab, fetchedMetrics, fetchedWeek] = await Promise.all([
+          getCollections(),
+          getTopics(),
+          getVocabByTopic('all'),
+          getDashboardMetrics(),
+          getWeekActivity(),
+        ]);
+
+        if (
+          generation !== loadGenerationRef.current ||
+          authUserIdRef.current !== currentUserId ||
+          authStatusRef.current !== 'authenticated'
+        ) return;
+
+        const fetchedStats: StudyStats = {
+          totalWords: fetchedVocab.length,
+          masteredCount: fetchedVocab.filter((v) => v.status === 'mastered').length,
+          learningCount: fetchedVocab.filter((v) => v.status === 'learning').length,
+          newCount: fetchedVocab.filter((v) => v.status === 'new').length,
+          dailyStreak: 0,
+          todayStudiedCount: 0,
+        };
+        const composedCollections = fetchedCols.map((collection) => {
+          const collectionTopicIds = new Set(
+            fetchedTopics
+              .filter((topic) => topic.collection_id === collection.id)
+              .map((topic) => topic.id)
+          );
+
+          return {
+            ...collection,
+            total_topics: collectionTopicIds.size,
+            total_words: fetchedVocab.filter((vocab) => collectionTopicIds.has(vocab.topic_id)).length,
+          };
+        });
+
+        setCollections(composedCollections);
+        setTopics(fetchedTopics);
+        setVocabularies(fetchedVocab);
+        setStats(fetchedStats);
+        setDashboardMetrics(fetchedMetrics);
+        setWeekActivity(fetchedWeek);
+        hasSuccessfulDataRef.current = true;
+        dataStatusRef.current = 'success';
+        setDataStatus('success');
+        setDataError(null);
+        const loadedAt = Date.now();
+        lastDataLoadedAtRef.current = loadedAt;
+        setLastDataLoadedAt(loadedAt);
+        setIsLoadingDashboardMetrics(false);
+      } catch (err) {
+        console.error('Error loading EasyTOEIC data:', err);
+        if (
+          generation !== loadGenerationRef.current ||
+          authUserIdRef.current !== currentUserId ||
+          authStatusRef.current !== 'authenticated'
+        ) return;
+
+        dataStatusRef.current = 'error';
+        setDataStatus('error');
+        setDataError(err instanceof Error ? err.message : 'Unable to load data. Please try again.');
+        // Keep the last successful snapshot. Only sign-out/user-switch reset
+        // is allowed to replace domain arrays with [] (see clearAppData).
+        setIsLoadingDashboardMetrics(false);
+      }
+    })();
+
+    loadPromiseRef.current = request;
+    request.then(
+      () => { if (loadPromiseRef.current === request) loadPromiseRef.current = null; },
+      () => { if (loadPromiseRef.current === request) loadPromiseRef.current = null; }
+    );
+    return request;
+  }, []);
 
   // Phase 2C Fix: Auth state change listener
   // Phase 6 Fix: Track user identity to detect actual user switches
@@ -166,12 +255,12 @@ export default function AppPage() {
   // - Does NOT run when recovery links open /reset-password directly
   // - PASSWORD_RECOVERY handling moved to root-level AuthEventBridge
   // - This listener manages application state for signed-in users
-  const previousUserIdRef = React.useRef<string | null>(null);
+  /* Legacy auth/data effects replaced by the session-aware loader below.
 
   useEffect(() => {
     const supabase = createClient();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
       const currentUserId = session?.user?.id || null;
       const previousUserId = previousUserIdRef.current;
 
@@ -372,7 +461,146 @@ export default function AppPage() {
     return () => {
       isMounted = false;
     };
-  }, [authStatus]); // Dependency on authStatus to run after auth confirmed
+  }, [authStatus]); // Dependency on authStatus to run after auth confirmed */
+
+  const clearAppData = useCallback((outgoingUserId: string | null) => {
+    if (outgoingUserId) clearStudySession(outgoingUserId);
+
+    loadGenerationRef.current += 1;
+    loadPromiseRef.current = null;
+    hasSuccessfulDataRef.current = false;
+    lastDataLoadedAtRef.current = null;
+    setCollections([]);
+    setTopics([]);
+    setVocabularies([]);
+    setStats({
+      totalWords: 0,
+      masteredCount: 0,
+      learningCount: 0,
+      newCount: 0,
+      dailyStreak: 0,
+      todayStudiedCount: 0,
+    });
+    setDashboardMetrics(null);
+    setWeekActivity([]);
+    setIsLoadingDashboardMetrics(true);
+    dataStatusRef.current = 'idle';
+    setDataStatus('idle');
+    setDataError(null);
+    setLastDataLoadedAt(null);
+    setSelectedTopicId('all');
+    setDeleteError('');
+  }, []);
+
+  const scheduleResumeRefresh = useCallback(() => {
+    if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
+
+    resumeTimerRef.current = setTimeout(() => {
+      resumeTimerRef.current = null;
+      if (
+        typeof document === 'undefined' ||
+        document.visibilityState !== 'visible' ||
+        authStatusRef.current !== 'authenticated' ||
+        !authUserIdRef.current ||
+        (typeof navigator !== 'undefined' && navigator.onLine === false)
+      ) return;
+
+      const isStale = !lastDataLoadedAtRef.current || Date.now() - lastDataLoadedAtRef.current > DATA_STALE_MS;
+      if (dataStatusRef.current === 'error' || dataStatusRef.current === 'idle' || isStale) {
+        void refreshAppData();
+      }
+    }, RESUME_DEBOUNCE_MS);
+  }, [refreshAppData]);
+
+  const handleAuthSession = useCallback((event: AuthChangeEvent, session: { user?: { id: string } } | null) => {
+    const currentUserId = session?.user?.id || null;
+    const previousUserId = previousUserIdRef.current;
+
+    if (event === 'PASSWORD_RECOVERY') return;
+
+    // A delayed INITIAL_SESSION(null) must not erase a session that has
+    // already been restored by getSession(). Only SIGNED_OUT is authoritative
+    // for clearing an already authenticated user.
+    if (event !== 'SIGNED_OUT' && !currentUserId && authUserIdRef.current) return;
+
+    if (event === 'SIGNED_OUT' || !currentUserId) {
+      if (event === 'SIGNED_OUT' || sessionCheckResolvedRef.current) {
+        clearAppData(previousUserId);
+        previousUserIdRef.current = null;
+        authUserIdRef.current = null;
+        authStatusRef.current = 'unauthenticated';
+        setAuthUserId(null);
+        setAuthStatus('unauthenticated');
+        if (event === 'SIGNED_OUT') router.replace(buildLoginUrl('/app'));
+      }
+      return;
+    }
+
+    const userChanged = previousUserId !== null && previousUserId !== currentUserId;
+    if (userChanged) clearAppData(previousUserId);
+
+    previousUserIdRef.current = currentUserId;
+    authUserIdRef.current = currentUserId;
+    authStatusRef.current = 'authenticated';
+    setAuthUserId(currentUserId);
+    setAuthStatus('authenticated');
+
+    // Keep the auth callback lightweight; wait until session storage settles.
+    if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+      setTimeout(() => void refreshAppData(), 0);
+    } else if (event === 'TOKEN_REFRESHED') {
+      scheduleResumeRefresh();
+    }
+  }, [clearAppData, refreshAppData, router, scheduleResumeRefresh]);
+
+  useEffect(() => {
+    let isMounted = true;
+    let authRetryTimer: ReturnType<typeof setTimeout> | null = null;
+    const supabase = createClient();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
+      if (isMounted) handleAuthSession(event, session);
+    });
+
+    const resolveInitialSession = async (retry = false) => {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (!isMounted) return;
+
+      if (error) {
+        console.error('Auth session restore error:', error);
+        if (!retry) authRetryTimer = setTimeout(() => void resolveInitialSession(true), 1000);
+        return;
+      }
+
+      sessionCheckResolvedRef.current = true;
+      handleAuthSession('INITIAL_SESSION', session);
+      if (!session) router.replace(buildLoginUrl('/app'));
+    };
+
+    void resolveInitialSession();
+    return () => {
+      isMounted = false;
+      if (authRetryTimer) clearTimeout(authRetryTimer);
+      subscription.unsubscribe();
+    };
+  }, [handleAuthSession, router]);
+
+  useEffect(() => {
+    const handleVisibilityOrFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        scheduleResumeRefresh();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    window.addEventListener('online', handleVisibilityOrFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      window.removeEventListener('online', handleVisibilityOrFocus);
+      if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
+    };
+  }, [scheduleResumeRefresh]);
 
   // Handle Updates & Actions
   // Phase 5: handleUpdateProgress now throws errors for FlashcardMode to handle
@@ -682,7 +910,9 @@ export default function AppPage() {
 
   // Loading UI - shown during auth check and initial data load
   // Do not render app UI until auth is confirmed and data is loaded
-  if (authStatus === 'checking' || isLoading) {
+  const hasSuccessfulData = lastDataLoadedAt !== null;
+
+  if (authStatus === 'loading' || !authUserId) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#FFF9FA] space-y-4">
         <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#F472B6] to-[#FF85A1] p-0.5 animate-bounce shadow-lg shadow-pink-100">
@@ -691,7 +921,7 @@ export default function AppPage() {
           </div>
         </div>
         <p className="text-xs font-bold text-[#F472B6] animate-pulse">
-          {authStatus === 'checking' ? 'Đang xác thực...' : 'Đang tải hệ thống EasyTOEIC...'}
+          Đang xác thực...
         </p>
       </div>
     );
@@ -700,6 +930,35 @@ export default function AppPage() {
   // If unauthenticated, render null while redirecting
   if (authStatus === 'unauthenticated') {
     return null;
+  }
+
+  if ((dataStatus === 'idle' || dataStatus === 'loading') && !hasSuccessfulData) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#FFF9FA] space-y-4">
+        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#F472B6] to-[#FF85A1] p-0.5 animate-bounce shadow-lg shadow-pink-100">
+          <div className="w-full h-full bg-white rounded-[14px] flex items-center justify-center text-[#F472B6] font-extrabold text-xl">🌸</div>
+        </div>
+        <p className="text-xs font-bold text-[#F472B6] animate-pulse">Đang tải dữ liệu EasyTOEIC...</p>
+      </div>
+    );
+  }
+
+  if (dataStatus === 'error' && !hasSuccessfulData) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#FFF9FA] px-6 text-center">
+        <div className="max-w-md rounded-2xl border border-rose-100 bg-white p-6 shadow-sm">
+          <h1 className="text-lg font-extrabold text-[#4A4A4A]">Không thể tải dữ liệu</h1>
+          <p className="mt-2 text-sm text-gray-500">{dataError || 'Vui lòng thử lại.'}</p>
+          <button
+            type="button"
+            onClick={() => void refreshAppData()}
+            className="mt-4 rounded-xl bg-[#F472B6] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#EC4899]"
+          >
+            Thử lại
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -716,6 +975,19 @@ export default function AppPage() {
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8">
+        {dataStatus === 'error' && dataError && (
+          <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <span>Dữ liệu hiện tại có thể đã cũ. {dataError}</span>
+            <button
+              type="button"
+              onClick={() => void refreshAppData()}
+              className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-bold text-amber-900 hover:bg-amber-100"
+            >
+              Thử lại
+            </button>
+          </div>
+        )}
+
         {activeTab === 'dashboard' && (
           <Dashboard
             topics={topics}

@@ -21,9 +21,15 @@
 import { createBrowserClient } from '@supabase/ssr';
 import { supabaseEnv } from './env';
 
+let browserClient: ReturnType<typeof createBrowserClient> | null = null;
+
 export function createClient() {
-  return createBrowserClient(
-    supabaseEnv.url,
-    supabaseEnv.anonKey
-  );
+  if (!browserClient) {
+    browserClient = createBrowserClient(
+      supabaseEnv.url,
+      supabaseEnv.anonKey
+    );
+  }
+
+  return browserClient;
 }

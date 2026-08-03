@@ -33,7 +33,7 @@ export async function getVocabularies(topicId?: string): Promise<Vocabulary[]> {
 
     if (authError || !user) {
       console.error('Authentication required for getVocabularies');
-      return [];
+      throw new Error('AUTH_REQUIRED');
     }
 
     let query = supabase

@@ -83,7 +83,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     let difficultCount = 0;
 
     if (progressData) {
-      progressData.forEach((p) => {
+      (progressData as Array<{ status: string; again_count: number; next_review_at: string | null }>).forEach((p) => {
         const status = p.status as LearningStatus;
         progressMap.set(status, (progressMap.get(status) || 0) + 1);
 
@@ -122,7 +122,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
 
     const reviewsToday = todayReviews?.length || 0;
     const uniqueVocabToday = todayReviews
-      ? new Set(todayReviews.map(r => r.vocabulary_id)).size
+      ? new Set((todayReviews as Array<{ vocabulary_id: string }>).map(r => r.vocabulary_id)).size
       : 0;
 
     // Query 3b: Today's NEW word studies (first-time studies only)
@@ -137,7 +137,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     if (newWordsError) throw newWordsError;
 
     const newWordsStudiedToday = todayNewWords
-      ? new Set(todayNewWords.map(r => r.vocabulary_id)).size
+      ? new Set((todayNewWords as Array<{ vocabulary_id: string }>).map(r => r.vocabulary_id)).size
       : 0;
 
     // Query 4: Study streak (consecutive days with reviews)
@@ -191,7 +191,7 @@ async function calculateStudyStreak(
 
   // Convert timestamps to local date keys and deduplicate
   const studiedDates = new Set<string>();
-  reviews.forEach((review) => {
+    (reviews as Array<{ reviewed_at: string }>).forEach((review) => {
     const reviewDate = new Date(review.reviewed_at);
     const localDateKey = `${reviewDate.getFullYear()}-${String(reviewDate.getMonth() + 1).padStart(2, '0')}-${String(reviewDate.getDate()).padStart(2, '0')}`;
     studiedDates.add(localDateKey);
@@ -327,7 +327,7 @@ export async function getWeekActivity(): Promise<Array<{ date: string; count: nu
 
     // Count reviews per day
     if (data) {
-      data.forEach((review) => {
+      (data as Array<{ reviewed_at: string }>).forEach((review) => {
         const reviewDate = new Date(review.reviewed_at);
         const localDateStr = reviewDate.toISOString().split('T')[0];
         countsByDate.set(localDateStr, (countsByDate.get(localDateStr) || 0) + 1);
