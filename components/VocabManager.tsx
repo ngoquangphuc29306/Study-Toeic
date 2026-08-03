@@ -50,7 +50,7 @@ interface VocabManagerProps {
   onUpdateTopic?: (topicId: string, updates: Partial<Topic>) => Promise<void>;
   onUpdateCollection?: (colId: string, updates: Partial<Collection>) => Promise<void>;
   onSelectTopicForFlashcard: (topicId: string, initialStatus?: 'all' | 'new' | 'learning' | 'mastered') => void;
-  onSelectTopicForQuiz: (topicId: string) => void;
+  onSelectTopicForSynonyms: (topicId: string) => void;
   onOpenAddModalWithTopic?: (topicId?: string) => void;
   onOpenExcelModalWithTopic?: (topicId?: string) => void;
   onOpenCollectionModal: () => void;
@@ -74,7 +74,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
   onUpdateTopic,
   onUpdateCollection,
   onSelectTopicForFlashcard,
-  onSelectTopicForQuiz,
+  onSelectTopicForSynonyms,
   onOpenAddModalWithTopic,
   onOpenExcelModalWithTopic,
   onOpenCollectionModal,

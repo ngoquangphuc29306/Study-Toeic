@@ -2,6 +2,8 @@ export type PartOfSpeech = 'noun' | 'verb' | 'adjective' | 'adverb' | 'phrase' |
 
 export type LearningStatus = 'new' | 'learning' | 'mastered';
 
+export type FlashcardInitialFilter = 'all' | 'new' | 'learning' | 'mastered' | 'due';
+
 export interface Collection {
   id: string;
   title: string;

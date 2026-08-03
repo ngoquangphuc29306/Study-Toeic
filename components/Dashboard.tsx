@@ -14,7 +14,7 @@ import {
   Plane,
   CreditCard,
   TrendingUp,
-  HelpCircle,
+  GitCompareArrows,
   PlusCircle,
   ArrowRight,
   Target,
@@ -32,7 +32,7 @@ import {
   AlertTriangle,
   RefreshCw
 } from 'lucide-react';
-import { Topic, StudyStats, Vocabulary } from '../lib/types';
+import { FlashcardInitialFilter, Topic, StudyStats, Vocabulary } from '../lib/types';
 import { SrsRating } from '../services/vocabService';
 import {
   getDashboardMetrics,
@@ -50,8 +50,8 @@ interface DashboardProps {
   dashboardMetrics: DashboardMetrics | null; // Phase 9.8: Passed from parent
   weekActivity: Array<{ date: string; count: number }>; // Phase 9.8: Passed from parent
   isLoadingMetrics: boolean; // Phase 9.8: Passed from parent
-  onSelectTopicForFlashcard: (topicId: string, initialStatus?: 'all' | 'new' | 'learning' | 'mastered') => void;
-  onSelectTopicForQuiz: (topicId: string) => void;
+  onSelectTopicForFlashcard: (topicId: string, initialStatus?: FlashcardInitialFilter) => void;
+  onSelectTopicForSynonyms: (topicId: string) => void;
   onOpenCollectionModal: () => void;
   onUpdateProgress?: (vocabId: string, status: 'learning' | 'mastered', rating?: SrsRating) => void;
 }
@@ -73,7 +73,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   weekActivity,
   isLoadingMetrics,
   onSelectTopicForFlashcard,
-  onSelectTopicForQuiz,
+  onSelectTopicForSynonyms,
   onOpenCollectionModal,
   onUpdateProgress,
 }) => {
@@ -452,14 +452,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </button>
 
           <button
-            onClick={() => onSelectTopicForQuiz('all')}
+            onClick={() => onSelectTopicForSynonyms('all')}
             className="flex items-center justify-between p-3 sm:p-4 rounded-2xl bg-white/95 hover:bg-white text-gray-800 font-semibold text-sm shadow-xs transition-all hover:scale-[1.01] cursor-pointer group"
           >
             <div className="flex items-center gap-2 sm:gap-3">
               <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#FFF1F2] flex items-center justify-center text-[#F472B6] shrink-0">
-                <HelpCircle className="w-4 h-4 text-[#F472B6]" />
+                <GitCompareArrows className="w-4 h-4 text-[#F472B6]" />
               </div>
-              <span className="text-gray-800 font-bold text-xs sm:text-sm">Quiz Tổng Hợp</span>
+              <span className="text-gray-800 font-bold text-xs sm:text-sm">Luyện Từ Đồng Nghĩa</span>
             </div>
             <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#F472B6] group-hover:translate-x-1 transition-transform shrink-0" />
           </button>
@@ -574,7 +574,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             {/* Ôn tập */}
             <div
-              onClick={() => onSelectTopicForFlashcard('all', 'learning')}
+              onClick={() => onSelectTopicForFlashcard('all', 'due')}
               className="p-4 sm:p-5 rounded-xl sm:rounded-2xl bg-[#FFF5F7] border border-[#FCE7F3] flex flex-col justify-between space-y-2 sm:space-y-3 cursor-pointer hover:border-[#F472B6]/60 transition-all group"
             >
               <div className="flex items-center gap-2 text-xs font-bold text-gray-700">
@@ -986,7 +986,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </div>
               </div>
               <button
-                onClick={() => onSelectTopicForFlashcard('all', 'learning')}
+                onClick={() => onSelectTopicForFlashcard('all', 'due')}
                 className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-[#ED4F8E] to-[#F472B6] hover:from-[#E13B7D] hover:to-[#EC4899] text-white font-bold text-xs shadow-xs transition-all cursor-pointer whitespace-nowrap self-start sm:self-auto"
               >
                 Ôn tập ngay

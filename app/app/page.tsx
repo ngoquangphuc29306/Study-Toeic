@@ -12,6 +12,7 @@ import { ExcelImportModal } from '../../components/ExcelImportModal';
 import { SqlScriptModal } from '../../components/SqlScriptModal';
 import { useToast } from '../../contexts/ToastContext';
 import { updateVocabulary } from '../../services/vocabularyService';
+import { ReviewReminderPopup, useReviewReminder } from '../../features/review-reminder';
 
 // RC15 Code Splitting: Lazy-load tab components that are not rendered by default
 // Only Dashboard renders on initial page load; other tabs load on demand
@@ -75,7 +76,7 @@ import {
   type DashboardMetrics
 } from '../../services/dashboardService';
 
-import { Collection, Topic, Vocabulary, StudyStats, LearningStatus } from '../../lib/types';
+import { Collection, FlashcardInitialFilter, Topic, Vocabulary, StudyStats, LearningStatus } from '../../lib/types';
 
 type CreateModalMode = 'collection' | 'section';
 type VocabularyUpdate = Partial<
@@ -110,7 +111,7 @@ export default function AppPage() {
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'flashcard' | 'synonyms' | 'vocab-manager'>('dashboard');
   const [selectedTopicId, setSelectedTopicId] = useState<string>('all');
-  const [initialFlashcardStatus, setInitialFlashcardStatus] = useState<'all' | 'new' | 'learning' | 'mastered' | undefined>(undefined);
+  const [initialFlashcardStatus, setInitialFlashcardStatus] = useState<FlashcardInitialFilter | undefined>(undefined);
   const [defaultModalTopicId, setDefaultModalTopicId] = useState<string | undefined>(undefined);
 
   const [collections, setCollections] = useState<Collection[]>([]);
@@ -143,6 +144,7 @@ export default function AppPage() {
   const [dataStatus, setDataStatus] = useState<DataStatus>('idle');
   const [dataError, setDataError] = useState<string | null>(null);
   const [lastDataLoadedAt, setLastDataLoadedAt] = useState<number | null>(null);
+  const [lastStudySessionCompletedAt, setLastStudySessionCompletedAt] = useState<number | null>(null);
   const [deleteError, setDeleteError] = useState<string>('');
 
   const previousUserIdRef = useRef<string | null>(null);
@@ -488,6 +490,7 @@ export default function AppPage() {
     setDataStatus('idle');
     setDataError(null);
     setLastDataLoadedAt(null);
+    setLastStudySessionCompletedAt(null);
     setSelectedTopicId('all');
     setDeleteError('');
   }, []);
@@ -866,16 +869,54 @@ export default function AppPage() {
   };
 
   // Switchers
-  const handleSelectTopicForFlashcard = (topicId: string, initialStatus?: 'all' | 'new' | 'learning' | 'mastered') => {
+  const handleSelectTopicForFlashcard = (topicId: string, initialStatus?: FlashcardInitialFilter) => {
     setSelectedTopicId(topicId);
     setInitialFlashcardStatus(initialStatus);
     setActiveTab('flashcard');
   };
 
-  const handleSelectTopicForQuiz = (topicId: string) => {
+  const handleSelectTopicForSynonyms = (topicId: string) => {
     setSelectedTopicId(topicId);
     setActiveTab('synonyms');
   };
+
+  const handleReviewDue = useCallback((dueVocabularyIds: string[]) => {
+    if (dueVocabularyIds.length === 0) return;
+    setSelectedTopicId('all');
+    setInitialFlashcardStatus('due');
+    setActiveTab('flashcard');
+  }, []);
+
+  const handleNoDueVocabulary = useCallback(() => {
+    showToast('Các từ đến hạn đã được cập nhật.', 'info');
+  }, [showToast]);
+
+  const isReviewReminderBlocked =
+    activeTab === 'flashcard' ||
+    activeTab === 'synonyms' ||
+    isAddModalOpen ||
+    isCollectionModalOpen ||
+    isExcelModalOpen ||
+    isSqlModalOpen ||
+    editingVocabulary !== null;
+
+  const {
+    isOpen: isReviewReminderOpen,
+    dueCount: reviewReminderDueCount,
+    handleSnooze: handleReviewReminderSnooze,
+    handleReviewNow: handleReviewReminderNow,
+  } = useReviewReminder({
+    authStatus,
+    dataStatus,
+    authUserId,
+    dashboardDueCount: dashboardMetrics?.dueVocabulary ?? null,
+    vocabularies,
+    lastDataLoadedAt,
+    lastStudySessionCompletedAt,
+    isBlocked: isReviewReminderBlocked,
+    onReviewNow: handleReviewDue,
+    onNoDueVocabulary: handleNoDueVocabulary,
+  });
 
   const [isExportingCSV, setIsExportingCSV] = useState(false);
   const [isExportingJSON, setIsExportingJSON] = useState(false);
@@ -997,7 +1038,7 @@ export default function AppPage() {
             weekActivity={weekActivity}
             isLoadingMetrics={isLoadingDashboardMetrics}
             onSelectTopicForFlashcard={handleSelectTopicForFlashcard}
-            onSelectTopicForQuiz={handleSelectTopicForQuiz}
+            onSelectTopicForSynonyms={handleSelectTopicForSynonyms}
             onOpenCollectionModal={() => {
               setCollectionModalMode('collection');
               setCollectionModalDefaultId(undefined);
@@ -1015,7 +1056,8 @@ export default function AppPage() {
             initialStatus={initialFlashcardStatus}
             onUpdateProgress={handleUpdateProgress}
             onBackToDashboard={() => setActiveTab('dashboard')}
-            onSwitchToQuiz={handleSelectTopicForQuiz}
+            onSwitchToSynonyms={handleSelectTopicForSynonyms}
+            onStudySessionCompleted={() => setLastStudySessionCompletedAt(Date.now())}
             onDeleteVocabulary={handleDeleteVocabulary}
             onEditVocabulary={handleUpdateVocabulary}
           />
@@ -1045,7 +1087,7 @@ export default function AppPage() {
             onUpdateTopic={handleUpdateTopic}
             onUpdateCollection={handleUpdateCollection}
             onSelectTopicForFlashcard={handleSelectTopicForFlashcard}
-            onSelectTopicForQuiz={handleSelectTopicForQuiz}
+            onSelectTopicForSynonyms={handleSelectTopicForSynonyms}
             onOpenAddModalWithTopic={(topicId) => {
               setDefaultModalTopicId(topicId);
               setIsAddModalOpen(true);
@@ -1115,6 +1157,13 @@ export default function AppPage() {
       <SqlScriptModal
         isOpen={isSqlModalOpen}
         onClose={() => setIsSqlModalOpen(false)}
+      />
+
+      <ReviewReminderPopup
+        isOpen={isReviewReminderOpen}
+        dueCount={reviewReminderDueCount}
+        onSnooze={handleReviewReminderSnooze}
+        onReviewNow={handleReviewReminderNow}
       />
 
       {/* Footer */}
