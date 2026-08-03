@@ -49,7 +49,7 @@ interface DashboardProps {
   isLoadingMetrics: boolean; // Phase 9.8: Passed from parent
   onSelectTopicForFlashcard: (topicId: string, initialStatus?: 'all' | 'new' | 'learning' | 'mastered') => void;
   onSelectTopicForQuiz: (topicId: string) => void;
-  onOpenAddModal: () => void;
+  onOpenCollectionModal: () => void;
   onUpdateProgress?: (vocabId: string, status: 'learning' | 'mastered', rating?: SrsRating) => void;
 }
 
@@ -71,7 +71,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   isLoadingMetrics,
   onSelectTopicForFlashcard,
   onSelectTopicForQuiz,
-  onOpenAddModal,
+  onOpenCollectionModal,
   onUpdateProgress,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -409,7 +409,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </button>
 
           <button
-            onClick={onOpenAddModal}
+            onClick={onOpenCollectionModal}
             className="col-span-2 sm:col-span-1 flex items-center justify-between p-3 sm:p-4 rounded-2xl bg-black/10 hover:bg-black/15 backdrop-blur-md text-white font-semibold text-sm shadow-xs transition-all hover:scale-[1.01] cursor-pointer"
           >
             <div className="flex items-center gap-2 sm:gap-3">

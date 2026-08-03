@@ -6,6 +6,7 @@ import {
   Search,
   MoreVertical,
   Edit3,
+  Pencil,
   Trash2,
   List,
   Upload,
@@ -26,6 +27,13 @@ import {
   Download
 } from 'lucide-react';
 import { Collection, Vocabulary, Topic, LearningStatus } from '../lib/types';
+import { AddVocabModal } from './AddVocabModal';
+
+type VocabularyUpdate = Partial<Pick<Vocabulary,
+  'word' | 'phonetic_uk' | 'phonetic_us' | 'part_of_speech' |
+  'meaning' | 'example' | 'example_translation' | 'synonyms' |
+  'collocations' | 'audio_url' | 'note'
+>>;
 
 interface VocabManagerProps {
   collections: Collection[];
@@ -33,6 +41,7 @@ interface VocabManagerProps {
   vocabularies: Vocabulary[];
   onUpdateStatus: (vocabId: string, status: LearningStatus) => void;
   onDeleteVocabulary: (vocabId: string) => Promise<void>;
+  onEditVocabulary: (vocabId: string, updates: VocabularyUpdate) => Promise<void>;
   onDeleteTopic: (topicId: string) => Promise<void>;
   onDeleteCollection: (colId: string) => Promise<void>;
   onUpdateTopic?: (topicId: string, updates: Partial<Topic>) => Promise<void>;
@@ -56,6 +65,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
   vocabularies,
   onUpdateStatus,
   onDeleteVocabulary,
+  onEditVocabulary,
   onDeleteTopic,
   onDeleteCollection,
   onUpdateTopic,
@@ -81,6 +91,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
   // Modal view for "Xem danh sách từ"
   const [viewWordsTopic, setViewWordsTopic] = useState<Topic | null>(null);
   const [modalSearch, setModalSearch] = useState<string>('');
+  const [editingVocabulary, setEditingVocabulary] = useState<Vocabulary | null>(null);
 
   // Modals for Renaming
   const [editingCollection, setEditingCollection] = useState<Collection | null>(null);
@@ -122,6 +133,8 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
       if (e.key === 'Escape') {
         if (viewWordsTopic) {
           setViewWordsTopic(null);
+        } else if (editingVocabulary) {
+          setEditingVocabulary(null);
         } else if (editingCollection) {
           setEditingCollection(null);
         } else if (editingTopic) {
@@ -134,7 +147,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
       window.addEventListener('keydown', handleEsc);
       return () => window.removeEventListener('keydown', handleEsc);
     }
-  }, [viewWordsTopic, editingCollection, editingTopic]);
+  }, [viewWordsTopic, editingVocabulary, editingCollection, editingTopic]);
 
   // Group topics by collection
   const collectionGroupMap = React.useMemo(() => {
@@ -756,7 +769,7 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                         <th className="py-3 px-4">Nghĩa</th>
                         <th className="py-3 px-4">Ví Dụ & Dịch</th>
                         <th className="py-3 px-4 text-center">Trạng Thái</th>
-                        <th className="py-3 px-4 text-center">Xóa</th>
+                        <th className="py-3 px-4 text-center">Hành Động</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-rose-100/60">
@@ -817,17 +830,31 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                           </td>
 
                           <td className="py-3.5 px-4 text-center">
-                            <button
-                              onClick={async () => {
-                                if (confirm(`Xóa từ "${item.word}"?`)) {
-                                  await onDeleteVocabulary(item.id);
-                                }
-                              }}
-                              aria-label={`Xóa từ ${item.word}`}
-                              className="p-2 sm:p-1.5 hover:bg-rose-100 rounded-lg text-rose-500 cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setEditingVocabulary(item)}
+                                aria-label={`Chỉnh sửa từ ${item.word}`}
+                                title="Chỉnh sửa từ vựng"
+                                className="p-2 sm:p-1.5 hover:bg-[#FFF1F2] rounded-lg text-[#ED4F8E] cursor-pointer transition-colors"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (confirm(`Xóa từ "${item.word}"?`)) {
+                                    await onDeleteVocabulary(item.id);
+                                  }
+                                }}
+                                aria-label={`Xóa từ ${item.word}`}
+                                title="Xóa từ vựng"
+                                className="p-2 sm:p-1.5 hover:bg-rose-100 rounded-lg text-rose-500 cursor-pointer transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -849,6 +876,19 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
 
           </div>
         </div>
+      )}
+
+      {editingVocabulary && (
+        <AddVocabModal
+          key={`manager-edit-vocabulary-${editingVocabulary.id}`}
+          isOpen={true}
+          onClose={() => setEditingVocabulary(null)}
+          topics={topics}
+          defaultTopicId={editingVocabulary.topic_id}
+          mode="edit"
+          editVocabulary={editingVocabulary}
+          onEditVocabulary={onEditVocabulary}
+        />
       )}
 
       {/* MODAL: Đổi Tên Bộ Từ Vựng (Collection) */}

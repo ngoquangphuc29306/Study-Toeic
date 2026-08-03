@@ -10,6 +10,7 @@ import { CollectionModal } from '../../components/CollectionModal';
 import { ExcelImportModal } from '../../components/ExcelImportModal';
 import { SqlScriptModal } from '../../components/SqlScriptModal';
 import { useToast } from '../../contexts/ToastContext';
+import { updateVocabulary } from '../../services/vocabularyService';
 
 // RC15 Code Splitting: Lazy-load tab components that are not rendered by default
 // Only Dashboard renders on initial page load; other tabs load on demand
@@ -76,6 +77,22 @@ import {
 import { Collection, Topic, Vocabulary, StudyStats, LearningStatus } from '../../lib/types';
 
 type CreateModalMode = 'collection' | 'section';
+type VocabularyUpdate = Partial<
+  Pick<
+    Vocabulary,
+    | 'word'
+    | 'phonetic_uk'
+    | 'phonetic_us'
+    | 'part_of_speech'
+    | 'meaning'
+    | 'example'
+    | 'example_translation'
+    | 'synonyms'
+    | 'collocations'
+    | 'audio_url'
+    | 'note'
+  >
+>;
 
 export default function AppPage() {
   const router = useRouter();
@@ -527,6 +544,39 @@ export default function AppPage() {
     }
   };
 
+  const handleUpdateVocabulary = async (
+    vocabId: string,
+    updates: VocabularyUpdate
+  ): Promise<void> => {
+    try {
+      await updateVocabulary(vocabId, updates);
+
+      setVocabularies((currentVocabularies) =>
+        currentVocabularies.map((vocabulary) =>
+          vocabulary.id === vocabId
+            ? { ...vocabulary, ...updates }
+            : vocabulary
+        )
+      );
+
+      showToast(
+        'Cập nhật từ vựng thành công! ✨',
+        'success'
+      );
+    } catch (err) {
+      console.error('Update vocabulary error:', err);
+
+      showToast(
+        err instanceof Error
+          ? err.message
+          : 'Không thể cập nhật từ vựng. Vui lòng thử lại.',
+        'error'
+      );
+
+      throw err;
+    }
+  };
+
   const handleBulkAddVocabularies = async (items: Omit<Vocabulary, 'id'>[]) => {
     try {
       const createdVocabs = await bulkAddVocabularies(items);
@@ -675,7 +725,11 @@ export default function AppPage() {
             isLoadingMetrics={isLoadingDashboardMetrics}
             onSelectTopicForFlashcard={handleSelectTopicForFlashcard}
             onSelectTopicForQuiz={handleSelectTopicForQuiz}
-            onOpenAddModal={() => setIsAddModalOpen(true)}
+            onOpenCollectionModal={() => {
+              setCollectionModalMode('collection');
+              setCollectionModalDefaultId(undefined);
+              setIsCollectionModalOpen(true);
+            }}
             onUpdateProgress={handleUpdateProgress}
           />
         )}
@@ -690,6 +744,7 @@ export default function AppPage() {
             onBackToDashboard={() => setActiveTab('dashboard')}
             onSwitchToQuiz={handleSelectTopicForQuiz}
             onDeleteVocabulary={handleDeleteVocabulary}
+            onEditVocabulary={handleUpdateVocabulary}
           />
         )}
 
@@ -711,6 +766,7 @@ export default function AppPage() {
             vocabularies={vocabularies}
             onUpdateStatus={handleUpdateProgress}
             onDeleteVocabulary={handleDeleteVocabulary}
+            onEditVocabulary={handleUpdateVocabulary}
             onDeleteTopic={handleDeleteTopic}
             onDeleteCollection={handleDeleteCollection}
             onUpdateTopic={handleUpdateTopic}
@@ -748,11 +804,9 @@ export default function AppPage() {
       <AddVocabModal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
-        collections={collections}
         topics={topics}
         defaultTopicId={defaultModalTopicId}
         onAddVocabulary={handleAddVocabulary}
-        onAddTopic={handleAddTopic}
       />
 
       <CollectionModal

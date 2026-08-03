@@ -1,57 +1,101 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Plus, BookOpen, FileText } from 'lucide-react';
-import { Collection, Topic, Vocabulary } from '../lib/types';
+import { X } from 'lucide-react';
+import { Topic, Vocabulary } from '../lib/types';
+
+type VocabularyUpdate = Partial<Pick<Vocabulary,
+  'word' | 'phonetic_uk' | 'phonetic_us' | 'part_of_speech' |
+  'meaning' | 'example' | 'example_translation' | 'synonyms' |
+  'collocations' | 'audio_url' | 'note'
+>>;
 
 interface AddVocabModalProps {
   isOpen: boolean;
   onClose: () => void;
-  collections?: Collection[];
   topics: Topic[];
   defaultTopicId?: string;
-  onAddVocabulary: (newVocab: Omit<Vocabulary, 'id'>) => Promise<void>;
-  onAddTopic: (newTopic: Omit<Topic, 'id'>) => Promise<Topic | void>;
+
+  onAddVocabulary?: (newVocab: Omit<Vocabulary, 'id'>) => Promise<void>;
+
+  mode?: 'add' | 'edit';
+  editVocabulary?: Vocabulary;
+  onEditVocabulary?: (vocabId: string, updates: VocabularyUpdate) => Promise<void>;
 }
 
 export const AddVocabModal: React.FC<AddVocabModalProps> = ({
   isOpen,
   onClose,
-  collections = [],
   topics,
   defaultTopicId,
   onAddVocabulary,
-  onAddTopic,
+  mode = 'add',
+  editVocabulary,
+  onEditVocabulary,
 }) => {
-  const [activeTab, setActiveTab] = useState<'word' | 'topic'>('word');
+  const isEditMode = mode === 'edit' && Boolean(editVocabulary);
 
   // Word form state
-  const [topicId, setTopicId] = useState<string>(defaultTopicId || topics[0]?.id || '');
+  const [topicId, setTopicId] = useState<string>(() =>
+    isEditMode && editVocabulary
+      ? editVocabulary.topic_id
+      : defaultTopicId || topics[0]?.id || ''
+  );
   const [prevDefaultTopicId, setPrevDefaultTopicId] = useState<string | undefined>(defaultTopicId);
 
   // Sync prop to state safely during render if changed
-  if (defaultTopicId !== prevDefaultTopicId) {
+  if (mode === 'add' && defaultTopicId !== prevDefaultTopicId) {
     setPrevDefaultTopicId(defaultTopicId);
     if (defaultTopicId) {
       setTopicId(defaultTopicId);
     }
   }
-  const [word, setWord] = useState<string>('');
-  const [phoneticUk, setPhoneticUk] = useState<string>('');
-  const [phoneticUs, setPhoneticUs] = useState<string>('');
-  const [partOfSpeech, setPartOfSpeech] = useState<string>('noun');
-  const [meaning, setMeaning] = useState<string>('');
-  const [example, setExample] = useState<string>('');
-  const [exampleTranslation, setExampleTranslation] = useState<string>('');
-  const [synonyms, setSynonyms] = useState<string>('');
-  const [collocations, setCollocations] = useState<string>('');
-  const [note, setNote] = useState<string>('');
-
-  // Topic form state
-  const [newTopicColId, setNewTopicColId] = useState<string>(collections[0]?.id || '');
-  const [newTopicTitle, setNewTopicTitle] = useState<string>('');
-  const [newTopicDesc, setNewTopicDesc] = useState<string>('');
-  const [newTopicCat, setNewTopicCat] = useState<string>('Business');
+  const [word, setWord] = useState<string>(() =>
+    isEditMode && editVocabulary ? editVocabulary.word : ''
+  );
+  const [phoneticUk, setPhoneticUk] = useState<string>(() =>
+    isEditMode && editVocabulary
+      ? editVocabulary.phonetic_uk || ''
+      : ''
+  );
+  const [phoneticUs, setPhoneticUs] = useState<string>(() =>
+    isEditMode && editVocabulary
+      ? editVocabulary.phonetic_us || ''
+      : ''
+  );
+  const [partOfSpeech, setPartOfSpeech] = useState<string>(() =>
+    isEditMode && editVocabulary
+      ? editVocabulary.part_of_speech || 'noun'
+      : 'noun'
+  );
+  const [meaning, setMeaning] = useState<string>(() =>
+    isEditMode && editVocabulary ? editVocabulary.meaning : ''
+  );
+  const [example, setExample] = useState<string>(() =>
+    isEditMode && editVocabulary
+      ? editVocabulary.example || ''
+      : ''
+  );
+  const [exampleTranslation, setExampleTranslation] = useState<string>(() =>
+    isEditMode && editVocabulary
+      ? editVocabulary.example_translation || ''
+      : ''
+  );
+  const [synonyms, setSynonyms] = useState<string>(() =>
+    isEditMode && editVocabulary
+      ? editVocabulary.synonyms || ''
+      : ''
+  );
+  const [collocations, setCollocations] = useState<string>(() =>
+    isEditMode && editVocabulary
+      ? editVocabulary.collocations || ''
+      : ''
+  );
+  const [note, setNote] = useState<string>(() =>
+    isEditMode && editVocabulary
+      ? editVocabulary.note || ''
+      : ''
+  );
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
@@ -74,52 +118,54 @@ export const AddVocabModal: React.FC<AddVocabModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      await onAddVocabulary({
-        topic_id: topicId,
-        word: word.trim(),
-        phonetic_uk: phoneticUk.trim() || undefined,
-        phonetic_us: phoneticUs.trim() || undefined,
-        part_of_speech: partOfSpeech,
-        meaning: meaning.trim(),
-        example: example.trim() || undefined,
-        example_translation: exampleTranslation.trim() || undefined,
-        synonyms: synonyms.trim() || undefined,
-        collocations: collocations.trim() || undefined,
-        note: note.trim() || undefined,
-      });
+      if (mode === 'edit' && editVocabulary && onEditVocabulary) {
+        // Edit mode: call onEditVocabulary with updates
+        const updates: VocabularyUpdate = {
+          word: word.trim(),
+          phonetic_uk: phoneticUk.trim() || undefined,
+          phonetic_us: phoneticUs.trim() || undefined,
+          part_of_speech: partOfSpeech,
+          meaning: meaning.trim(),
+          example: example.trim() || undefined,
+          example_translation: exampleTranslation.trim() || undefined,
+          synonyms: synonyms.trim() || undefined,
+          collocations: collocations.trim() || undefined,
+          note: note.trim() || undefined,
+        };
+        await onEditVocabulary(editVocabulary.id, updates);
+      } else {
+        if (!onAddVocabulary) {
+          throw new Error('Thiếu handler thêm từ vựng.');
+        }
 
-      // Reset form
-      setWord('');
-      setPhoneticUk('');
-      setPhoneticUs('');
-      setMeaning('');
-      setExample('');
-      setExampleTranslation('');
-      setSynonyms('');
-      setCollocations('');
-      setNote('');
-      onClose();
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+        // Add mode: call onAddVocabulary
+        await onAddVocabulary({
+          topic_id: topicId,
+          word: word.trim(),
+          phonetic_uk: phoneticUk.trim() || undefined,
+          phonetic_us: phoneticUs.trim() || undefined,
+          part_of_speech: partOfSpeech,
+          meaning: meaning.trim(),
+          example: example.trim() || undefined,
+          example_translation: exampleTranslation.trim() || undefined,
+          synonyms: synonyms.trim() || undefined,
+          collocations: collocations.trim() || undefined,
+          note: note.trim() || undefined,
+        });
+      }
 
-  const handleTopicSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTopicTitle) return;
-
-    setIsSubmitting(true);
-    try {
-      await onAddTopic({
-        collection_id: newTopicColId || collections[0]?.id,
-        title: newTopicTitle.trim(),
-        description: newTopicDesc.trim() || 'Chủ đề từ vựng TOEIC mới',
-        category: newTopicCat || 'General',
-        icon: 'BookOpen',
-      });
-
-      setNewTopicTitle('');
-      setNewTopicDesc('');
+      // Reset form (only in add mode)
+      if (mode === 'add') {
+        setWord('');
+        setPhoneticUk('');
+        setPhoneticUs('');
+        setMeaning('');
+        setExample('');
+        setExampleTranslation('');
+        setSynonyms('');
+        setCollocations('');
+        setNote('');
+      }
       onClose();
     } finally {
       setIsSubmitting(false);
@@ -147,36 +193,15 @@ export const AddVocabModal: React.FC<AddVocabModalProps> = ({
           <X className="w-5 h-5" />
         </button>
 
-        {/* Header & Tabs */}
-        <div className="space-y-3">
+        {/* Header */}
+        <div>
           <h3 id="add-vocab-modal-title" className="text-lg sm:text-xl font-extrabold text-gray-800">
-            Thêm Mới Từ Vựng
+            {mode === 'edit' ? 'Chỉnh Sửa Từ Vựng' : 'Thêm Mới Từ Vựng'}
           </h3>
-
-          <div className="flex items-center gap-1 bg-pink-50/80 p-1 rounded-2xl border border-pink-100 text-xs font-bold">
-            <button
-              onClick={() => setActiveTab('word')}
-              className={`flex-1 py-2 rounded-xl transition-all cursor-pointer ${
-                activeTab === 'word' ? 'bg-white text-pink-600 shadow-2xs' : 'text-gray-500'
-              }`}
-            >
-              Thêm Từ Vựng Mới
-            </button>
-
-            <button
-              onClick={() => setActiveTab('topic')}
-              className={`flex-1 py-2 rounded-xl transition-all cursor-pointer ${
-                activeTab === 'topic' ? 'bg-white text-pink-600 shadow-2xs' : 'text-gray-500'
-              }`}
-            >
-              Tạo Học Phần Mới
-            </button>
-          </div>
         </div>
 
         {/* WORD FORM */}
-        {activeTab === 'word' ? (
-          <form onSubmit={handleWordSubmit} className="space-y-3 text-xs">
+        <form onSubmit={handleWordSubmit} className="space-y-3 text-xs">
             <div>
               <label htmlFor="vocab-topic-select" className="block font-bold text-gray-700 mb-1">
                 Thuộc Section Bài Học <span className="text-pink-500">*</span>
@@ -186,7 +211,8 @@ export const AddVocabModal: React.FC<AddVocabModalProps> = ({
                 value={topicId}
                 onChange={(e) => setTopicId(e.target.value)}
                 required
-                className="w-full p-2.5 sm:p-3 bg-gray-50 border border-pink-100 rounded-xl text-base sm:text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-pink-300"
+                disabled={mode === 'edit'}
+                className="w-full p-2.5 sm:p-3 bg-gray-50 border border-pink-100 rounded-xl text-base sm:text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-pink-300 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {topics.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -327,80 +353,9 @@ export const AddVocabModal: React.FC<AddVocabModalProps> = ({
               disabled={isSubmitting}
               className="w-full py-3 sm:py-3.5 bg-pink-500 hover:bg-pink-600 text-white font-bold rounded-2xl text-xs sm:text-sm transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed mt-2"
             >
-              {isSubmitting ? 'Đang Lưu...' : 'Lưu Từ Vựng Vào Bài Học'}
+              {isSubmitting ? 'Đang Lưu...' : (mode === 'edit' ? 'Lưu Thay Đổi' : 'Lưu Từ Vựng Vào Bài Học')}
             </button>
           </form>
-        ) : (
-          /* TOPIC FORM */
-          <form onSubmit={handleTopicSubmit} className="space-y-3 text-xs">
-            {collections.length > 0 && (
-              <div>
-                <label htmlFor="topic-collection-select" className="block font-bold text-gray-700 mb-1">
-                  Bộ Sưu Tập Chứa Section
-                </label>
-                <select
-                  id="topic-collection-select"
-                  value={newTopicColId}
-                  onChange={(e) => setNewTopicColId(e.target.value)}
-                  className="w-full p-2.5 sm:p-3 bg-gray-50 border border-pink-100 rounded-xl text-base sm:text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-pink-300"
-                >
-                  {collections.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      📂 {c.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <div>
-              <label htmlFor="topic-title-input" className="block font-bold text-gray-700 mb-1">
-                Tên Section Mới <span className="text-pink-500">*</span>
-              </label>
-              <input
-                id="topic-title-input"
-                type="text"
-                placeholder="Ví dụ: Section 1: Hợp Đồng & Đàm Phán"
-                value={newTopicTitle}
-                onChange={(e) => setNewTopicTitle(e.target.value)}
-                required
-                className="w-full p-2.5 sm:p-3 bg-gray-50 border border-pink-100 rounded-xl text-base sm:text-sm font-bold focus:outline-none focus:ring-2 focus:ring-pink-300"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="topic-desc-textarea" className="block font-bold text-gray-700 mb-1">Mô Tả Section</label>
-              <textarea
-                id="topic-desc-textarea"
-                placeholder="Mô tả nội dung từ vựng bài học này..."
-                value={newTopicDesc}
-                onChange={(e) => setNewTopicDesc(e.target.value)}
-                rows={2}
-                className="w-full p-2.5 sm:p-3 bg-gray-50 border border-pink-100 rounded-xl text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-pink-300 resize-none"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="topic-category-input" className="block font-bold text-gray-700 mb-1">Phân Loại (Category)</label>
-              <input
-                id="topic-category-input"
-                type="text"
-                placeholder="Business, HR, Corporate, Travel..."
-                value={newTopicCat}
-                onChange={(e) => setNewTopicCat(e.target.value)}
-                className="w-full p-2.5 sm:p-3 bg-gray-50 border border-pink-100 rounded-xl text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-pink-300"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full py-3 sm:py-3.5 bg-pink-500 hover:bg-pink-600 text-white font-bold rounded-2xl text-xs sm:text-sm transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed mt-2"
-            >
-              {isSubmitting ? 'Đang Lưu...' : 'Tạo Section Bài Học Mới'}
-            </button>
-          </form>
-        )}
       </div>
     </div>
   );

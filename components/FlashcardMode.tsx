@@ -22,7 +22,8 @@ import {
   Trash2,
   Eye,
   MessageSquare,
-  Hash
+  Hash,
+  Pencil
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Vocabulary, Topic } from '../lib/types';
@@ -32,7 +33,13 @@ import { useToast } from '../contexts/ToastContext';
 import { applyRatingToQueue } from '../lib/session/queueTransition';
 import type { StudySessionSnapshot } from '../lib/session/types';
 import { createClient } from '@/lib/supabase/client';
-import { filter } from 'motion/react-client';
+import { AddVocabModal } from './AddVocabModal';
+
+type VocabularyUpdate = Partial<Pick<Vocabulary,
+  'word' | 'phonetic_uk' | 'phonetic_us' | 'part_of_speech' |
+  'meaning' | 'example' | 'example_translation' | 'synonyms' |
+  'collocations' | 'audio_url' | 'note'
+>>;
 
 interface FlashcardModeProps {
   vocabularies: Vocabulary[];
@@ -43,6 +50,7 @@ interface FlashcardModeProps {
   onBackToDashboard: () => void;
   onSwitchToQuiz: (topicId: string) => void;
   onDeleteVocabulary?: (vocabId: string) => void;
+  onEditVocabulary?: (vocabId: string, updates: VocabularyUpdate) => Promise<void>;
 }
 
 type StudySubMode = 'flashcard' | 'quiz' | 'typing' | 'pronounce';
@@ -72,6 +80,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   onBackToDashboard,
   onSwitchToQuiz,
   onDeleteVocabulary,
+  onEditVocabulary,
 }) => {
   const { showToast } = useToast();
   const [filterTopic, setFilterTopic] = useState<string>(selectedTopicId || 'all');
@@ -85,6 +94,9 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
   const [isFlipped, setIsFlipped] = useState<boolean>(false);
   const [isCompleted, setIsCompleted] = useState<boolean>(false);
+
+  // Edit vocabulary modal state
+  const [showEditModal, setShowEditModal] = useState<boolean>(false);
 
   // Phase 6: Helper to get authenticated user ID
   const getUserId = useCallback(async (): Promise<string | null> => {
@@ -210,15 +222,17 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
           setShowSettingsModal(false);
         } else if (showReportModal) {
           setShowReportModal(false);
+        } else if (showEditModal) {
+          setShowEditModal(false);
         }
       }
     };
 
-    if (showSettingsModal || showReportModal) {
+    if (showSettingsModal || showReportModal || showEditModal) {
       window.addEventListener('keydown', handleEsc);
       return () => window.removeEventListener('keydown', handleEsc);
     }
-  }, [showSettingsModal, showReportModal]);
+  }, [showSettingsModal, showReportModal, showEditModal]);
 
   // Reset interaction state during render when word or submode changes
   useEffect(() => {
@@ -501,6 +515,11 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     const previousStats = sessionStats;
     const ratedVocabId = currentVocab.id;
 
+    // ✅ FLASH BUG FIX: Reset flip state SYNCHRONOUSLY before index change
+    // This prevents Card B from rendering with Card A's isFlipped state
+    setIsFlipped(false);
+    setHasRevealedAnswer(false);
+
     // 4. OPTIMISTIC UPDATE - Card transitions INSTANTLY (< 10ms)
     // EXCEPT for final card: do not show completion until save succeeds
     if (!transition.isComplete) {
@@ -645,6 +664,40 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     setHasRevealedAnswer(true);
   }, [quizAnswered]);
 
+  // Handle edit vocabulary
+  const handleEditCurrentVocab = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (
+        ratingSubmitLockRef.current ||
+        isSubmitting ||
+        !currentVocab ||
+        !onEditVocabulary
+      ) {
+        return;
+      }
+
+      setShowEditModal(true);
+    },
+    [currentVocab, isSubmitting, onEditVocabulary]
+  );
+
+  const handleSaveEdit = useCallback(
+    async (
+      vocabId: string,
+      updates: VocabularyUpdate
+    ): Promise<void> => {
+      if (!onEditVocabulary) {
+        throw new Error('Chức năng chỉnh sửa chưa khả dụng')
+      }
+
+      await onEditVocabulary(vocabId, updates);
+    },
+    [onEditVocabulary]
+  );
+
   // Handle Typing Check
   const handleCheckTyping = useCallback(() => {
     if (!currentVocab || typingSubmitted || ratingSubmitLockRef.current) return;
@@ -720,7 +773,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isCompleted || !currentVocab || showSettingsModal || showReportModal) return;
+      if (isCompleted || !currentVocab || showSettingsModal || showReportModal || showEditModal) return;
 
       if (e.code === 'Space' && subMode === 'flashcard') {
         e.preventDefault();
@@ -747,7 +800,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
         } else if (subMode === 'typing' && typingSubmitted) {
           e.preventDefault();
           if (!ratingSubmitLockRef.current) {
-            handleRating(isTypingCorrect === true);
+            setShowRatingButtons(true);
           }
         } else {
           e.preventDefault();
@@ -771,13 +824,14 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     isTypingCorrect,
     showSettingsModal,
     showReportModal,
+    showEditModal,
     autoPlayAudio,
     quizOptions.length,
     handleRating,
     handleNotRemembered,
     playPronunciation,
     handleCheckTyping,
-    handleQuizSelect
+    handleQuizSelect,
   ]);
 
   const restartSession = async () => {
@@ -979,7 +1033,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       {/* MAIN CONTENT STUDY CARD CONTAINER */}
       <div className="bg-white rounded-[20px] sm:rounded-[32px] border-2 border-[#FCE7F3] p-4 sm:p-6 lg:p-8 shadow-xs relative space-y-4 sm:space-y-6">
 
-        {/* Card Top Action Icons (Check / Trash / Settings / Alert) */}
+        {/* Card Top Action Icons (Check / Edit / Trash / Settings / Alert) */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
@@ -1024,6 +1078,20 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
               <CheckCircle2 className="w-4 h-4" />
             </button>
 
+            {/* Edit vocabulary button */}
+            {onEditVocabulary && (
+              <button
+                type="button"
+                onClick={handleEditCurrentVocab}
+                disabled={isSubmitting}
+                aria-label="Chỉnh sửa từ vựng"
+                title="Chỉnh sửa từ vựng"
+                className="p-2 sm:p-2.5 rounded-xl bg-white border border-[#FCE7F3] text-[#ED4F8E] hover:bg-[#FFF1F2] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+            )}
+
             {/* Trash bin button to delete word from current section */}
             <button
               onClick={handleDeleteCurrentVocab}
@@ -1061,6 +1129,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
         {/* SUB-MODE 1: FLASHCARD */}
         {subMode === 'flashcard' && (
           <div
+            key={currentVocab?.id}
             onClick={() => {
               setIsFlipped((prev) => {
                 const nextState = !prev;
@@ -1818,6 +1887,19 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {showEditModal && currentVocab && onEditVocabulary && (
+        <AddVocabModal
+          key={`edit-vocabulary-${currentVocab.id}`}
+          isOpen={showEditModal}
+          onClose={() => setShowEditModal(false)}
+          topics={topics}
+          defaultTopicId={currentVocab.topic_id}
+          mode="edit"
+          editVocabulary={currentVocab}
+          onEditVocabulary={handleSaveEdit}
+        />
       )}
     </div>
   );
