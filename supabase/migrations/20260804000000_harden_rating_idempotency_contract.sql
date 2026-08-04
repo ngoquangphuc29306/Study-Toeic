@@ -79,7 +79,6 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
     v_user_id UUID;
-    v_vocabulary RECORD;
     v_current_progress RECORD;
     v_existing_log RECORD;
     v_new_interval_hours NUMERIC;
@@ -158,13 +157,13 @@ BEGIN
     v_reviewed_at := clock_timestamp();
 
     -- 6. Verify vocabulary exists and belongs to user
-    SELECT * INTO v_vocabulary
+    PERFORM 1
     FROM public.vocabularies
     WHERE id = p_vocabulary_id
-      AND user_id = v_user_id;
+        AND user_id = v_user_id;
 
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'Vocabulary not found or access denied';
+    RAISE EXCEPTION 'Vocabulary not found or access denied';
     END IF;
 
     -- 7. Get current progress (if exists)
