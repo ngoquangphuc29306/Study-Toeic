@@ -431,14 +431,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
         {/* Quick Launch Action Cards */}
         <div className="relative z-10 mt-5 sm:mt-8 grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
           <button
-            onClick={() => onSelectTopicForFlashcard('all')}
+            onClick={() => onSelectTopicForFlashcard('all', 'all')}
             className="flex items-center justify-between p-3 sm:p-4 rounded-2xl bg-white/95 hover:bg-white text-gray-800 font-semibold text-sm shadow-xs transition-all hover:scale-[1.01] cursor-pointer group"
           >
             <div className="flex items-center gap-2 sm:gap-3">
               <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-[#FFF1F2] flex items-center justify-center text-[#F472B6] shrink-0">
                 <Play className="w-4 h-4 fill-[#F472B6]" />
               </div>
-              <span className="text-gray-800 font-bold text-xs sm:text-sm">Luyện Tất Cả Từ</span>
+              <span className="text-gray-800 font-bold text-xs sm:text-sm">Học tất cả từ</span>
             </div>
             <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#F472B6] group-hover:translate-x-1 transition-transform shrink-0" />
           </button>
