@@ -16,7 +16,7 @@ const NOW = Date.UTC(2026, 6, 31, 0, 0, 0);
 
 describe('SRS Scheduler - calculateNextReview', () => {
   describe('Again rating', () => {
-    test('new + again → 1 minute interval', () => {
+    test('new + again → queue-based relearning', () => {
       const progress: SrsProgress = {
         status: 'new',
         interval_hours: 0,
@@ -27,13 +27,13 @@ describe('SRS Scheduler - calculateNextReview', () => {
       const result = calculateNextReview(progress, 'again', NOW);
 
       expect(result.status).toBe('learning');
-      expect(result.interval_hours).toBe(1 / 60);
-      expect(result.next_review_at).toBe(NOW + 60 * 1000);
+      expect(result.interval_hours).toBe(0);
+      expect(result.next_review_at).toBeNull();
       expect(result.again_count).toBe(1);
       expect(result.review_count).toBe(1);
     });
 
-    test('learning + again → resets to 1 minute', () => {
+    test('learning + again → resets to queue-based relearning', () => {
       const progress: SrsProgress = {
         status: 'learning',
         interval_hours: 24,
@@ -44,8 +44,8 @@ describe('SRS Scheduler - calculateNextReview', () => {
       const result = calculateNextReview(progress, 'again', NOW);
 
       expect(result.status).toBe('learning');
-      expect(result.interval_hours).toBe(1 / 60);
-      expect(result.next_review_at).toBe(NOW + 60 * 1000);
+      expect(result.interval_hours).toBe(0);
+      expect(result.next_review_at).toBeNull();
       expect(result.again_count).toBe(2);
       expect(result.review_count).toBe(4);
     });
@@ -346,7 +346,7 @@ describe('SRS Scheduler - calculateNextReview', () => {
   });
 
   describe('Lapse scenario (again after long interval)', () => {
-    test('72h interval + again → resets to 1 minute', () => {
+    test('72h interval + again → resets to queue-based relearning', () => {
       const progress: SrsProgress = {
         status: 'learning',
         interval_hours: 72,
@@ -356,8 +356,8 @@ describe('SRS Scheduler - calculateNextReview', () => {
 
       const result = calculateNextReview(progress, 'again', NOW);
 
-      expect(result.interval_hours).toBe(1 / 60);
-      expect(result.next_review_at).toBe(NOW + 60 * 1000);
+      expect(result.interval_hours).toBe(0);
+      expect(result.next_review_at).toBeNull();
       expect(result.again_count).toBe(1);
     });
 
@@ -371,10 +371,11 @@ describe('SRS Scheduler - calculateNextReview', () => {
 
       // Lapse: again
       let result = calculateNextReview(progress, 'again', NOW);
-      expect(result.interval_hours).toBe(1 / 60);
+      expect(result.interval_hours).toBe(0);
+      expect(result.next_review_at).toBeNull();
       expect(result.again_count).toBe(1);
 
-      // Recovery: hard (from 1/60 h → 6h)
+      // Recovery: hard (from queue-based relearning → 6h)
       progress = {
         status: result.status,
         interval_hours: result.interval_hours,
