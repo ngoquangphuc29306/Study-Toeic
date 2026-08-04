@@ -1346,7 +1346,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
                         className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#FFF1F2] border border-[#FCE7F3] text-[#ED4F8E] hover:bg-[#FFE4E6] text-xs font-bold transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
                       >
                         <Volume2 className="w-3.5 h-3.5" />
-                        <span>UK / {currentVocab.phonetic_uk} /</span>
+                        <span>UK  {currentVocab.phonetic_uk} </span>
                       </button>
                     )}
 
@@ -1359,7 +1359,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
                         className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#FFF1F2] border border-[#FCE7F3] text-[#ED4F8E] hover:bg-[#FFE4E6] text-xs font-bold transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
                       >
                         <Volume2 className="w-3.5 h-3.5" />
-                        <span>US / {currentVocab.phonetic_us} /</span>
+                        <span>US  {currentVocab.phonetic_us} </span>
                       </button>
                     )}
                   </div>
