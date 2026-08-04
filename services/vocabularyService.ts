@@ -4,18 +4,17 @@
  * Handles all Vocabulary operations with Supabase as the source of truth.
  * Uses browser client with authenticated session and RLS enforcement.
  *
- * Phase 2E: Vocabularies migrated to Supabase
- * Study/SRS progress remains in user-scoped localStorage
+ * Vocabulary and study/SRS progress are stored in Supabase.
  *
  * Data Ownership After Phase 2E:
  * - Collections: Supabase (Phase 2C)
  * - Topics: Supabase (Phase 2D)
  * - Vocabularies: Supabase (Phase 2E)
- * - Study/SRS data: user-scoped localStorage
+ * - Study/SRS data: Supabase user_vocab_progress
  */
 
 import { createClient } from '@/lib/supabase/client';
-import { Vocabulary, PartOfSpeech } from '@/lib/types';
+import { Vocabulary } from '@/lib/types';
 import { VocabularyValidationError } from './vocabularyErrors';
 
 /**

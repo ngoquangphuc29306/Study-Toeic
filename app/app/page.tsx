@@ -58,7 +58,6 @@ import {
 } from '../../services/vocabService';
 import { CollectionHasChildrenError } from '../../services/collectionErrors';
 import { TopicHasVocabulariesError } from '../../services/topicErrors';
-import { VocabularyValidationError } from '../../services/vocabularyErrors';
 import type { RatingResult } from '../../services/progressService';
 import { loadAppDataSnapshot, type AppDataSnapshot } from '../../services/appDataService';
 import { createClient } from '@/lib/supabase/client';
@@ -155,7 +154,6 @@ export default function AppPage() {
   const [dataError, setDataError] = useState<string | null>(null);
   const [lastDataLoadedAt, setLastDataLoadedAt] = useState<number | null>(null);
   const [lastStudySessionCompletedAt, setLastStudySessionCompletedAt] = useState<number | null>(null);
-  const [deleteError, setDeleteError] = useState<string>('');
 
   const previousUserIdRef = useRef<string | null>(null);
   const authStatusRef = useRef<AuthStatus>('loading');
@@ -507,7 +505,6 @@ export default function AppPage() {
     setLastDataLoadedAt(null);
     setLastStudySessionCompletedAt(null);
     setSelectedTopicId('all');
-    setDeleteError('');
     ratingDerivedNeedsRetryRef.current = false;
     ratingDerivedRetryAttemptRef.current = 0;
     ratingDerivedWarningShownRef.current = false;

@@ -8,7 +8,7 @@
  * - Session validation
  * - Token refresh
  * - Cookie synchronization between request and response
- * - Route protection (Phase 2B.5)
+ * - Route protection
  * - Authenticated-user redirects from auth pages
  *
  * @param request - The incoming Next.js request
@@ -34,7 +34,7 @@ export async function updateSession(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
+          cookiesToSet.forEach(({ name, value }) => {
             request.cookies.set(name, value);
           });
           response = NextResponse.next({
@@ -52,13 +52,6 @@ export async function updateSession(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
-
-  // Public routes (no auth required)
-  const isPublicRoute =
-    pathname === '/' ||
-    pathname === '/login' ||
-    pathname === '/signup' ||
-    pathname.startsWith('/auth/');
 
   // Protected routes (/app and /app/*) require authentication
   const isProtectedRoute = pathname === '/app' || pathname.startsWith('/app/');

@@ -15,11 +15,8 @@ import {
   Lock,
   Globe,
   ChevronRight,
-  CheckCircle2,
-  Clock,
   FolderPlus,
   FileSpreadsheet,
-  Database,
   X,
   ChevronDown,
   Layers,
@@ -74,16 +71,12 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
   onUpdateTopic,
   onUpdateCollection,
   onSelectTopicForFlashcard,
-  onSelectTopicForSynonyms,
   onOpenAddModalWithTopic,
   onOpenExcelModalWithTopic,
   onOpenCollectionModal,
   onOpenSectionModal,
-  onOpenSqlModal,
   onExportCSV,
-  onExportJSON,
   isExportingCSV = false,
-  isExportingJSON = false,
 }) => {
   // Active dropdown state tracking
   const [activeManageDropdown, setActiveManageDropdown] = useState<string | null>(null);
@@ -313,31 +306,6 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                 <Download className="w-4 h-4 text-blue-600" />
                 <span>{isExportingCSV ? 'Đang xuất...' : 'Xuất CSV'}</span>
               </button>
-              {/* Tạm ẩn JSON Backup cho MVP
-              <button
-                onClick={() => {
-                  setIsTopCreateOpen(false);
-                  if (onExportJSON) onExportJSON();
-                }}
-                disabled={isExportingJSON}
-                aria-busy={isExportingJSON}
-                className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-blue-50 text-gray-700 font-semibold cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Download className="w-4 h-4 text-blue-600" />
-                <span>{isExportingJSON ? 'Đang xuất...' : 'Xuất JSON (Backup)'}</span>
-              </button>
-                
-              <button
-                onClick={() => {
-                  setIsTopCreateOpen(false);
-                  onOpenSqlModal();
-                }}
-                className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-[#FFF1F2] text-gray-700 font-semibold cursor-pointer transition-colors border-t border-[#FCE7F3]"
-              >
-                <Database className="w-4 h-4 text-purple-500" />
-                <span>Nguồn Supabase SQL Script ↗</span>
-              </button>
-              */}
             </div>
           )}
         </div>

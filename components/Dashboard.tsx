@@ -8,12 +8,6 @@ import {
   BookOpen,
   Play,
   Search,
-  Filter,
-  Briefcase,
-  FileText,
-  Plane,
-  CreditCard,
-  TrendingUp,
   GitCompareArrows,
   PlusCircle,
   ArrowRight,
@@ -66,20 +60,9 @@ interface DashboardProps {
   ) => Promise<RatingResult>;
 }
 
-// Map string icon names to Lucide icon components
-const IconMap: Record<string, React.ReactNode> = {
-  FileText: <FileText className="w-6 h-6 text-pink-500" />,
-  Briefcase: <Briefcase className="w-6 h-6 text-rose-500" />,
-  Plane: <Plane className="w-6 h-6 text-pink-500" />,
-  CreditCard: <CreditCard className="w-6 h-6 text-rose-500" />,
-  TrendingUp: <TrendingUp className="w-6 h-6 text-pink-500" />,
-};
-
 export const Dashboard: React.FC<DashboardProps> = ({
   userId,
-  topics,
   vocabularies,
-  stats,
   dashboardMetrics,
   weekActivity,
   isLoadingMetrics,
@@ -88,12 +71,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onOpenCollectionModal,
   onUpdateProgress,
 }) => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
-
-  // Phase 9.8: Dashboard metrics now passed from parent (app/app/page.tsx)
-  // Removed internal state and useEffect for getDashboardMetrics/getWeekActivity
-  // Parent owns single source of truth and refreshes metrics with vocabulary changes
+  // Parent owns dashboard metrics and refreshes them with vocabulary changes.
 
   // Daily Goal Settings State (user-scoped localStorage)
   const [dailyGoal, setDailyGoal] = useState<number>(() => {
@@ -336,11 +314,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return `${diffDays}d${remHours}h`;
   };
 
-  // Derive Real SRS Lists & Counts
-  const dueLearningVocabs = vocabularies.filter(
-    (v) => v.status === 'learning' && (!v.next_review_at || new Date(v.next_review_at).getTime() <= nowMs)
-  );
-
   const pendingLearningVocabs = vocabularies.filter(
     (v) => v.status === 'learning' && v.next_review_at && new Date(v.next_review_at).getTime() > nowMs
   );
@@ -435,16 +408,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }, [weekActivity]);
 
   const studiedDaysThisWeekCount = weekDays.filter((d) => d.isStudied).length;
-
-  // Filter Topics by Search and Category
-  const categories = ['All', ...Array.from(new Set(topics.map((t) => t.category || 'General')))];
-
-  const filteredTopics = topics.filter((t) => {
-    const matchesSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      t.description.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = selectedCategory === 'All' || t.category === selectedCategory;
-    return matchesSearch && matchesCategory;
-  });
 
   return (
     <div ref={dashboardRef} className="space-y-5 sm:space-y-8 pb-8 sm:pb-12">

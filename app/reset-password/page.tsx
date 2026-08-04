@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { AuthChangeEvent } from '@supabase/supabase-js';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { ArrowLeft, Lock, Eye, EyeOff, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { updatePasswordFromRecovery } from '@/services/accountService';
@@ -13,7 +12,6 @@ import { InvalidRecoveryError, PasswordUpdateError } from '@/services/accountErr
 type PageState = 'loading' | 'ready' | 'expired' | 'success';
 
 export default function ResetPasswordPage() {
-  const router = useRouter();
   const [pageState, setPageState] = useState<PageState>('loading');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
