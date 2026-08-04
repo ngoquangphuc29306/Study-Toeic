@@ -34,7 +34,11 @@ import {
 } from 'lucide-react';
 import { FlashcardInitialFilter, Topic, StudyStats, Vocabulary } from '../lib/types';
 import { SrsRating } from '../services/vocabService';
-import type { RatingResult } from '../services/progressService';
+import {
+  IdempotencyConflictError,
+  LegacyIdempotencyResultError,
+  type RatingResult,
+} from '../services/progressService';
 import {
   getDashboardMetrics,
   getWeekActivity,
@@ -308,7 +312,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
       setRelearnConfirmModal({ isOpen: false, vocabId: '', vocabWord: '' });
       pendingRelearnActionRef.current = null;
     } catch (error) {
-      setRelearnError('Không thể chuyển từ về danh sách học lại. Vui lòng thử lại.');
+      const isPermanentContractError =
+        error instanceof IdempotencyConflictError || error instanceof LegacyIdempotencyResultError;
+      if (isPermanentContractError) {
+        pendingRelearnActionRef.current = null;
+      }
+      setRelearnError(
+        error instanceof IdempotencyConflictError
+          ? 'Khóa đánh giá không còn hợp lệ cho thao tác này. Hãy thực hiện thao tác mới.'
+          : error instanceof LegacyIdempotencyResultError
+            ? 'Kết quả của thao tác cũ không thể khôi phục. Hãy thực hiện thao tác mới.'
+            : 'Không thể chuyển từ về danh sách học lại. Vui lòng thử lại.'
+      );
       console.error('Relearn error:', error);
     } finally {
       relearnSubmitLockRef.current = false;

@@ -28,7 +28,11 @@ import {
 import confetti from 'canvas-confetti';
 import { FlashcardInitialFilter, Vocabulary, Topic } from '../lib/types';
 import { SrsRating } from '../services/vocabService';
-import type { RatingResult } from '../services/progressService';
+import {
+  IdempotencyConflictError,
+  LegacyIdempotencyResultError,
+  type RatingResult,
+} from '../services/progressService';
 import {
   saveStudySession,
   loadStudySession,
@@ -920,13 +924,29 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     } catch (err) {
       // A transport failure may still mean that the RPC committed. Keep the
       // same key in retrying state and do not advance or create a new key.
-      pendingRatingActionRef.current = retryingAction;
-      if (actionUserId) {
-        savePendingRatingAction(actionUserId, retryingAction);
+      const isPermanentContractError =
+        err instanceof IdempotencyConflictError || err instanceof LegacyIdempotencyResultError;
+      if (isPermanentContractError) {
+        // A permanent contract error must not survive as a retrying action.
+        // Clear both layers so the learner can explicitly start a new action
+        // with a fresh key; the queue remains untouched in this catch branch.
+        pendingRatingActionRef.current = null;
+        if (actionUserId) clearPendingRatingAction(actionUserId);
+      } else {
+        pendingRatingActionRef.current = retryingAction;
+        if (actionUserId) {
+          savePendingRatingAction(actionUserId, retryingAction);
+        }
       }
-      const message = err instanceof Error ? err.message : 'Không thể lưu kết quả. Vui lòng thử lại.';
+      const message = err instanceof IdempotencyConflictError
+        ? 'Khóa đánh giá không còn hợp lệ cho thao tác này. Hãy thực hiện đánh giá mới.'
+        : err instanceof LegacyIdempotencyResultError
+          ? 'Kết quả của thao tác cũ không thể khôi phục. Hãy thực hiện đánh giá mới.'
+          : err instanceof Error
+            ? err.message
+            : 'Không thể lưu kết quả. Vui lòng thử lại.';
       setSubmissionError(message);
-      setHasPendingRatingRetry(true);
+      setHasPendingRatingRetry(!isPermanentContractError);
       console.error('handleRating error:', err);
       ratingSubmitLockRef.current = false;
       setIsSubmitting(false);
