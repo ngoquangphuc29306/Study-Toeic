@@ -1,10 +1,13 @@
 node_modules/
 .next/
 coverage/
+dist/
 .DS_Store
+Thumbs.db
 *.log
 .env*
 !.env.example
 .vercel/
+.vscode/
 tsconfig.tsbuildinfo
 *.tsbuildinfo
