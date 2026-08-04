@@ -16,6 +16,8 @@ import { Vocabulary, Topic, QuizQuestion } from '../lib/types';
 import gsap from 'gsap';
 import { motionTokens } from '../lib/animation/motionTokens';
 import { usePrefersReducedMotion } from '../hooks/use-prefers-reduced-motion';
+import { seededShuffle } from '../lib/quiz/seededShuffle';
+import { uniqueQuizLabels } from '../lib/quiz/labels';
 
 interface QuizModeProps {
   vocabularies: Vocabulary[];
@@ -37,7 +39,8 @@ function createQuestionsForTopic(topicId: string, allVocabs: Vocabulary[]): Quiz
   }
 
   // Shuffle pool
-  const shuffledPool = [...pool].sort(() => 0.5 - Math.random());
+  const poolSeed = pool.map((vocab) => vocab.id).join('|');
+  const shuffledPool = seededShuffle(pool, `quiz-pool:${topicId}:${poolSeed}`);
   const sampleSize = Math.min(10, shuffledPool.length);
   const selectedVocabs = shuffledPool.slice(0, sampleSize);
 
@@ -46,11 +49,12 @@ function createQuestionsForTopic(topicId: string, allVocabs: Vocabulary[]): Quiz
     if (vocab.example && vocab.example.toLowerCase().includes(vocab.word.toLowerCase())) {
       types.push('fill-example');
     }
-    const questionType = types[Math.floor(Math.random() * types.length)];
+    const questionType = seededShuffle(types, `${vocab.id}:types`)[0];
 
-    const distractors = allVocabs
-      .filter((v) => v.id !== vocab.id)
-      .sort(() => 0.5 - Math.random())
+    const distractors = seededShuffle(
+      allVocabs.filter((v) => v.id !== vocab.id),
+      `${vocab.id}:distractors`
+    )
       .slice(0, 3);
 
     let options: string[] = [];
@@ -59,19 +63,15 @@ function createQuestionsForTopic(topicId: string, allVocabs: Vocabulary[]): Quiz
 
     if (questionType === 'word-to-meaning') {
       promptText = `Nghĩa Tiếng Việt chính xác của từ "${vocab.word}" là gì?`;
-      const choices = [vocab.meaning, ...distractors.map((d) => d.meaning)];
-      const shuffledChoices = choices.map((value) => ({ value, sort: Math.random() }))
-        .sort((a, b) => a.sort - b.sort)
-        .map((item) => item.value);
+      const choices = uniqueQuizLabels([vocab.meaning, ...distractors.map((d) => d.meaning)]);
+      const shuffledChoices = seededShuffle(choices, `${vocab.id}:meaning-options`);
 
       options = shuffledChoices;
       correctAnswerIndex = shuffledChoices.indexOf(vocab.meaning);
     } else if (questionType === 'meaning-to-word') {
       promptText = `Từ Tiếng Anh nào mang nghĩa: "${vocab.meaning}"?`;
-      const choices = [vocab.word, ...distractors.map((d) => d.word)];
-      const shuffledChoices = choices.map((value) => ({ value, sort: Math.random() }))
-        .sort((a, b) => a.sort - b.sort)
-        .map((item) => item.value);
+      const choices = uniqueQuizLabels([vocab.word, ...distractors.map((d) => d.word)]);
+      const shuffledChoices = seededShuffle(choices, `${vocab.id}:word-options`);
 
       options = shuffledChoices;
       correctAnswerIndex = shuffledChoices.indexOf(vocab.word);
@@ -81,10 +81,8 @@ function createQuestionsForTopic(topicId: string, allVocabs: Vocabulary[]): Quiz
         '______'
       );
       promptText = `Điền từ thích hợp vào chỗ trống: "${maskedExample}"`;
-      const choices = [vocab.word, ...distractors.map((d) => d.word)];
-      const shuffledChoices = choices.map((value) => ({ value, sort: Math.random() }))
-        .sort((a, b) => a.sort - b.sort)
-        .map((item) => item.value);
+      const choices = uniqueQuizLabels([vocab.word, ...distractors.map((d) => d.word)]);
+      const shuffledChoices = seededShuffle(choices, `${vocab.id}:fill-options`);
 
       options = shuffledChoices;
       correctAnswerIndex = shuffledChoices.indexOf(vocab.word);

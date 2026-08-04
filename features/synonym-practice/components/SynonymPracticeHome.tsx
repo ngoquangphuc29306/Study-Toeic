@@ -8,7 +8,7 @@ import { usePrefersReducedMotion } from '../../../hooks/use-prefers-reduced-moti
 import { motionTokens } from '../../../lib/animation/motionTokens';
 import type { MatchingQuestion, MultipleChoiceQuestion, SelectAllQuestion, SynonymPracticeFilters, SynonymPracticeItem, SynonymPracticeMode, SynonymPracticeResult } from '../types';
 import { buildMatchingQuestion, buildMultipleChoiceQuestions, buildSelectAllQuestions, getFilteredSynonymItems, mapVocabularyToSynonymItems } from '../services/synonymPracticeService';
-import { shuffle } from '../utils/shuffle';
+import { seededShuffle } from '../utils/shuffle';
 import { useToast } from '../../../contexts/ToastContext';
 import { SynonymEmptyState } from './SynonymEmptyState';
 import { SynonymPracticeResults } from './SynonymPracticeResults';
@@ -100,7 +100,8 @@ export function SynonymPractice({ vocabularies, topics, collections, selectedTop
       if (!questions.length) { showToast('Chưa đủ vocabulary thật để tạo 6-8 lựa chọn cho mode này.', 'error'); return; }
       nextData = { mode, items: pool, selectAll: questions };
     } else {
-      const typingItems = shuffle(pool).slice(0, questionCount);
+      const poolSeed = pool.map((item) => item.vocabularyId).join('|');
+      const typingItems = seededShuffle(pool, `typing:${poolSeed}:${questionCount}`).slice(0, questionCount);
       if (!typingItems.length) { showToast('Chưa có vocabulary đủ điều kiện cho mode gõ đáp án.', 'error'); return; }
       nextData = { mode, items: typingItems };
     }

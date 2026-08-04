@@ -44,10 +44,6 @@ const VocabManager = dynamic(
 );
 
 import {
-  getCollections,
-  getTopics,
-  getVocabByTopic,
-  getStudyStats,
   updateUserProgress,
   SrsRating,
   addCollection,
@@ -64,6 +60,7 @@ import { CollectionHasChildrenError } from '../../services/collectionErrors';
 import { TopicHasVocabulariesError } from '../../services/topicErrors';
 import { VocabularyValidationError } from '../../services/vocabularyErrors';
 import type { RatingResult } from '../../services/progressService';
+import { loadAppDataSnapshot, type AppDataSnapshot } from '../../services/appDataService';
 import { createClient } from '@/lib/supabase/client';
 import { clearStudySession } from '@/lib/session/storage';
 import { buildLoginUrl } from '@/lib/auth/safe-redirect';
@@ -76,6 +73,10 @@ import {
   getWeekActivity,
   type DashboardMetrics
 } from '../../services/dashboardService';
+import { createRequestCoordinator } from '../../lib/data/requestCoordinator';
+import { isCurrentRequest } from '../../lib/data/requestGeneration';
+import { applyRatingResult } from '../../lib/srs/applyRatingResult';
+import { deriveStudyStats, mergeVocabularyProgressIntoMetrics } from '../../lib/srs/deriveProgress';
 
 import { Collection, FlashcardInitialFilter, Topic, Vocabulary, StudyStats, LearningStatus } from '../../lib/types';
 
@@ -101,6 +102,14 @@ type DataStatus = 'idle' | 'loading' | 'success' | 'error';
 
 const DATA_STALE_MS = 5 * 60 * 1000;
 const RESUME_DEBOUNCE_MS = 750;
+
+interface DerivedDataSnapshot {
+  dashboardMetrics: DashboardMetrics;
+  weekActivity: Array<{ date: string; count: number }>;
+}
+
+const appDataCoordinator = createRequestCoordinator<AppDataSnapshot>();
+const derivedDataCoordinator = createRequestCoordinator<DerivedDataSnapshot>();
 
 export default function AppPage() {
   const router = useRouter();
@@ -155,20 +164,24 @@ export default function AppPage() {
   const lastDataLoadedAtRef = useRef<number | null>(null);
   const hasSuccessfulDataRef = useRef(false);
   const loadGenerationRef = useRef(0);
-  const loadPromiseRef = useRef<Promise<void> | null>(null);
   const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ratingDerivedRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ratingDerivedRetryAttemptRef = useRef(0);
+  const ratingDerivedNeedsRetryRef = useRef(false);
+  const ratingDerivedWarningShownRef = useRef(false);
+  const ratingDerivedRefreshRef = useRef<() => void>(() => undefined);
   const sessionCheckResolvedRef = useRef(false);
+  const vocabulariesRef = useRef<Vocabulary[]>([]);
+  const localDataRevisionRef = useRef(0);
 
   // Helper to re-fetch data
   // RC2 Fix: Used only for mutations (add/update/delete), NOT for initial load
   const refreshAppData = useCallback(async () => {
     const currentUserId = authUserIdRef.current;
     if (authStatusRef.current !== 'authenticated' || !currentUserId) return;
-    if (loadPromiseRef.current) return loadPromiseRef.current;
 
     const generation = ++loadGenerationRef.current;
+    const localRevisionAtRequest = localDataRevisionRef.current;
     const hadUsableData = hasSuccessfulDataRef.current;
     dataStatusRef.current = 'loading';
     setDataStatus('loading');
@@ -177,48 +190,30 @@ export default function AppPage() {
 
     const request = (async () => {
       try {
-        const [fetchedCols, fetchedTopics, fetchedVocab, fetchedMetrics, fetchedWeek] = await Promise.all([
-          getCollections(),
-          getTopics(),
-          getVocabByTopic('all'),
-          getDashboardMetrics(),
-          getWeekActivity(),
-        ]);
+        const snapshot = await appDataCoordinator.getOrCreate(
+          currentUserId,
+          () => loadAppDataSnapshot(currentUserId)
+        );
 
-        if (
-          generation !== loadGenerationRef.current ||
-          authUserIdRef.current !== currentUserId ||
-          authStatusRef.current !== 'authenticated'
-        ) return;
+        if (!isCurrentRequest(
+          { userId: currentUserId, generation },
+          { userId: authUserIdRef.current || '', generation: loadGenerationRef.current }
+        ) || authStatusRef.current !== 'authenticated') return;
 
-        const fetchedStats: StudyStats = {
-          totalWords: fetchedVocab.length,
-          masteredCount: fetchedVocab.filter((v) => v.status === 'mastered').length,
-          learningCount: fetchedVocab.filter((v) => v.status === 'learning').length,
-          newCount: fetchedVocab.filter((v) => v.status === 'new').length,
-          dailyStreak: 0,
-          todayStudiedCount: 0,
-        };
-        const composedCollections = fetchedCols.map((collection) => {
-          const collectionTopicIds = new Set(
-            fetchedTopics
-              .filter((topic) => topic.collection_id === collection.id)
-              .map((topic) => topic.id)
-          );
+        const hasLocalChanges = localDataRevisionRef.current !== localRevisionAtRequest;
+        const effectiveVocabularies = hasLocalChanges
+          ? vocabulariesRef.current
+          : snapshot.vocabularies;
 
-          return {
-            ...collection,
-            total_topics: collectionTopicIds.size,
-            total_words: fetchedVocab.filter((vocab) => collectionTopicIds.has(vocab.topic_id)).length,
-          };
-        });
-
-        setCollections(composedCollections);
-        setTopics(fetchedTopics);
-        setVocabularies(fetchedVocab);
-        setStats(fetchedStats);
-        setDashboardMetrics(fetchedMetrics);
-        setWeekActivity(fetchedWeek);
+        setCollections(snapshot.collections);
+        setTopics(snapshot.topics);
+        vocabulariesRef.current = effectiveVocabularies;
+        setVocabularies(effectiveVocabularies);
+        setStats(hasLocalChanges ? deriveStudyStats(effectiveVocabularies) : snapshot.stats);
+        setDashboardMetrics(
+          mergeVocabularyProgressIntoMetrics(snapshot.dashboardMetrics, effectiveVocabularies)
+        );
+        setWeekActivity(snapshot.weekActivity);
         hasSuccessfulDataRef.current = true;
         dataStatusRef.current = 'success';
         setDataStatus('success');
@@ -227,13 +222,15 @@ export default function AppPage() {
         lastDataLoadedAtRef.current = loadedAt;
         setLastDataLoadedAt(loadedAt);
         setIsLoadingDashboardMetrics(false);
+        ratingDerivedNeedsRetryRef.current = false;
+        ratingDerivedRetryAttemptRef.current = 0;
+        ratingDerivedWarningShownRef.current = false;
       } catch (err) {
         console.error('Error loading EasyTOEIC data:', err);
-        if (
-          generation !== loadGenerationRef.current ||
-          authUserIdRef.current !== currentUserId ||
-          authStatusRef.current !== 'authenticated'
-        ) return;
+        if (!isCurrentRequest(
+          { userId: currentUserId, generation },
+          { userId: authUserIdRef.current || '', generation: loadGenerationRef.current }
+        ) || authStatusRef.current !== 'authenticated') return;
 
         dataStatusRef.current = 'error';
         setDataStatus('error');
@@ -243,12 +240,6 @@ export default function AppPage() {
         setIsLoadingDashboardMetrics(false);
       }
     })();
-
-    loadPromiseRef.current = request;
-    request.then(
-      () => { if (loadPromiseRef.current === request) loadPromiseRef.current = null; },
-      () => { if (loadPromiseRef.current === request) loadPromiseRef.current = null; }
-    );
     return request;
   }, []);
 
@@ -468,13 +459,34 @@ export default function AppPage() {
     };
   }, [authStatus]); // Dependency on authStatus to run after auth confirmed */
 
+  const commitVocabularies = useCallback((
+    nextOrUpdater: Vocabulary[] | ((current: Vocabulary[]) => Vocabulary[])
+  ) => {
+    const next = typeof nextOrUpdater === 'function'
+      ? nextOrUpdater(vocabulariesRef.current)
+      : nextOrUpdater;
+
+    localDataRevisionRef.current += 1;
+    vocabulariesRef.current = next;
+    setVocabularies(next);
+    setStats(deriveStudyStats(next));
+    setDashboardMetrics((previous) => previous
+      ? mergeVocabularyProgressIntoMetrics(previous, next)
+      : previous);
+  }, []);
+
   const clearAppData = useCallback((outgoingUserId: string | null) => {
     if (outgoingUserId) clearStudySession(outgoingUserId);
 
     loadGenerationRef.current += 1;
-    loadPromiseRef.current = null;
+    localDataRevisionRef.current += 1;
+    if (outgoingUserId) {
+      appDataCoordinator.clear(outgoingUserId);
+      derivedDataCoordinator.clear(outgoingUserId);
+    }
     hasSuccessfulDataRef.current = false;
     lastDataLoadedAtRef.current = null;
+    vocabulariesRef.current = [];
     setCollections([]);
     setTopics([]);
     setVocabularies([]);
@@ -496,6 +508,9 @@ export default function AppPage() {
     setLastStudySessionCompletedAt(null);
     setSelectedTopicId('all');
     setDeleteError('');
+    ratingDerivedNeedsRetryRef.current = false;
+    ratingDerivedRetryAttemptRef.current = 0;
+    ratingDerivedWarningShownRef.current = false;
   }, []);
 
   const scheduleResumeRefresh = useCallback(() => {
@@ -512,8 +527,11 @@ export default function AppPage() {
       ) return;
 
       const isStale = !lastDataLoadedAtRef.current || Date.now() - lastDataLoadedAtRef.current > DATA_STALE_MS;
-      if (dataStatusRef.current === 'error' || dataStatusRef.current === 'idle' || isStale) {
+      const shouldRefreshApp = dataStatusRef.current === 'error' || dataStatusRef.current === 'idle' || isStale;
+      if (shouldRefreshApp) {
         void refreshAppData();
+      } else if (ratingDerivedNeedsRetryRef.current) {
+        ratingDerivedRefreshRef.current();
       }
     }, RESUME_DEBOUNCE_MS);
   }, [refreshAppData]);
@@ -610,44 +628,67 @@ export default function AppPage() {
 
   // Rating has two independent phases: the RPC mutation is critical for the
   // study session; aggregates are eventually consistent and must never reject it.
-  const refreshRatingDerivedData = useCallback(() => {
-    void (async () => {
-      const [vocabulariesResult, statsResult, metricsResult, weekActivityResult] = await Promise.allSettled([
-        getVocabByTopic('all'),
-        getStudyStats(),
-        getDashboardMetrics(),
-        getWeekActivity(),
+  const refreshRatingDerivedData = useCallback(async (): Promise<void> => {
+    const currentUserId = authUserIdRef.current;
+    if (authStatusRef.current !== 'authenticated' || !currentUserId) return;
+
+    const generation = loadGenerationRef.current;
+    const request = derivedDataCoordinator.getOrCreate(currentUserId, async () => {
+      const [dashboardMetrics, weekActivity] = await Promise.all([
+        getDashboardMetrics(currentUserId),
+        getWeekActivity(currentUserId),
       ]);
+      return { dashboardMetrics, weekActivity };
+    });
 
-      if (authStatusRef.current !== 'authenticated') return;
+    try {
+      const snapshot = await request;
+      if (!isCurrentRequest(
+        { userId: currentUserId, generation },
+        { userId: authUserIdRef.current || '', generation: loadGenerationRef.current }
+      ) || authStatusRef.current !== 'authenticated') return;
 
-      if (vocabulariesResult.status === 'fulfilled') setVocabularies(vocabulariesResult.value);
-      if (statsResult.status === 'fulfilled') setStats(statsResult.value);
-      if (metricsResult.status === 'fulfilled') setDashboardMetrics(metricsResult.value);
-      if (weekActivityResult.status === 'fulfilled') setWeekActivity(weekActivityResult.value);
+      setDashboardMetrics(
+        mergeVocabularyProgressIntoMetrics(snapshot.dashboardMetrics, vocabulariesRef.current)
+      );
+      setWeekActivity(snapshot.weekActivity);
+      ratingDerivedNeedsRetryRef.current = false;
+      ratingDerivedRetryAttemptRef.current = 0;
+      ratingDerivedWarningShownRef.current = false;
+      if (ratingDerivedRetryTimerRef.current) {
+        clearTimeout(ratingDerivedRetryTimerRef.current);
+        ratingDerivedRetryTimerRef.current = null;
+      }
+    } catch (error) {
+      if (!isCurrentRequest(
+        { userId: currentUserId, generation },
+        { userId: authUserIdRef.current || '', generation: loadGenerationRef.current }
+      ) || authStatusRef.current !== 'authenticated') return;
 
-      const hasFailure = [vocabulariesResult, statsResult, metricsResult, weekActivityResult]
-        .some((result) => result.status === 'rejected');
+      ratingDerivedNeedsRetryRef.current = true;
+      console.warn('Some derived rating data could not be refreshed. Keeping the last successful snapshot.', error);
 
-      if (!hasFailure) {
-        ratingDerivedRetryAttemptRef.current = 0;
-        return;
+      if (!ratingDerivedWarningShownRef.current) {
+        ratingDerivedWarningShownRef.current = true;
+        showToast('Đã lưu đánh giá. Một số thống kê sẽ được cập nhật lại sau.', 'info');
       }
 
-      console.warn('Some derived rating data could not be refreshed. Keeping the last successful snapshot.');
-      showToast('Đã lưu đánh giá. Một số thống kê sẽ được cập nhật lại sau.', 'info');
-
-      // Retry once in the background. Further retries happen through the
-      // existing focus/resume path, so an offline device cannot loop requests.
+      // Retry once in the background. Further retries happen on focus/resume.
       if (ratingDerivedRetryAttemptRef.current === 0 && !ratingDerivedRetryTimerRef.current) {
         ratingDerivedRetryAttemptRef.current = 1;
         ratingDerivedRetryTimerRef.current = setTimeout(() => {
           ratingDerivedRetryTimerRef.current = null;
-          void refreshAppData();
+          void ratingDerivedRefreshRef.current();
         }, 3000);
       }
-    })();
-  }, [refreshAppData, showToast]);
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    ratingDerivedRefreshRef.current = () => {
+      void refreshRatingDerivedData();
+    };
+  }, [refreshRatingDerivedData]);
 
   useEffect(() => {
     return () => {
@@ -668,22 +709,14 @@ export default function AppPage() {
     const mutationIdempotencyKey = idempotencyKey || crypto.randomUUID();
     const ratingResult = await updateUserProgress(vocabId, status, rating, mutationIdempotencyKey);
 
-    setVocabularies((previous) => previous.map((vocabulary) => (
-      vocabulary.id === vocabId
-        ? {
-            ...vocabulary,
-            status: ratingResult.new_status,
-            next_review_at: ratingResult.next_review_at,
-            interval_hours: ratingResult.interval_hours,
-            review_count: ratingResult.review_count,
-            again_count: ratingResult.again_count,
-          }
-        : vocabulary
-    )));
+    const patchedVocabularies = vocabulariesRef.current.map((vocabulary) => (
+      vocabulary.id === vocabId ? applyRatingResult(vocabulary, ratingResult) : vocabulary
+    ));
+    commitVocabularies(patchedVocabularies);
 
-    refreshRatingDerivedData();
+    void refreshRatingDerivedData();
     return ratingResult;
-  }, [refreshRatingDerivedData]);
+  }, [commitVocabularies, refreshRatingDerivedData]);
 
   const handleAddCollection = async (newCol: Omit<Collection, 'id'>) => {
     try {
@@ -813,15 +846,8 @@ export default function AppPage() {
         is_difficult: false,
       };
 
-      setVocabularies((prevVocabs) => [...prevVocabs, vocabWithDefaultProgress]);
-
-      // Only refetch aggregates affected by vocabulary count change
-      const [updatedStats, updatedMetrics] = await Promise.all([
-        getStudyStats(),
-        getDashboardMetrics(),
-      ]);
-      setStats(updatedStats);
-      setDashboardMetrics(updatedMetrics);
+      commitVocabularies((prevVocabs) => [...prevVocabs, vocabWithDefaultProgress]);
+      void refreshRatingDerivedData();
 
       showToast('Thêm từ vựng thành công! ✨', 'success');
     } catch (err) {
@@ -838,7 +864,7 @@ export default function AppPage() {
     try {
       await updateVocabulary(vocabId, updates);
 
-      setVocabularies((currentVocabularies) =>
+      commitVocabularies((currentVocabularies) =>
         currentVocabularies.map((vocabulary) =>
           vocabulary.id === vocabId
             ? { ...vocabulary, ...updates }
@@ -881,15 +907,8 @@ export default function AppPage() {
         is_difficult: false,
       }));
 
-      setVocabularies((prevVocabs) => [...prevVocabs, ...vocabsWithDefaultProgress]);
-
-      // Only refetch aggregates affected by vocabulary count change
-      const [updatedStats, updatedMetrics] = await Promise.all([
-        getStudyStats(),
-        getDashboardMetrics(),
-      ]);
-      setStats(updatedStats);
-      setDashboardMetrics(updatedMetrics);
+      commitVocabularies((prevVocabs) => [...prevVocabs, ...vocabsWithDefaultProgress]);
+      void refreshRatingDerivedData();
 
       showToast(`Import thành công ${createdVocabs.length} từ vựng! ✨`, 'success');
     } catch (err) {
@@ -905,15 +924,8 @@ export default function AppPage() {
 
       // Batch Fix Phase 8: Remove vocabulary from state + targeted refetch
       // Deletion affects vocabulary count, so stats and metrics must be refetched
-      setVocabularies((prevVocabs) => prevVocabs.filter((v) => v.id !== vocabId));
-
-      // Only refetch aggregates affected by vocabulary count change
-      const [updatedStats, updatedMetrics] = await Promise.all([
-        getStudyStats(),
-        getDashboardMetrics(),
-      ]);
-      setStats(updatedStats);
-      setDashboardMetrics(updatedMetrics);
+      commitVocabularies((prevVocabs) => prevVocabs.filter((v) => v.id !== vocabId));
+      void refreshRatingDerivedData();
 
       showToast('Xóa từ vựng thành công! ✨', 'success');
     } catch (err) {
@@ -1086,6 +1098,7 @@ export default function AppPage() {
 
         {activeTab === 'dashboard' && (
           <Dashboard
+            userId={authUserId}
             topics={topics}
             vocabularies={vocabularies}
             stats={stats}

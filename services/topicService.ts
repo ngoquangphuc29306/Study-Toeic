@@ -24,15 +24,16 @@ import { TopicHasVocabulariesError } from './topicErrors';
  * @param collectionId - Optional collection filter
  * @returns Array of Topics with computed vocabulary counts from Supabase
  */
-export async function getTopics(collectionId?: string): Promise<Topic[]> {
+export async function getTopics(collectionId?: string, authenticatedUserId?: string): Promise<Topic[]> {
   const supabase = createClient();
 
   try {
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      console.error('Authentication required for getTopics');
-      throw new Error('AUTH_REQUIRED');
+    if (!authenticatedUserId) {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        console.error('Authentication required for getTopics');
+        throw new Error('AUTH_REQUIRED');
+      }
     }
 
     let query = supabase

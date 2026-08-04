@@ -40,8 +40,6 @@ import {
   type RatingResult,
 } from '../services/progressService';
 import {
-  getDashboardMetrics,
-  getWeekActivity,
   type DashboardMetrics
 } from '../services/dashboardService';
 import gsap from 'gsap';
@@ -50,6 +48,7 @@ import { usePrefersReducedMotion } from '../hooks/use-prefers-reduced-motion';
 import { getLocalDateKey } from '../lib/date/localDate';
 
 interface DashboardProps {
+  userId: string | null;
   topics: Topic[];
   vocabularies: Vocabulary[];
   stats: StudyStats;
@@ -77,6 +76,7 @@ const IconMap: Record<string, React.ReactNode> = {
 };
 
 export const Dashboard: React.FC<DashboardProps> = ({
+  userId,
   topics,
   vocabularies,
   stats,
@@ -94,20 +94,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
   // Phase 9.8: Dashboard metrics now passed from parent (app/app/page.tsx)
   // Removed internal state and useEffect for getDashboardMetrics/getWeekActivity
   // Parent owns single source of truth and refreshes metrics with vocabulary changes
-
-  // Phase 9.10A.3: Get user ID for user-scoped localStorage
-  const [userId, setUserId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const loadUser = async () => {
-      if (typeof window === 'undefined') return;
-      const { createClient } = await import('@/lib/supabase/client');
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      setUserId(user?.id || null);
-    };
-    loadUser();
-  }, []);
 
   // Daily Goal Settings State (user-scoped localStorage)
   const [dailyGoal, setDailyGoal] = useState<number>(() => {
