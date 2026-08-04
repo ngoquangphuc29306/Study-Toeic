@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { BookOpen, Sparkles, Database, Plus, Flame, CheckCircle2, Home, Layers, GitCompareArrows, User } from 'lucide-react';
+import { Sparkles, Flame, Home, Layers, GitCompareArrows } from 'lucide-react';
 import { StudyStats } from '../lib/types';
 import { SignOutButton } from './auth/sign-out-button';
 import { getCurrentProfile } from '@/services/profileService';
@@ -21,10 +21,7 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   setActiveTab,
-  stats,
   currentStreak,
-  onOpenSqlModal,
-  onOpenAddModal,
 }) => {
   const router = useRouter();
   const pathname = usePathname();

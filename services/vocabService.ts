@@ -1,6 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { Collection, Topic, Vocabulary, UserVocabProgress, StudyStats, LearningStatus } from '../lib/types';
-import { INITIAL_COLLECTIONS, INITIAL_TOPICS, INITIAL_VOCABULARIES } from '../lib/initialData';
+import { Collection, Topic, Vocabulary, StudyStats, LearningStatus } from '../lib/types';
 import {
   getCollections as getCollectionsFromSupabase,
   createCollection as createCollectionInSupabase,
@@ -21,35 +19,13 @@ import {
   deleteVocabulary as deleteVocabularyInSupabase,
 } from './vocabularyService';
 import { CollectionHasChildrenError } from './collectionErrors';
-import { TopicHasVocabulariesError } from './topicErrors';
-import { VocabularyValidationError } from './vocabularyErrors';
-import {
-  getUserScopedArray,
-  setUserScopedArray,
-  getUserScopedObject,
-  setUserScopedObject,
-} from './localStorageHelpers';
 import { createClient } from '@/lib/supabase/client';
-import { getConsecutiveLocalStreak } from '@/lib/date/localDate';
 import {
   getProgressForVocabularies,
   submitVocabularyRating as submitRatingViaRpc,
   type SrsRating as ProgressSrsRating,
   type RatingResult,
 } from './progressService';
-
-// Base localStorage keys (will be scoped per user)
-// Phase 2E: LOCAL_VOCABS_KEY and DELETED_VOCABS_KEY are now INACTIVE (legacy only)
-const LOCAL_VOCABS_KEY = 'vocab_local_vocabularies_v1'; // INACTIVE after Phase 2E
-const LOCAL_PROGRESS_KEY = 'vocab_local_progress_v1'; // INACTIVE after Phase 5
-const LOCAL_STUDY_DATES_KEY = 'vocab_study_dates_v1';
-
-const DELETED_VOCABS_KEY = 'vocab_deleted_vocabs_v1'; // INACTIVE after Phase 2E
-
-// Phase 5: Collections, Topics, and Vocabularies in Supabase
-// Study/SRS progress migrated to Supabase (user_vocab_progress table)
-// Rating submissions go through atomic RPC (submit_vocabulary_rating)
-// Legacy localStorage progress keys (vocab_local_progress_v1:<user-id>) are no longer written
 
 /**
  * Get authenticated user ID from Supabase.
@@ -65,34 +41,6 @@ async function getAuthUserId(): Promise<string> {
     console.warn('getAuthUserId error:', err);
     throw err instanceof Error ? err : new Error('AUTH_REQUIRED');
   }
-}
-
-// Legacy helpers (deprecated, keep for DELETED_* keys only)
-function getLocalItem<T>(key: string, defaultValue: T): T {
-  if (typeof window === 'undefined') return defaultValue;
-  try {
-    const item = localStorage.getItem(key);
-    return item ? JSON.parse(item) : defaultValue;
-  } catch (e) {
-    return defaultValue;
-  }
-}
-
-function setLocalItem<T>(key: string, value: T): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {
-    console.warn('Failed to save to localStorage:', e);
-  }
-}
-
-// Helper to safely retrieve Supabase client if configured
-function getSupabase() {
-  if (!isSupabaseConfigured || !supabase) {
-    return null;
-  }
-  return supabase;
 }
 
 // --- COLLECTION METHODS (Phase 2C: Migrated to Supabase) ---
@@ -330,10 +278,6 @@ export async function updateUserProgress(
     console.error('updateUserProgress error:', err);
     throw err;
   }
-}
-
-function calculateStreak(studyDatesSet: Set<string>): number {
-  return getConsecutiveLocalStreak(studyDatesSet);
 }
 
 export async function getStudyStats(): Promise<StudyStats> {

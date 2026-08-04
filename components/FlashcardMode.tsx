@@ -367,19 +367,17 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   }, [vocabularies, filterTopic]);
 
   // Counts by status
-  const { newCount, learningCount, dueCount, masteredCount, totalCount } = useMemo(() => {
-    let n = 0, l = 0, due = 0, m = 0;
+  const { newCount, dueCount, masteredCount, totalCount } = useMemo(() => {
+    let n = 0, due = 0, m = 0;
     topicVocabs.forEach((v) => {
       if (!v.status || v.status === 'new') {
         n++;
       } else if (v.status === 'mastered') {
         m++;
-      } else if (v.status === 'learning') {
-        l++;
       }
       if (isVocabularyDue(v, nowMs)) due++;
     });
-    return { newCount: n, learningCount: l, dueCount: due, masteredCount: m, totalCount: topicVocabs.length };
+    return { newCount: n, dueCount: due, masteredCount: m, totalCount: topicVocabs.length };
   }, [topicVocabs, nowMs]);
 
   // Display labels for static text badges

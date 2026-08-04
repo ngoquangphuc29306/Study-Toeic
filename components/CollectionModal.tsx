@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, FolderPlus, FolderKanban } from 'lucide-react';
+import { X, FolderPlus } from 'lucide-react';
 import { Collection, Topic } from '../lib/types';
 
 type CreateMode = 'collection' | 'section';
@@ -225,9 +225,6 @@ export const CollectionModal: React.FC<CollectionModalProps> = ({
               <select
                 id="section-collection"
                 value={effectiveColId}
-                onChange={(e) => {
-                  // Section form uses derived effectiveColId, no local state needed
-                }}
                 disabled
                 className="w-full p-2.5 sm:p-3 bg-[#FFF9FA] border border-[#FCE7F3] rounded-2xl text-base sm:text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#F472B6] opacity-75"
               >

@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { BookOpen, Sparkles, Target, TrendingUp, Layers, Calendar, ChevronRight, CheckCircle2 } from 'lucide-react';
-import Image from 'next/image';
 
 export default function LandingPage() {
   return (

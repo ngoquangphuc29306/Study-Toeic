@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import gsap from 'gsap';
-import { BookOpenCheck, Brain, CheckCircle2, Filter, GitCompareArrows, Keyboard, Layers, ListChecks, Play, Sparkles } from 'lucide-react';
+import { Brain, CheckCircle2, Filter, GitCompareArrows, Keyboard, Layers, ListChecks, Play, Sparkles } from 'lucide-react';
 import type { Collection, Topic, Vocabulary } from '../../../lib/types';
 import { usePrefersReducedMotion } from '../../../hooks/use-prefers-reduced-motion';
 import { motionTokens } from '../../../lib/animation/motionTokens';

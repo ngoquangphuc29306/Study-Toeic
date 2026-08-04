@@ -1,5 +1,4 @@
 import * as XLSX from 'xlsx';
-import { Vocabulary } from './types';
 
 export interface ParsedVocabRow {
   word: string;

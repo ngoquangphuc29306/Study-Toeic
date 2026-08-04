@@ -268,12 +268,6 @@ export function AccountPage() {
     }
   };
 
-  // Logout handler
-  const handleLogout = () => {
-    setShowLogoutConfirm(false);
-    // SignOutButton handles the actual logout
-  };
-
   return (
     <div className="max-w-5xl mx-auto px-4 py-4 sm:py-8 space-y-8 pb-16 animate-in fade-in duration-300">
       {/* Toast Notification */}

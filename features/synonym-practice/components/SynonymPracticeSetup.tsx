@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, Layers3, Play, SlidersHorizontal } from 'lucide-react';
+import { ArrowLeft, Check, Play, SlidersHorizontal } from 'lucide-react';
 import type { Collection, Topic } from '../../../lib/types';
 import type { SynonymPracticeFilters, SynonymPracticeItem, SynonymPracticeMode } from '../types';
 import { getEligibleCountByMode } from '../services/synonymPracticeService';
