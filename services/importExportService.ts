@@ -9,6 +9,7 @@
 
 import { createClient } from '@/lib/supabase/client';
 import type { Vocabulary, Topic, Collection, UserVocabProgress } from '@/lib/types';
+import { getLocalDateKey } from '@/lib/date/localDate';
 
 export interface ReviewLog {
   id?: string;
@@ -153,7 +154,7 @@ export async function exportVocabulariesAsCSV(): Promise<void> {
   const BOM = '﻿';
   const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
 
-  const date = new Date().toISOString().split('T')[0];
+  const date = getLocalDateKey();
   const filename = `toeic-vocabulary-${date}.csv`;
 
   downloadBlob(blob, filename);
@@ -238,7 +239,7 @@ export async function exportBackupAsJSON(): Promise<void> {
   const jsonContent = JSON.stringify(backup, null, 2);
   const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8;' });
 
-  const date = new Date().toISOString().split('T')[0];
+  const date = getLocalDateKey();
   const filename = `toeic-vocabulary-backup-${date}.json`;
 
   downloadBlob(blob, filename);

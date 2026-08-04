@@ -42,6 +42,7 @@ import {
 import gsap from 'gsap';
 import { motionTokens } from '../lib/animation/motionTokens';
 import { usePrefersReducedMotion } from '../hooks/use-prefers-reduced-motion';
+import { getLocalDateKey } from '../lib/date/localDate';
 
 interface DashboardProps {
   topics: Topic[];
@@ -385,12 +386,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
       weekActivity.filter(a => a.count > 0).map(a => a.date)
     );
 
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const todayStr = getLocalDateKey(now);
 
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(monday);
       d.setDate(monday.getDate() + i);
-      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const dateStr = getLocalDateKey(d);
       const isToday = dateStr === todayStr;
       const isStudied = studyDatesSet.has(dateStr);
       const dayNum = d.getDate();

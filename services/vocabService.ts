@@ -32,6 +32,7 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import { calculateNextReview } from '@/lib/srs/scheduler';
 import type { SrsProgress } from '@/lib/srs/types';
+import { getConsecutiveLocalStreak } from '@/lib/date/localDate';
 import {
   getProgressForVocabularies,
   submitVocabularyRating as submitRatingViaRpc,
@@ -334,35 +335,7 @@ export async function updateUserProgress(
 }
 
 function calculateStreak(studyDatesSet: Set<string>): number {
-  if (studyDatesSet.size === 0) return 0;
-
-  const today = new Date();
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
-
-  let checkDate = new Date();
-  if (studyDatesSet.has(todayStr)) {
-    checkDate = today;
-  } else if (studyDatesSet.has(yesterdayStr)) {
-    checkDate = yesterday;
-  } else {
-    return 0;
-  }
-
-  let streak = 0;
-  while (true) {
-    const dStr = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, '0')}-${String(checkDate.getDate()).padStart(2, '0')}`;
-    if (studyDatesSet.has(dStr)) {
-      streak++;
-      checkDate.setDate(checkDate.getDate() - 1);
-    } else {
-      break;
-    }
-  }
-  return streak;
+  return getConsecutiveLocalStreak(studyDatesSet);
 }
 
 export async function getStudyStats(): Promise<StudyStats> {
