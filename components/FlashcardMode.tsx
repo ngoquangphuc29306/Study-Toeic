@@ -91,6 +91,11 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   const { showToast } = useToast();
   const [filterTopic, setFilterTopic] = useState<string>(selectedTopicId || 'all');
   const [filterStatus, setFilterStatus] = useState<FlashcardInitialFilter>(initialStatus || 'new');
+  const [sessionStats, setSessionStats] = useState({
+    mastered: 0,
+    learningVocabularyIds: [] as string[],
+    needsReview: 0,
+  });
   const [subMode, setSubMode] = useState<StudySubMode>('flashcard');
   const [currentIndex, setCurrentIndex] = useState<number>(0);
 
@@ -167,6 +172,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
   setFilterTopic(selectedTopicId || 'all');
   setFilterStatus(initialStatus || 'new');
+  setSessionStats({ mastered: 0, learningVocabularyIds: [], needsReview: 0 });
 
   setCurrentIndex(0);
   setIsFlipped(false);
@@ -190,9 +196,6 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   initialStatus,
   getUserId,
 ]);
-
-  // Track previous index & subMode for state reset during render
-  const [sessionStats, setSessionStats] = useState({ mastered: 0, needsReview: 0 });
 
   // Stable timestamp for due-time calculations
   const [nowMs] = useState(() => Date.now());
@@ -312,6 +315,9 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     if (filterStatus === 'mastered') return `✅ Đã thuộc (${masteredCount})`;
     return `📚 Tất cả trạng thái (${totalCount})`;
   }, [filterStatus, newCount, dueCount, masteredCount, totalCount]);
+
+  const remainingCountLabel = filterStatus === 'new' ? 'Từ mới' : 'Còn lại';
+  const remainingCountShortLabel = filterStatus === 'new' ? 'Mới' : 'Còn';
 
   // Filter & sort list based on topic and status
   const activeVocabs = useMemo(() => {
@@ -767,6 +773,10 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     }
     setSessionStats((prev) => ({
       mastered: isMastered || srsRating === 'mastered' ? prev.mastered + 1 : prev.mastered,
+      learningVocabularyIds:
+        !isMastered && srsRating !== 'mastered' && !prev.learningVocabularyIds.includes(ratedVocabId)
+          ? [...prev.learningVocabularyIds, ratedVocabId]
+          : prev.learningVocabularyIds,
       needsReview: !isMastered && srsRating !== 'mastered' ? prev.needsReview + 1 : prev.needsReview,
     }));
 
@@ -1082,7 +1092,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     setCurrentIndex(0);
     setIsFlipped(false);
     setIsCompleted(false);
-    setSessionStats({ mastered: 0, needsReview: 0 });
+    setSessionStats({ mastered: 0, learningVocabularyIds: [], needsReview: 0 });
     setSubMode('flashcard');
     // Phase 6 Fix: Clear session on explicit restart
     const userId = await getUserId();
@@ -1117,7 +1127,10 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
         <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
           {filterStatus === 'new' && totalCount > 0 && (
             <button
-              onClick={() => setFilterStatus('all')}
+              onClick={() => {
+                setSessionStats({ mastered: 0, learningVocabularyIds: [], needsReview: 0 });
+                setFilterStatus('all');
+              }}
               className="px-5 py-2.5 bg-[#FFF1F2] text-[#ED4F8E] font-bold rounded-2xl text-xs cursor-pointer border border-[#FCE7F3] hover:bg-[#FFE4E6] transition-colors"
             >
               Học tất cả từ ({totalCount} từ)
@@ -1126,7 +1139,10 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
           {(filterStatus === 'learning' || filterStatus === 'due') && totalCount > 0 && (
             <button
-              onClick={() => setFilterStatus('all')}
+              onClick={() => {
+                setSessionStats({ mastered: 0, learningVocabularyIds: [], needsReview: 0 });
+                setFilterStatus('all');
+              }}
               className="px-5 py-2.5 bg-[#FFF1F2] text-[#ED4F8E] font-bold rounded-2xl text-xs cursor-pointer border border-[#FCE7F3] hover:bg-[#FFE4E6] transition-colors"
             >
               Ôn tất cả từ ({totalCount} từ)
@@ -1923,17 +1939,17 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
         <div className="flex items-center justify-center gap-4 sm:gap-6 text-xs font-bold">
           <div className="flex items-center gap-1.5">
             <span className="text-[#0284C7] font-black">{activeVocabs.length}</span>
-            <span className="text-gray-500 hidden sm:inline">Từ mới</span>
-            <span className="text-gray-500 sm:hidden">Mới</span>
+            <span className="text-gray-500 hidden sm:inline">{remainingCountLabel}</span>
+            <span className="text-gray-500 sm:hidden">{remainingCountShortLabel}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="text-[#A855F7] font-black">{sessionStats.mastered}</span>
-            <span className="text-gray-500 hidden sm:inline">Đã học</span>
+            <span className="text-[#A855F7] font-black">{sessionStats.learningVocabularyIds.length}</span>
+            <span className="text-gray-500 hidden sm:inline">Đang học</span>
             <span className="text-gray-500 sm:hidden">Học</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="text-[#ED4F8E] font-black">{sessionStats.needsReview}</span>
-            <span className="text-gray-500 hidden sm:inline">Ôn tập</span>
+            <span className="text-[#ED4F8E] font-black">{dueCount}</span>
+            <span className="text-gray-500 hidden sm:inline">Đến hạn ôn</span>
             <span className="text-gray-500 sm:hidden">Ôn</span>
           </div>
         </div>
