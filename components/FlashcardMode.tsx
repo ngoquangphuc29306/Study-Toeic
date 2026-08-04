@@ -28,7 +28,20 @@ import {
 import confetti from 'canvas-confetti';
 import { FlashcardInitialFilter, Vocabulary, Topic } from '../lib/types';
 import { SrsRating } from '../services/vocabService';
-import { saveStudySession, loadStudySession, clearStudySession } from '../lib/session/storage';
+import {
+  IdempotencyConflictError,
+  LegacyIdempotencyResultError,
+  type RatingResult,
+} from '../services/progressService';
+import {
+  saveStudySession,
+  loadStudySession,
+  clearStudySession,
+  savePendingRatingAction,
+  loadPendingRatingAction,
+  clearPendingRatingAction,
+  type PendingRatingAction,
+} from '../lib/session/storage';
 import { useToast } from '../contexts/ToastContext';
 import { applyRatingToQueue } from '../lib/session/queueTransition';
 import type { StudySessionSnapshot } from '../lib/session/types';
@@ -38,6 +51,42 @@ import gsap from 'gsap';
 import { motionTokens } from '../lib/animation/motionTokens';
 import { usePrefersReducedMotion } from '../hooks/use-prefers-reduced-motion';
 import { isVocabularyDue } from '../features/review-reminder';
+import { evaluatePronunciation } from '../lib/pronunciation/evaluatePronunciation';
+
+type PronunciationStatus =
+  | 'idle'
+  | 'requesting-permission'
+  | 'listening'
+  | 'checking'
+  | 'correct'
+  | 'incorrect'
+  | 'unsupported'
+  | 'permission-denied'
+  | 'no-speech'
+  | 'recognition-error';
+
+interface SpeechRecognitionResultEvent {
+  results: ArrayLike<ArrayLike<{ transcript: string }>>;
+}
+
+interface SpeechRecognitionErrorEvent {
+  error?: string;
+}
+
+interface SpeechRecognitionInstance {
+  lang: string;
+  interimResults: boolean;
+  maxAlternatives: number;
+  onstart: (() => void) | null;
+  onresult: ((event: SpeechRecognitionResultEvent) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+}
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance;
 
 type VocabularyUpdate = Partial<Pick<Vocabulary,
   'word' | 'phonetic_uk' | 'phonetic_us' | 'part_of_speech' |
@@ -50,7 +99,12 @@ interface FlashcardModeProps {
   topics: Topic[];
   selectedTopicId: string;
   initialStatus?: FlashcardInitialFilter;
-  onUpdateProgress: (vocabId: string, status: 'learning' | 'mastered', rating?: SrsRating) => Promise<void>;
+  onUpdateProgress: (
+    vocabId: string,
+    status: 'learning' | 'mastered',
+    rating?: SrsRating,
+    idempotencyKey?: string
+  ) => Promise<RatingResult>;
   onBackToDashboard: () => void;
   onSwitchToSynonyms: (topicId: string) => void;
   onStudySessionCompleted?: () => void;
@@ -115,6 +169,9 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     subMode: StudySubMode;
     vocabularyId: string | null;
   }>({ subMode: 'flashcard', vocabularyId: null });
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const recognitionAttemptRef = useRef(0);
+  const isFlashcardMountedRef = useRef(true);
   const prefersReducedMotion = usePrefersReducedMotion();
 
   // Edit vocabulary modal state
@@ -130,6 +187,35 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       return null;
     }
   }, []);
+
+  const stopRecognition = useCallback(() => {
+    recognitionAttemptRef.current += 1;
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+
+    if (!recognition) return;
+    recognition.onstart = null;
+    recognition.onresult = null;
+    recognition.onerror = null;
+    recognition.onend = null;
+    try {
+      recognition.abort();
+    } catch {
+      try {
+        recognition.stop();
+      } catch {
+        // Recognition may already have ended.
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    isFlashcardMountedRef.current = true;
+    return () => {
+      isFlashcardMountedRef.current = false;
+      stopRecognition();
+    };
+  }, [stopRecognition]);
 
   const previousStudyContextRef = useRef({
     selectedTopicId,
@@ -230,10 +316,20 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   const [showHint, setShowHint] = useState<boolean>(false);
 
   // Pronounce mode state
-  const [isRecording, setIsRecording] = useState<boolean>(false);
-  const [pronounceSubmitted, setPronounceSubmitted] = useState<boolean>(false);
-  const [isPronounceCorrect, setIsPronounceCorrect] = useState<boolean | null>(null);
+  const [pronunciationStatus, setPronunciationStatus] = useState<PronunciationStatus>('idle');
   const [transcriptText, setTranscriptText] = useState<string>('');
+  const isRecording =
+    pronunciationStatus === 'requesting-permission' ||
+    pronunciationStatus === 'listening' ||
+    pronunciationStatus === 'checking';
+  const pronounceSubmitted =
+    pronunciationStatus === 'correct' ||
+    pronunciationStatus === 'incorrect' ||
+    pronunciationStatus === 'unsupported' ||
+    pronunciationStatus === 'permission-denied' ||
+    pronunciationStatus === 'no-speech' ||
+    pronunciationStatus === 'recognition-error';
+  const isPronounceCorrect = pronunciationStatus === 'correct';
 
   // ESC key handlers for modals
   useEffect(() => {
@@ -267,9 +363,8 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       setIsTypingCorrect(null);
       setShowHint(false);
 
-      setIsRecording(false);
-      setPronounceSubmitted(false);
-      setIsPronounceCorrect(null);
+      stopRecognition();
+      setPronunciationStatus('idle');
       setTranscriptText('');
 
       setSelectedQuizIndex(null);
@@ -277,7 +372,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     };
 
     queueMicrotask(resetInteractionState);
-  }, [currentIndex, subMode]);
+  }, [currentIndex, subMode, stopRecognition]);
 
   // Topic-filtered list
   const topicVocabs = useMemo(() => {
@@ -438,6 +533,11 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
   // Use safe index directly, sync state in next render to avoid cascading updates
   const currentVocab = activeVocabs[safeIndex];
+  const currentVocabId = currentVocab?.id;
+  const currentVocabIdRef = useRef<string | undefined>(currentVocabId);
+  useEffect(() => {
+    currentVocabIdRef.current = currentVocabId;
+  }, [currentVocabId]);
   const audioWord = currentVocab?.word;
   const audioVocabularyId = currentVocab?.id;
 
@@ -731,19 +831,79 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
   // Synchronous ref lock for duplicate submission prevention
   const ratingSubmitLockRef = useRef<boolean>(false);
+  const pendingRatingActionRef = useRef<PendingRatingAction | null>(null);
+  const [hasPendingRatingRetry, setHasPendingRatingRetry] = useState(false);
 
-  // Handle Progress Rating with SRS
-  // Hotfix UX: Optimistic card transition with sequential save
+  // Never auto-submit after a remount. If a response was interrupted, restore
+  // only the action metadata so the learner can explicitly retry with its key.
+  useEffect(() => {
+    let cancelled = false;
+    if (!currentVocabId) return;
+
+    void (async () => {
+      const userId = await getUserId();
+      const pendingAction = userId ? loadPendingRatingAction(userId) : null;
+      if (cancelled || !pendingAction || pendingAction.vocabularyId !== currentVocabId) return;
+
+      pendingRatingActionRef.current = pendingAction;
+      setHasPendingRatingRetry(true);
+      setSubmissionError(
+        pendingAction.status === 'confirmed'
+          ? 'Đánh giá trước đã được lưu nhưng phiên học chưa hoàn tất. Hãy tiếp tục với cùng kết quả.'
+          : 'Đánh giá trước chưa được xác nhận. Hãy thử lại với cùng kết quả.'
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentVocabId, getUserId]);
+
+  // Handle Progress Rating with SRS. The RPC is committed before the queue so
+  // a derived-data refresh can never make this card look like a failed rating.
   const handleRating = useCallback(async (isMastered: boolean, rating?: SrsRating) => {
     if (!currentVocab || ratingSubmitLockRef.current) return;
 
     const srsRating: SrsRating = rating || (isMastered ? 'mastered' : 'good');
     const newStatus = isMastered || srsRating === 'mastered' ? 'mastered' : 'learning';
+    const existingPendingAction = pendingRatingActionRef.current;
+
+    // A transport failure may still have reached the RPC. Do not let a second
+    // rating create a new review log until this logical action is retried with
+    // its original idempotency key.
+    if (
+      existingPendingAction &&
+      (existingPendingAction.vocabularyId !== currentVocab.id || existingPendingAction.rating !== srsRating)
+    ) {
+      setSubmissionError('Đánh giá trước chưa được xác nhận. Hãy thử lại đánh giá đó trước.');
+      setHasPendingRatingRetry(true);
+      return;
+    }
+
+    const pendingAction = existingPendingAction || {
+      vocabularyId: currentVocab.id,
+      isMastered,
+      rating: srsRating,
+      idempotencyKey: crypto.randomUUID(),
+      startedAt: Date.now(),
+      status: 'pending' as const,
+    };
+    pendingRatingActionRef.current = pendingAction;
 
     // 1. Acquire synchronous lock and disable buttons (prevent double-click/double-submit)
     ratingSubmitLockRef.current = true;
     setIsSubmitting(true);
     setSubmissionError(null);
+
+    const actionUserId = await getUserId();
+    const retryingAction: PendingRatingAction = {
+      ...pendingAction,
+      status: 'retrying',
+    };
+    pendingRatingActionRef.current = retryingAction;
+    if (actionUserId) {
+      savePendingRatingAction(actionUserId, retryingAction);
+    }
 
     // 2. Calculate queue transition IMMEDIATELY (before any await)
     const transition = applyRatingToQueue(
@@ -753,40 +913,89 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       currentVocab.id
     );
 
-    // 3. Store previous state for rollback on save failure
-    const previousQueue = studyQueue;
-    const previousIndex = safeIndex;
-    const previousStats = sessionStats;
     const ratedVocabId = currentVocab.id;
 
     // ✅ FLASH BUG FIX: Reset flip state SYNCHRONOUSLY before index change
     // This prevents Card B from rendering with Card A's isFlipped state
-    setIsFlipped(false);
-    setHasRevealedAnswer(false);
-
-    // 4. OPTIMISTIC UPDATE - Card transitions INSTANTLY (< 10ms)
-    // EXCEPT for final card: do not show completion until save succeeds
-    if (!transition.isComplete) {
-      shouldAnimateCardRef.current = true;
-      setStudyQueue(transition.queue);
-      setCurrentIndex(transition.currentIndex);
-    }
-    setSessionStats((prev) => ({
-      mastered: isMastered || srsRating === 'mastered' ? prev.mastered + 1 : prev.mastered,
-      learningVocabularyIds:
-        !isMastered && srsRating !== 'mastered' && !prev.learningVocabularyIds.includes(ratedVocabId)
-          ? [...prev.learningVocabularyIds, ratedVocabId]
-          : prev.learningVocabularyIds,
-      needsReview: !isMastered && srsRating !== 'mastered' ? prev.needsReview + 1 : prev.needsReview,
-    }));
-
-    // 5. BACKGROUND SAVE - Does not block card transition (except for final card)
-    // ratingSubmitLockRef stays true, preventing rating next card until save completes
     try {
-      // Submit rating via service (handles RPC + idempotency)
-      await onUpdateProgress(ratedVocabId, newStatus, srsRating);
+      // Submit only the mutation. Parent refreshes aggregates best-effort after
+      // this resolves, so refresh errors cannot reach this rollback boundary.
+      await onUpdateProgress(ratedVocabId, newStatus, srsRating, pendingAction.idempotencyKey);
+    } catch (err) {
+      // A transport failure may still mean that the RPC committed. Keep the
+      // same key in retrying state and do not advance or create a new key.
+      const isPermanentContractError =
+        err instanceof IdempotencyConflictError || err instanceof LegacyIdempotencyResultError;
+      if (isPermanentContractError) {
+        // A permanent contract error must not survive as a retrying action.
+        // Clear both layers so the learner can explicitly start a new action
+        // with a fresh key; the queue remains untouched in this catch branch.
+        pendingRatingActionRef.current = null;
+        if (actionUserId) clearPendingRatingAction(actionUserId);
+      } else {
+        pendingRatingActionRef.current = retryingAction;
+        if (actionUserId) {
+          savePendingRatingAction(actionUserId, retryingAction);
+        }
+      }
+      const message = err instanceof IdempotencyConflictError
+        ? 'Khóa đánh giá không còn hợp lệ cho thao tác này. Hãy thực hiện đánh giá mới.'
+        : err instanceof LegacyIdempotencyResultError
+          ? 'Kết quả của thao tác cũ không thể khôi phục. Hãy thực hiện đánh giá mới.'
+          : err instanceof Error
+            ? err.message
+            : 'Không thể lưu kết quả. Vui lòng thử lại.';
+      setSubmissionError(message);
+      setHasPendingRatingRetry(!isPermanentContractError);
+      console.error('handleRating error:', err);
+      ratingSubmitLockRef.current = false;
+      setIsSubmitting(false);
+      return;
+    }
 
-      // 6. Save session snapshot AFTER server confirms
+    // The RPC has now returned a validated success/already_processed result.
+    // Keep the key until the local queue/session commit completes so an
+    // unmount cannot lose the recovery record.
+    const confirmedAction: PendingRatingAction = {
+      ...retryingAction,
+      status: 'confirmed',
+    };
+    pendingRatingActionRef.current = confirmedAction;
+    if (actionUserId) {
+      savePendingRatingAction(actionUserId, confirmedAction);
+    }
+
+    // A response from an old mounted action must not overwrite a newer card.
+    // The confirmed record remains available for the next mount to retry with
+    // the same key and receive already_processed.
+    if (!isFlashcardMountedRef.current || currentVocabIdRef.current !== ratedVocabId) {
+      ratingSubmitLockRef.current = false;
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      // Reset the visual state immediately before the committed queue advance.
+      // This keeps the next card from inheriting the previous card's back face.
+      stopRecognition();
+      setPronunciationStatus('idle');
+      setIsFlipped(false);
+      setHasRevealedAnswer(false);
+      if (!transition.isComplete) {
+        shouldAnimateCardRef.current = true;
+        setStudyQueue(transition.queue);
+        setCurrentIndex(transition.currentIndex);
+      }
+      setSessionStats((prev) => ({
+        mastered: isMastered || srsRating === 'mastered' ? prev.mastered + 1 : prev.mastered,
+        learningVocabularyIds:
+          !isMastered && srsRating !== 'mastered' && !prev.learningVocabularyIds.includes(ratedVocabId)
+            ? [...prev.learningVocabularyIds, ratedVocabId]
+            : prev.learningVocabularyIds,
+        needsReview: !isMastered && srsRating !== 'mastered' ? prev.needsReview + 1 : prev.needsReview,
+      }));
+
+      // Save session snapshot only after the server-confirmed queue transition.
       if (transition.isComplete) {
         // Final card: Show completion ONLY after save succeeds
         setIsCompleted(true);
@@ -794,10 +1003,8 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
         setStudyQueue(transition.queue);
         setCurrentIndex(transition.currentIndex);
 
-        // Clear session on completion
-        const userId = await getUserId();
-        if (userId) {
-          clearStudySession(userId);
+        if (actionUserId) {
+          clearStudySession(actionUserId);
         }
         if (!prefersReducedMotion) {
           try {
@@ -811,41 +1018,37 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
             // Fallback
           }
         }
-      } else {
+      } else if (actionUserId && transition.queue.length > 0) {
         // Save session with exact transition result
-        const userId = await getUserId();
-        if (userId && transition.queue.length > 0) {
-          const snapshot: StudySessionSnapshot = {
-            version: 1,
-            userId,
-            mode: filterStatus === 'new' ? 'new' : 'review',
-            vocabularyIds: transition.queue,
-            currentIndex: transition.currentIndex,
-            selectedTopicId: filterTopic,
-            initialStatus: filterStatus,
-            startedAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          };
-          saveStudySession(snapshot);
-        }
+        const snapshot: StudySessionSnapshot = {
+          version: 1,
+          userId: actionUserId,
+          mode: filterStatus === 'new' ? 'new' : 'review',
+          vocabularyIds: transition.queue,
+          currentIndex: transition.currentIndex,
+          selectedTopicId: filterTopic,
+          initialStatus: filterStatus,
+          startedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        saveStudySession(snapshot);
       }
-    } catch (err) {
-      // 7. ROLLBACK on save failure - revert to previous card
-      shouldAnimateCardRef.current = false;
-      setStudyQueue(previousQueue);
-      setCurrentIndex(previousIndex);
-      setSessionStats(previousStats);
 
-      // Show safe error message
-      const message = err instanceof Error ? err.message : 'Không thể lưu kết quả. Vui lòng thử lại.';
-      setSubmissionError(message);
-      console.error('handleRating error:', err);
+      pendingRatingActionRef.current = null;
+      setHasPendingRatingRetry(false);
+      if (actionUserId) clearPendingRatingAction(actionUserId);
+    } catch (err) {
+      // The mutation is already confirmed. Never expose this as an RPC
+      // failure or allow a new key; keep the confirmed record for recovery.
+      console.error('Confirmed rating local commit error:', err);
+      setSubmissionError('Đã lưu đánh giá. Phiên học sẽ được khôi phục khi bạn thử lại.');
+      setHasPendingRatingRetry(true);
     } finally {
       // 8. Release lock and re-enable buttons only after save completes (or fails)
       ratingSubmitLockRef.current = false;
       setIsSubmitting(false);
     }
-  }, [currentVocab, safeIndex, onUpdateProgress, onStudySessionCompleted, studyQueue, sessionStats, filterTopic, filterStatus, getUserId, prefersReducedMotion]);
+  }, [currentVocab, safeIndex, onUpdateProgress, onStudySessionCompleted, studyQueue, filterTopic, filterStatus, getUserId, prefersReducedMotion, stopRecognition]);
 
   // Handle Rating Selection from 4 evaluation buttons
   const handleSelectSrsRating = useCallback((srsRating: SrsRating) => {
@@ -856,6 +1059,18 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     handleRating(isMastered, srsRating);
     setSubMode('flashcard');
   }, [handleRating, playRatingFeedback]);
+
+  const retryPendingRating = useCallback(() => {
+    const pendingAction = pendingRatingActionRef.current;
+    if (!pendingAction || ratingSubmitLockRef.current || pendingAction.vocabularyId !== currentVocab?.id) return;
+    setShowRatingButtons(false);
+    void handleRating(pendingAction.isMastered, pendingAction.rating);
+  }, [currentVocab?.id, handleRating]);
+
+  const handleBackToDashboard = useCallback(() => {
+    if (ratingSubmitLockRef.current) return;
+    onBackToDashboard();
+  }, [onBackToDashboard]);
 
   // Handle "Chưa nhớ" -> Immediately transition to next exercise step
   const handleNotRemembered = useCallback(() => {
@@ -869,10 +1084,9 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     // Just return to flashcard mode with same word
     if (subMode === 'pronounce') {
       // Reset pronunciation state
-      setIsRecording(false);
+      stopRecognition();
       setTranscriptText('');
-      setPronounceSubmitted(false);
-      setIsPronounceCorrect(null);
+      setPronunciationStatus('idle');
 
       // Return to flashcard, same word, front side
       setIsFlipped(false);
@@ -888,7 +1102,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     } else if (subMode === 'typing') {
       setSubMode('pronounce');
     }
-  }, [subMode]);
+  }, [subMode, stopRecognition]);
 
   // Handle Delete current vocabulary item
   const handleDeleteCurrentVocab = useCallback(() => {
@@ -964,65 +1178,130 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     setHasRevealedAnswer(true);
   }, [currentVocab, typingSubmitted, typedInput]);
 
-  // Handle Speech Pronunciation
-  const handleStartRecording = () => {
-    if (ratingSubmitLockRef.current) return;
-    setIsRecording(true);
+  const handleStopRecording = useCallback(() => {
+    stopRecognition();
+    setPronunciationStatus('idle');
     setTranscriptText('');
+  }, [stopRecognition]);
 
-    if (typeof window !== 'undefined') {
-      try {
-        const win = window as unknown as Record<string, unknown>;
-        const SpeechRecognitionClass = (win.SpeechRecognition || win.webkitSpeechRecognition) as unknown as new () => {
-          lang: string;
-          interimResults: boolean;
-          maxAlternatives: number;
-          onresult: (event: { results: { transcript: string }[][] }) => void;
-          onerror: () => void;
-          start: () => void;
-        };
-        if (!SpeechRecognitionClass) throw new Error('SpeechRecognition not supported');
+  // A learning result exists only when Speech Recognition returns a transcript
+  // and evaluatePronunciation confirms it. Technical failures never fall back
+  // to a correct result.
+  const handleStartRecording = () => {
+    if (ratingSubmitLockRef.current || !currentVocab || isRecording) return;
 
-        const recognition = new SpeechRecognitionClass();
-        recognition.lang = 'en-US';
-        recognition.interimResults = false;
-        recognition.maxAlternatives = 1;
+    stopRecognition();
+    setTranscriptText('');
+    setPronunciationStatus('requesting-permission');
 
-        recognition.onresult = (event: { results: { transcript: string }[][] }) => {
-          const result = event.results[0][0].transcript;
-          setTranscriptText(result);
-          setIsRecording(false);
-          setPronounceSubmitted(true);
-          const isCorrect = result.toLowerCase().includes(currentVocab?.word.toLowerCase() || '');
-          setIsPronounceCorrect(isCorrect);
-          setHasRevealedAnswer(true);
-        };
-
-        recognition.onerror = () => {
-          setTimeout(() => {
-            setIsRecording(false);
-            setPronounceSubmitted(true);
-            setIsPronounceCorrect(true);
-            setTranscriptText(currentVocab?.word || '');
-            setHasRevealedAnswer(true);
-          }, 1500);
-        };
-
-        recognition.start();
-        return;
-      } catch {
-        // Fallback simulation
-      }
+    if (typeof window === 'undefined') {
+      setPronunciationStatus('unsupported');
+      return;
     }
 
-    setTimeout(() => {
-      setIsRecording(false);
-      setPronounceSubmitted(true);
-      setIsPronounceCorrect(true);
-      setTranscriptText(currentVocab?.word || '');
-      setHasRevealedAnswer(true);
-    }, 1800);
+    const win = window as unknown as Record<string, unknown>;
+    const SpeechRecognitionClass = (win.SpeechRecognition || win.webkitSpeechRecognition) as
+      | SpeechRecognitionConstructor
+      | undefined;
+
+    if (!SpeechRecognitionClass) {
+      setPronunciationStatus('unsupported');
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognitionClass();
+      const attemptId = recognitionAttemptRef.current + 1;
+      recognitionAttemptRef.current = attemptId;
+      recognitionRef.current = recognition;
+      recognition.lang = 'en-US';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      const isActiveAttempt = () => (
+        isFlashcardMountedRef.current &&
+        recognitionAttemptRef.current === attemptId &&
+        recognitionRef.current === recognition
+      );
+
+      recognition.onstart = () => {
+        if (isActiveAttempt()) setPronunciationStatus('listening');
+      };
+
+      recognition.onresult = (event) => {
+        if (!isActiveAttempt()) return;
+
+        const transcript = event.results[0]?.[0]?.transcript?.trim() || '';
+        if (!transcript) {
+          recognitionRef.current = null;
+          setPronunciationStatus('no-speech');
+          return;
+        }
+
+        setPronunciationStatus('checking');
+        const evaluation = evaluatePronunciation(currentVocab.word, transcript);
+        if (!isActiveAttempt()) return;
+
+        recognitionRef.current = null;
+        setTranscriptText(transcript);
+        setPronunciationStatus(evaluation.isCorrect ? 'correct' : 'incorrect');
+        setHasRevealedAnswer(true);
+      };
+
+      recognition.onerror = (event) => {
+        if (!isActiveAttempt()) return;
+
+        recognitionRef.current = null;
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          setPronunciationStatus('permission-denied');
+        } else if (event.error === 'no-speech') {
+          setPronunciationStatus('no-speech');
+        } else {
+          setPronunciationStatus('recognition-error');
+        }
+      };
+
+      recognition.onend = () => {
+        if (!isActiveAttempt()) return;
+        recognitionRef.current = null;
+        setPronunciationStatus((previous) => (
+          previous === 'requesting-permission' || previous === 'listening'
+            ? 'no-speech'
+            : previous
+        ));
+      };
+
+      recognition.start();
+    } catch {
+      recognitionRef.current = null;
+      setPronunciationStatus('recognition-error');
+    }
   };
+
+  const pronunciationFeedback = useMemo(() => {
+    switch (pronunciationStatus) {
+      case 'correct':
+        return { title: 'Chính xác!', detail: '' };
+      case 'incorrect':
+        return { title: 'Chưa đúng', detail: '' };
+      case 'unsupported':
+        return { title: 'Chưa hỗ trợ', detail: 'Trình duyệt này chưa hỗ trợ nhận diện giọng nói.' };
+      case 'permission-denied':
+        return { title: 'Không thể dùng microphone', detail: 'Hãy cấp quyền microphone và thử lại.' };
+      case 'no-speech':
+        return { title: 'Không nghe thấy giọng nói', detail: 'Hãy nói lại và thử thêm một lần.' };
+      case 'recognition-error':
+        return { title: 'Không thể nhận diện', detail: 'Vui lòng thử lại.' };
+      default:
+        return { title: '', detail: '' };
+    }
+  }, [pronunciationStatus]);
+
+  const isPronunciationTechnicalIssue =
+    pronunciationStatus === 'unsupported' ||
+    pronunciationStatus === 'permission-denied' ||
+    pronunciationStatus === 'no-speech' ||
+    pronunciationStatus === 'recognition-error';
 
   // Keyboard Shortcuts
   useEffect(() => {
@@ -1150,7 +1429,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
           )}
 
           <button
-            onClick={onBackToDashboard}
+            onClick={handleBackToDashboard}
             className="px-5 py-2.5 bg-gradient-to-r from-[#ED4F8E] to-[#F472B6] text-white font-bold rounded-2xl text-xs cursor-pointer shadow-2xs hover:opacity-95 transition-opacity"
           >
             Quay về Dashboard
@@ -1216,7 +1495,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
           </button>
 
           <button
-            onClick={onBackToDashboard}
+            onClick={handleBackToDashboard}
             className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-gray-100 text-gray-700 font-bold text-xs transition-all cursor-pointer hover:bg-gray-200"
           >
             Về Trang Chủ
@@ -1243,7 +1522,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       {/* Top Header Navigation */}
       <div className="flex items-center justify-between gap-2 sm:gap-4">
         <button
-          onClick={onBackToDashboard}
+          onClick={handleBackToDashboard}
           className="inline-flex items-center gap-2 text-xs font-bold text-gray-700 hover:text-[#ED4F8E] bg-white px-3 sm:px-4 py-2 rounded-2xl border border-[#FCE7F3] shadow-2xs transition-all cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -1726,11 +2005,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
                   </button>
                   <p className="text-xs font-bold text-gray-600">Nhấn để nói</p>
                   <button
-                    onClick={() => {
-                      setPronounceSubmitted(true);
-                      setIsPronounceCorrect(true);
-                      setHasRevealedAnswer(true);
-                    }}
+                    onClick={handleNotRemembered}
                     className="text-xs text-gray-400 hover:text-gray-700 font-medium cursor-pointer"
                   >
                     ▷ Bỏ qua chế độ này
@@ -1741,7 +2016,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
               {isRecording && (
                 <div className="space-y-3">
                   <button
-                    onClick={() => setIsRecording(false)}
+                    onClick={handleStopRecording}
                     className="w-20 h-20 mx-auto rounded-full bg-[#E11D48] text-white flex items-center justify-center shadow-lg transition-all animate-pulse cursor-pointer"
                   >
                     <div className="w-6 h-6 bg-white rounded-xs" />
@@ -1767,11 +2042,20 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
                         </>
                       ) : (
                         <>
-                          <X className="w-5 h-5" />
-                          <span>Chưa đúng</span>
+                          {isPronunciationTechnicalIssue ? (
+                            <AlertTriangle className="w-5 h-5" />
+                          ) : (
+                            <X className="w-5 h-5" />
+                          )}
+                          <span>{pronunciationFeedback.title}</span>
                         </>
                       )}
                     </div>
+                    {pronunciationFeedback.detail && (
+                      <p className="text-xs text-gray-600 font-medium">
+                        {pronunciationFeedback.detail}
+                      </p>
+                    )}
                     <p className="text-lg font-black text-gray-900">
                       {currentVocab.word}
                     </p>
@@ -1796,7 +2080,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
                         className="px-4 py-2 rounded-xl bg-white border border-[#FCE7F3] text-gray-700 font-bold text-xs hover:bg-[#FFF1F2] cursor-pointer"
                       >
                         <RotateCcw className="w-3.5 h-3.5 inline mr-1" />
-                        Nói lại
+                        {isPronunciationTechnicalIssue ? 'Thử lại' : 'Nói lại'}
                       </button>
                       <button
                         onClick={handleNotRemembered}
@@ -1823,7 +2107,18 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
               <AlertTriangle className="w-4 h-4 flex-shrink-0" />
               <span>{submissionError}</span>
             </div>
+            {hasPendingRatingRetry && (
+              <button
+                type="button"
+                onClick={retryPendingRating}
+                disabled={isSubmitting}
+                className="shrink-0 rounded-lg border border-[#E11D48] bg-white px-2.5 py-1 font-bold text-[#E11D48] hover:bg-[#FFF1F2] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Thử lại
+              </button>
+            )}
             <button
+              type="button"
               onClick={() => setSubmissionError(null)}
               className="text-[#E11D48] hover:text-[#BE123C] cursor-pointer"
             >

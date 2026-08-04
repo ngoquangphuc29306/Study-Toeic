@@ -7,12 +7,79 @@
 import type { StudySessionSnapshot } from './types';
 
 const SESSION_STORAGE_KEY_PREFIX = 'vocab_study_session_v1';
+const PENDING_RATING_STORAGE_KEY_PREFIX = 'vocab_pending_rating_v1';
+
+export interface PendingRatingAction {
+  vocabularyId: string;
+  isMastered: boolean;
+  rating: 'again' | 'hard' | 'good' | 'easy' | 'mastered';
+  idempotencyKey: string;
+  startedAt: number;
+  status: 'pending' | 'retrying' | 'confirmed';
+}
 
 /**
  * Get user-scoped session storage key
  */
 function getSessionKey(userId: string): string {
   return `${SESSION_STORAGE_KEY_PREFIX}:${userId}`;
+}
+
+function getPendingRatingKey(userId: string): string {
+  return `${PENDING_RATING_STORAGE_KEY_PREFIX}:${userId}`;
+}
+
+export function savePendingRatingAction(userId: string, action: PendingRatingAction): void {
+  if (typeof window === 'undefined' || !window.sessionStorage) return;
+
+  try {
+    sessionStorage.setItem(getPendingRatingKey(userId), JSON.stringify(action));
+  } catch (err) {
+    console.warn('Failed to save pending rating action:', err);
+  }
+}
+
+export function loadPendingRatingAction(userId: string): PendingRatingAction | null {
+  if (typeof window === 'undefined' || !window.sessionStorage) return null;
+
+  try {
+    const stored = sessionStorage.getItem(getPendingRatingKey(userId));
+    if (!stored) return null;
+
+    const action = JSON.parse(stored) as Partial<PendingRatingAction>;
+    const isValid =
+      typeof action.vocabularyId === 'string' &&
+      typeof action.isMastered === 'boolean' &&
+      typeof action.idempotencyKey === 'string' &&
+      ['again', 'hard', 'good', 'easy', 'mastered'].includes(action.rating ?? '');
+
+    if (!isValid) {
+      clearPendingRatingAction(userId);
+      return null;
+    }
+
+    return {
+      vocabularyId: action.vocabularyId as string,
+      isMastered: action.isMastered as boolean,
+      rating: action.rating as PendingRatingAction['rating'],
+      idempotencyKey: action.idempotencyKey as string,
+      startedAt: typeof action.startedAt === 'number' ? action.startedAt : Date.now(),
+      status: action.status === 'confirmed' || action.status === 'retrying' ? action.status : 'pending',
+    };
+  } catch (err) {
+    console.warn('Failed to load pending rating action:', err);
+    return null;
+  }
+}
+
+export function clearPendingRatingAction(userId: string): void {
+  if (typeof window === 'undefined' || !window.sessionStorage) return;
+
+  try {
+    sessionStorage.removeItem(getPendingRatingKey(userId));
+  } catch (err) {
+    console.warn('Failed to clear pending rating action:', err);
+  }
 }
 
 /**
@@ -85,7 +152,7 @@ export function clearAllStudySessions(): void {
   try {
     const keys = Object.keys(sessionStorage);
     keys.forEach(key => {
-      if (key.startsWith(SESSION_STORAGE_KEY_PREFIX)) {
+      if (key.startsWith(SESSION_STORAGE_KEY_PREFIX) || key.startsWith(PENDING_RATING_STORAGE_KEY_PREFIX)) {
         sessionStorage.removeItem(key);
       }
     });

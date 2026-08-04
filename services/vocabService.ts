@@ -30,12 +30,12 @@ import {
   setUserScopedObject,
 } from './localStorageHelpers';
 import { createClient } from '@/lib/supabase/client';
-import { calculateNextReview } from '@/lib/srs/scheduler';
-import type { SrsProgress } from '@/lib/srs/types';
+import { getConsecutiveLocalStreak } from '@/lib/date/localDate';
 import {
   getProgressForVocabularies,
   submitVocabularyRating as submitRatingViaRpc,
   type SrsRating as ProgressSrsRating,
+  type RatingResult,
 } from './progressService';
 
 // Base localStorage keys (will be scoped per user)
@@ -306,8 +306,9 @@ export type SrsRating = 'again' | 'hard' | 'good' | 'easy' | 'mastered';
 export async function updateUserProgress(
   vocabId: string,
   status: LearningStatus,
-  rating?: SrsRating
-): Promise<void> {
+  rating: SrsRating | undefined,
+  idempotencyKey: string
+): Promise<RatingResult> {
   // Phase 5: Submit rating via atomic Supabase RPC
   // Server calculates schedule, updates progress, and inserts review log atomically
   const userId = await getAuthUserId();
@@ -317,15 +318,14 @@ export async function updateUserProgress(
 
   const effectiveRating: ProgressSrsRating = rating || (status === 'mastered' ? 'mastered' : 'good');
 
-  // Generate idempotency key for duplicate protection
-  const idempotencyKey = crypto.randomUUID();
-
   try {
     // Submit rating via RPC - server handles all scheduling logic
-    await submitRatingViaRpc(vocabId, effectiveRating, idempotencyKey);
+    const ratingResult = await submitRatingViaRpc(vocabId, effectiveRating, idempotencyKey);
 
     // Phase 7: No longer update localStorage study dates
-    // Dashboard now queries review_logs directly for streak calculation
+    // Dashboard now queries review_logs directly for streak calculation.
+    // The caller owns this key for the full logical action, including retries.
+    return ratingResult;
   } catch (err) {
     console.error('updateUserProgress error:', err);
     throw err;
@@ -333,35 +333,7 @@ export async function updateUserProgress(
 }
 
 function calculateStreak(studyDatesSet: Set<string>): number {
-  if (studyDatesSet.size === 0) return 0;
-
-  const today = new Date();
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
-
-  let checkDate = new Date();
-  if (studyDatesSet.has(todayStr)) {
-    checkDate = today;
-  } else if (studyDatesSet.has(yesterdayStr)) {
-    checkDate = yesterday;
-  } else {
-    return 0;
-  }
-
-  let streak = 0;
-  while (true) {
-    const dStr = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, '0')}-${String(checkDate.getDate()).padStart(2, '0')}`;
-    if (studyDatesSet.has(dStr)) {
-      streak++;
-      checkDate.setDate(checkDate.getDate() - 1);
-    } else {
-      break;
-    }
-  }
-  return streak;
+  return getConsecutiveLocalStreak(studyDatesSet);
 }
 
 export async function getStudyStats(): Promise<StudyStats> {

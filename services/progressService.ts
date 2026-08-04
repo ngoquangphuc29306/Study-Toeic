@@ -24,6 +24,8 @@ export interface ProgressRecord {
 
 export interface RatingResult {
   status: 'success' | 'already_processed';
+  vocabulary_id?: string;
+  rating?: SrsRating;
   next_review_at: string | null;
   interval_hours: number;
   new_status: LearningStatus;
@@ -32,6 +34,46 @@ export interface RatingResult {
 }
 
 export type SrsRating = 'again' | 'hard' | 'good' | 'easy' | 'mastered';
+
+export class IdempotencyConflictError extends Error {
+  readonly code = 'IDEMPOTENCY_CONFLICT';
+  readonly retryable = false;
+
+  constructor(message = 'Idempotency key was already used with a different rating payload.') {
+    super(message);
+    this.name = 'IdempotencyConflictError';
+  }
+}
+
+export class LegacyIdempotencyResultError extends Error {
+  readonly code = 'LEGACY_IDEMPOTENCY_RESULT_UNAVAILABLE';
+  readonly retryable = false;
+
+  constructor(message = 'The original rating result is unavailable for this legacy idempotency record.') {
+    super(message);
+    this.name = 'LegacyIdempotencyResultError';
+  }
+}
+
+function isRpcStatus(data: unknown, status: 'idempotency_conflict' | 'legacy_result_unavailable'): data is { status: typeof status; message?: string } {
+  return Boolean(data && typeof data === 'object' && (data as Record<string, unknown>).status === status);
+}
+
+function isRatingResult(data: unknown): data is RatingResult {
+  if (!data || typeof data !== 'object') return false;
+
+  const result = data as Record<string, unknown>;
+  return (
+    (result.status === 'success' || result.status === 'already_processed') &&
+    (result.new_status === 'new' || result.new_status === 'learning' || result.new_status === 'mastered') &&
+    (result.vocabulary_id === undefined || typeof result.vocabulary_id === 'string') &&
+    (result.rating === undefined || result.rating === 'again' || result.rating === 'hard' || result.rating === 'good' || result.rating === 'easy' || result.rating === 'mastered') &&
+    (typeof result.next_review_at === 'string' || result.next_review_at === null) &&
+    typeof result.interval_hours === 'number' &&
+    typeof result.again_count === 'number' &&
+    typeof result.review_count === 'number'
+  );
+}
 
 /**
  * Get progress for multiple vocabularies
@@ -126,11 +168,19 @@ export async function submitVocabularyRating(
     throw new Error('Không thể lưu kết quả học. Vui lòng thử lại.');
   }
 
-  if (!data) {
+  if (isRpcStatus(data, 'idempotency_conflict')) {
+    throw new IdempotencyConflictError(data.message);
+  }
+
+  if (isRpcStatus(data, 'legacy_result_unavailable')) {
+    throw new LegacyIdempotencyResultError(data.message);
+  }
+
+  if (!isRatingResult(data)) {
     throw new Error('Không nhận được phản hồi từ máy chủ. Vui lòng thử lại.');
   }
 
-  return data as RatingResult;
+  return data;
 }
 
 /**

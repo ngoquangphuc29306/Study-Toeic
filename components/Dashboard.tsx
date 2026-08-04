@@ -35,6 +35,11 @@ import {
 import { FlashcardInitialFilter, Topic, StudyStats, Vocabulary } from '../lib/types';
 import { SrsRating } from '../services/vocabService';
 import {
+  IdempotencyConflictError,
+  LegacyIdempotencyResultError,
+  type RatingResult,
+} from '../services/progressService';
+import {
   getDashboardMetrics,
   getWeekActivity,
   type DashboardMetrics
@@ -42,6 +47,7 @@ import {
 import gsap from 'gsap';
 import { motionTokens } from '../lib/animation/motionTokens';
 import { usePrefersReducedMotion } from '../hooks/use-prefers-reduced-motion';
+import { getLocalDateKey } from '../lib/date/localDate';
 
 interface DashboardProps {
   topics: Topic[];
@@ -53,7 +59,12 @@ interface DashboardProps {
   onSelectTopicForFlashcard: (topicId: string, initialStatus?: FlashcardInitialFilter) => void;
   onSelectTopicForSynonyms: (topicId: string) => void;
   onOpenCollectionModal: () => void;
-  onUpdateProgress?: (vocabId: string, status: 'learning' | 'mastered', rating?: SrsRating) => void;
+  onUpdateProgress?: (
+    vocabId: string,
+    status: 'learning' | 'mastered',
+    rating?: SrsRating,
+    idempotencyKey?: string
+  ) => Promise<RatingResult>;
 }
 
 // Map string icon names to Lucide icon components
@@ -170,6 +181,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isRelearnSubmitting, setIsRelearnSubmitting] = useState<boolean>(false);
   const [relearnError, setRelearnError] = useState<string | null>(null);
   const [relearnSuccess, setRelearnSuccess] = useState<string | null>(null);
+  const relearnSubmitLockRef = useRef(false);
+  const pendingRelearnActionRef = useRef<{
+    vocabId: string;
+    idempotencyKey: string;
+  } | null>(null);
 
   // Stable timestamp for due-time calculations
   const [nowMs] = useState(() => Date.now());
@@ -270,20 +286,47 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // Handler for relearn action with confirmation
   const handleRelearnVocab = async () => {
-    if (!relearnConfirmModal.vocabId || !onUpdateProgress) return;
+    if (!relearnConfirmModal.vocabId || !onUpdateProgress || relearnSubmitLockRef.current) return;
+
+    const vocabId = relearnConfirmModal.vocabId;
+    const existingAction = pendingRelearnActionRef.current;
+    if (existingAction && existingAction.vocabId !== vocabId) {
+      setRelearnError('Một thao tác học lại khác chưa được xác nhận. Vui lòng thử lại thao tác đó trước.');
+      return;
+    }
+
+    const pendingAction = existingAction || {
+      vocabId,
+      idempotencyKey: crypto.randomUUID(),
+    };
+    pendingRelearnActionRef.current = pendingAction;
+    relearnSubmitLockRef.current = true;
 
     setIsRelearnSubmitting(true);
     setRelearnError(null);
 
     try {
-      await onUpdateProgress(relearnConfirmModal.vocabId, 'learning', 'again');
+      await onUpdateProgress(vocabId, 'learning', 'again', pendingAction.idempotencyKey);
 
       setRelearnSuccess(`Đã chuyển từ "${relearnConfirmModal.vocabWord}" về danh sách học lại. Từ này sẽ xuất hiện trong phần "Ôn tập" với lịch ôn tập mới.`);
       setRelearnConfirmModal({ isOpen: false, vocabId: '', vocabWord: '' });
+      pendingRelearnActionRef.current = null;
     } catch (error) {
-      setRelearnError('Không thể chuyển từ về danh sách học lại. Vui lòng thử lại.');
+      const isPermanentContractError =
+        error instanceof IdempotencyConflictError || error instanceof LegacyIdempotencyResultError;
+      if (isPermanentContractError) {
+        pendingRelearnActionRef.current = null;
+      }
+      setRelearnError(
+        error instanceof IdempotencyConflictError
+          ? 'Khóa đánh giá không còn hợp lệ cho thao tác này. Hãy thực hiện thao tác mới.'
+          : error instanceof LegacyIdempotencyResultError
+            ? 'Kết quả của thao tác cũ không thể khôi phục. Hãy thực hiện thao tác mới.'
+            : 'Không thể chuyển từ về danh sách học lại. Vui lòng thử lại.'
+      );
       console.error('Relearn error:', error);
     } finally {
+      relearnSubmitLockRef.current = false;
       setIsRelearnSubmitting(false);
     }
   };
@@ -320,7 +363,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     id: v.id,
     word: v.word,
     meaning: v.meaning,
-    due_in: formatTimeRemaining(v.next_review_at, nowMs),
+    due_in: formatTimeRemaining(v.next_review_at ?? undefined, nowMs),
   }));
 
   const realMastered = vocabularies
@@ -385,12 +428,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
       weekActivity.filter(a => a.count > 0).map(a => a.date)
     );
 
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const todayStr = getLocalDateKey(now);
 
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(monday);
       d.setDate(monday.getDate() + i);
-      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const dateStr = getLocalDateKey(d);
       const isToday = dateStr === todayStr;
       const isStudied = studyDatesSet.has(dateStr);
       const dayNum = d.getDate();

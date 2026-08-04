@@ -10,6 +10,13 @@
 
 import { createClient } from '@/lib/supabase/client';
 import type { LearningStatus } from '@/lib/types';
+import {
+  getConsecutiveLocalStreak,
+  getLocalDateKey,
+  getLocalDayRange,
+  getLocalDayStart,
+  getRecentLocalDateKeys,
+} from '@/lib/date/localDate';
 
 export interface DashboardMetrics {
   totalVocabulary: number;
@@ -33,20 +40,6 @@ export interface RecentActivity {
 }
 
 /**
- * Get local day boundaries for timezone-aware queries
- * Returns [startOfDay, endOfDay] in user's local timezone
- */
-function getLocalDayBoundaries(date: Date = new Date()): [Date, Date] {
-  const startOfDay = new Date(date);
-  startOfDay.setHours(0, 0, 0, 0);
-
-  const endOfDay = new Date(date);
-  endOfDay.setHours(23, 59, 59, 999);
-
-  return [startOfDay, endOfDay];
-}
-
-/**
  * Get dashboard metrics for current authenticated user
  * All queries are user-scoped through Supabase RLS
  */
@@ -60,7 +53,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
   }
 
   const now = new Date();
-  const [startOfToday, endOfToday] = getLocalDayBoundaries(now);
+  const { start: startOfToday, end: endOfToday } = getLocalDayRange(now);
 
   try {
     // Query 1: Total vocabulary count (RLS filters by user_id)
@@ -175,7 +168,7 @@ async function calculateStudyStreak(
   const maxDaysBack = 365;
   const boundaryDate = new Date(today);
   boundaryDate.setDate(boundaryDate.getDate() - maxDaysBack);
-  const [startBoundary] = getLocalDayBoundaries(boundaryDate);
+  const startBoundary = getLocalDayStart(boundaryDate);
 
   const { data: reviews, error } = await supabase
     .from('review_logs')
@@ -191,56 +184,12 @@ async function calculateStudyStreak(
 
   // Convert timestamps to local date keys and deduplicate
   const studiedDates = new Set<string>();
-    (reviews as Array<{ reviewed_at: string }>).forEach((review) => {
-    const reviewDate = new Date(review.reviewed_at);
-    const localDateKey = `${reviewDate.getFullYear()}-${String(reviewDate.getMonth() + 1).padStart(2, '0')}-${String(reviewDate.getDate()).padStart(2, '0')}`;
-    studiedDates.add(localDateKey);
+  (reviews as Array<{ reviewed_at: string }>).forEach((review) => {
+    studiedDates.add(getLocalDateKey(new Date(review.reviewed_at)));
   });
 
   // Calculate streak using pure function
-  return calculateConsecutiveStreak(studiedDates, today);
-}
-
-/**
- * Pure function: Calculate consecutive streak from set of date keys
- * Counts backwards from today/yesterday until finding a missing date
- */
-function calculateConsecutiveStreak(
-  studiedDates: Set<string>,
-  referenceDate: Date
-): number {
-  const today = new Date(referenceDate);
-  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayKey = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
-
-  // Streak must start today or yesterday
-  let currentDate: Date;
-  if (studiedDates.has(todayKey)) {
-    currentDate = today;
-  } else if (studiedDates.has(yesterdayKey)) {
-    currentDate = yesterday;
-  } else {
-    return 0; // No recent activity
-  }
-
-  let streak = 0;
-  const maxDays = 365; // Safety limit
-
-  for (let i = 0; i < maxDays; i++) {
-    const dateKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
-
-    if (!studiedDates.has(dateKey)) {
-      break; // Streak ends
-    }
-
-    streak++;
-    currentDate.setDate(currentDate.getDate() - 1);
-  }
-
-  return streak;
+  return getConsecutiveLocalStreak(studiedDates, today);
 }
 
 /**
@@ -303,7 +252,7 @@ export async function getWeekActivity(): Promise<Array<{ date: string; count: nu
   const today = new Date();
   const sevenDaysAgo = new Date(today);
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-  const [startOfWeek] = getLocalDayBoundaries(sevenDaysAgo);
+  const startOfWeek = getLocalDayStart(sevenDaysAgo);
 
   try {
     // Get all reviews from last 7 days
@@ -317,19 +266,15 @@ export async function getWeekActivity(): Promise<Array<{ date: string; count: nu
     // Group by local date
     const countsByDate = new Map<string, number>();
 
-    // Initialize all 7 days with 0
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(sevenDaysAgo);
-      date.setDate(date.getDate() + i);
-      const dateStr = date.toISOString().split('T')[0];
-      countsByDate.set(dateStr, 0);
-    }
+    // Initialize all 7 local calendar days with 0.
+    getRecentLocalDateKeys(7, today).forEach((dateKey) => {
+      countsByDate.set(dateKey, 0);
+    });
 
     // Count reviews per day
     if (data) {
       (data as Array<{ reviewed_at: string }>).forEach((review) => {
-        const reviewDate = new Date(review.reviewed_at);
-        const localDateStr = reviewDate.toISOString().split('T')[0];
+        const localDateStr = getLocalDateKey(new Date(review.reviewed_at));
         countsByDate.set(localDateStr, (countsByDate.get(localDateStr) || 0) + 1);
       });
     }

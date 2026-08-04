@@ -50,7 +50,7 @@ export interface Vocabulary {
   status?: LearningStatus;
   review_count?: number;
   last_reviewed_at?: string;
-  next_review_at?: string;
+  next_review_at?: string | null;
   interval_hours?: number;
   again_count?: number;
   is_difficult?: boolean;
