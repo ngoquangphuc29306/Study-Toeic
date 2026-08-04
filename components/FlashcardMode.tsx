@@ -47,6 +47,42 @@ import gsap from 'gsap';
 import { motionTokens } from '../lib/animation/motionTokens';
 import { usePrefersReducedMotion } from '../hooks/use-prefers-reduced-motion';
 import { isVocabularyDue } from '../features/review-reminder';
+import { evaluatePronunciation } from '../lib/pronunciation/evaluatePronunciation';
+
+type PronunciationStatus =
+  | 'idle'
+  | 'requesting-permission'
+  | 'listening'
+  | 'checking'
+  | 'correct'
+  | 'incorrect'
+  | 'unsupported'
+  | 'permission-denied'
+  | 'no-speech'
+  | 'recognition-error';
+
+interface SpeechRecognitionResultEvent {
+  results: ArrayLike<ArrayLike<{ transcript: string }>>;
+}
+
+interface SpeechRecognitionErrorEvent {
+  error?: string;
+}
+
+interface SpeechRecognitionInstance {
+  lang: string;
+  interimResults: boolean;
+  maxAlternatives: number;
+  onstart: (() => void) | null;
+  onresult: ((event: SpeechRecognitionResultEvent) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+}
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance;
 
 type VocabularyUpdate = Partial<Pick<Vocabulary,
   'word' | 'phonetic_uk' | 'phonetic_us' | 'part_of_speech' |
@@ -129,6 +165,9 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     subMode: StudySubMode;
     vocabularyId: string | null;
   }>({ subMode: 'flashcard', vocabularyId: null });
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const recognitionAttemptRef = useRef(0);
+  const isFlashcardMountedRef = useRef(true);
   const prefersReducedMotion = usePrefersReducedMotion();
 
   // Edit vocabulary modal state
@@ -144,6 +183,35 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       return null;
     }
   }, []);
+
+  const stopRecognition = useCallback(() => {
+    recognitionAttemptRef.current += 1;
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+
+    if (!recognition) return;
+    recognition.onstart = null;
+    recognition.onresult = null;
+    recognition.onerror = null;
+    recognition.onend = null;
+    try {
+      recognition.abort();
+    } catch {
+      try {
+        recognition.stop();
+      } catch {
+        // Recognition may already have ended.
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    isFlashcardMountedRef.current = true;
+    return () => {
+      isFlashcardMountedRef.current = false;
+      stopRecognition();
+    };
+  }, [stopRecognition]);
 
   const previousStudyContextRef = useRef({
     selectedTopicId,
@@ -244,10 +312,20 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   const [showHint, setShowHint] = useState<boolean>(false);
 
   // Pronounce mode state
-  const [isRecording, setIsRecording] = useState<boolean>(false);
-  const [pronounceSubmitted, setPronounceSubmitted] = useState<boolean>(false);
-  const [isPronounceCorrect, setIsPronounceCorrect] = useState<boolean | null>(null);
+  const [pronunciationStatus, setPronunciationStatus] = useState<PronunciationStatus>('idle');
   const [transcriptText, setTranscriptText] = useState<string>('');
+  const isRecording =
+    pronunciationStatus === 'requesting-permission' ||
+    pronunciationStatus === 'listening' ||
+    pronunciationStatus === 'checking';
+  const pronounceSubmitted =
+    pronunciationStatus === 'correct' ||
+    pronunciationStatus === 'incorrect' ||
+    pronunciationStatus === 'unsupported' ||
+    pronunciationStatus === 'permission-denied' ||
+    pronunciationStatus === 'no-speech' ||
+    pronunciationStatus === 'recognition-error';
+  const isPronounceCorrect = pronunciationStatus === 'correct';
 
   // ESC key handlers for modals
   useEffect(() => {
@@ -281,9 +359,8 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       setIsTypingCorrect(null);
       setShowHint(false);
 
-      setIsRecording(false);
-      setPronounceSubmitted(false);
-      setIsPronounceCorrect(null);
+      stopRecognition();
+      setPronunciationStatus('idle');
       setTranscriptText('');
 
       setSelectedQuizIndex(null);
@@ -291,7 +368,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     };
 
     queueMicrotask(resetInteractionState);
-  }, [currentIndex, subMode]);
+  }, [currentIndex, subMode, stopRecognition]);
 
   // Topic-filtered list
   const topicVocabs = useMemo(() => {
@@ -831,6 +908,8 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
       // Reset the visual state immediately before the committed queue advance.
       // This keeps the next card from inheriting the previous card's back face.
+      stopRecognition();
+      setPronunciationStatus('idle');
       setIsFlipped(false);
       setHasRevealedAnswer(false);
       if (!transition.isComplete) {
@@ -901,7 +980,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       ratingSubmitLockRef.current = false;
       setIsSubmitting(false);
     }
-  }, [currentVocab, safeIndex, onUpdateProgress, onStudySessionCompleted, studyQueue, filterTopic, filterStatus, getUserId, prefersReducedMotion]);
+  }, [currentVocab, safeIndex, onUpdateProgress, onStudySessionCompleted, studyQueue, filterTopic, filterStatus, getUserId, prefersReducedMotion, stopRecognition]);
 
   // Handle Rating Selection from 4 evaluation buttons
   const handleSelectSrsRating = useCallback((srsRating: SrsRating) => {
@@ -932,10 +1011,9 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     // Just return to flashcard mode with same word
     if (subMode === 'pronounce') {
       // Reset pronunciation state
-      setIsRecording(false);
+      stopRecognition();
       setTranscriptText('');
-      setPronounceSubmitted(false);
-      setIsPronounceCorrect(null);
+      setPronunciationStatus('idle');
 
       // Return to flashcard, same word, front side
       setIsFlipped(false);
@@ -951,7 +1029,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     } else if (subMode === 'typing') {
       setSubMode('pronounce');
     }
-  }, [subMode]);
+  }, [subMode, stopRecognition]);
 
   // Handle Delete current vocabulary item
   const handleDeleteCurrentVocab = useCallback(() => {
@@ -1027,65 +1105,130 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     setHasRevealedAnswer(true);
   }, [currentVocab, typingSubmitted, typedInput]);
 
-  // Handle Speech Pronunciation
-  const handleStartRecording = () => {
-    if (ratingSubmitLockRef.current) return;
-    setIsRecording(true);
+  const handleStopRecording = useCallback(() => {
+    stopRecognition();
+    setPronunciationStatus('idle');
     setTranscriptText('');
+  }, [stopRecognition]);
 
-    if (typeof window !== 'undefined') {
-      try {
-        const win = window as unknown as Record<string, unknown>;
-        const SpeechRecognitionClass = (win.SpeechRecognition || win.webkitSpeechRecognition) as unknown as new () => {
-          lang: string;
-          interimResults: boolean;
-          maxAlternatives: number;
-          onresult: (event: { results: { transcript: string }[][] }) => void;
-          onerror: () => void;
-          start: () => void;
-        };
-        if (!SpeechRecognitionClass) throw new Error('SpeechRecognition not supported');
+  // A learning result exists only when Speech Recognition returns a transcript
+  // and evaluatePronunciation confirms it. Technical failures never fall back
+  // to a correct result.
+  const handleStartRecording = () => {
+    if (ratingSubmitLockRef.current || !currentVocab || isRecording) return;
 
-        const recognition = new SpeechRecognitionClass();
-        recognition.lang = 'en-US';
-        recognition.interimResults = false;
-        recognition.maxAlternatives = 1;
+    stopRecognition();
+    setTranscriptText('');
+    setPronunciationStatus('requesting-permission');
 
-        recognition.onresult = (event: { results: { transcript: string }[][] }) => {
-          const result = event.results[0][0].transcript;
-          setTranscriptText(result);
-          setIsRecording(false);
-          setPronounceSubmitted(true);
-          const isCorrect = result.toLowerCase().includes(currentVocab?.word.toLowerCase() || '');
-          setIsPronounceCorrect(isCorrect);
-          setHasRevealedAnswer(true);
-        };
-
-        recognition.onerror = () => {
-          setTimeout(() => {
-            setIsRecording(false);
-            setPronounceSubmitted(true);
-            setIsPronounceCorrect(true);
-            setTranscriptText(currentVocab?.word || '');
-            setHasRevealedAnswer(true);
-          }, 1500);
-        };
-
-        recognition.start();
-        return;
-      } catch {
-        // Fallback simulation
-      }
+    if (typeof window === 'undefined') {
+      setPronunciationStatus('unsupported');
+      return;
     }
 
-    setTimeout(() => {
-      setIsRecording(false);
-      setPronounceSubmitted(true);
-      setIsPronounceCorrect(true);
-      setTranscriptText(currentVocab?.word || '');
-      setHasRevealedAnswer(true);
-    }, 1800);
+    const win = window as unknown as Record<string, unknown>;
+    const SpeechRecognitionClass = (win.SpeechRecognition || win.webkitSpeechRecognition) as
+      | SpeechRecognitionConstructor
+      | undefined;
+
+    if (!SpeechRecognitionClass) {
+      setPronunciationStatus('unsupported');
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognitionClass();
+      const attemptId = recognitionAttemptRef.current + 1;
+      recognitionAttemptRef.current = attemptId;
+      recognitionRef.current = recognition;
+      recognition.lang = 'en-US';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      const isActiveAttempt = () => (
+        isFlashcardMountedRef.current &&
+        recognitionAttemptRef.current === attemptId &&
+        recognitionRef.current === recognition
+      );
+
+      recognition.onstart = () => {
+        if (isActiveAttempt()) setPronunciationStatus('listening');
+      };
+
+      recognition.onresult = (event) => {
+        if (!isActiveAttempt()) return;
+
+        const transcript = event.results[0]?.[0]?.transcript?.trim() || '';
+        if (!transcript) {
+          recognitionRef.current = null;
+          setPronunciationStatus('no-speech');
+          return;
+        }
+
+        setPronunciationStatus('checking');
+        const evaluation = evaluatePronunciation(currentVocab.word, transcript);
+        if (!isActiveAttempt()) return;
+
+        recognitionRef.current = null;
+        setTranscriptText(transcript);
+        setPronunciationStatus(evaluation.isCorrect ? 'correct' : 'incorrect');
+        setHasRevealedAnswer(true);
+      };
+
+      recognition.onerror = (event) => {
+        if (!isActiveAttempt()) return;
+
+        recognitionRef.current = null;
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          setPronunciationStatus('permission-denied');
+        } else if (event.error === 'no-speech') {
+          setPronunciationStatus('no-speech');
+        } else {
+          setPronunciationStatus('recognition-error');
+        }
+      };
+
+      recognition.onend = () => {
+        if (!isActiveAttempt()) return;
+        recognitionRef.current = null;
+        setPronunciationStatus((previous) => (
+          previous === 'requesting-permission' || previous === 'listening'
+            ? 'no-speech'
+            : previous
+        ));
+      };
+
+      recognition.start();
+    } catch {
+      recognitionRef.current = null;
+      setPronunciationStatus('recognition-error');
+    }
   };
+
+  const pronunciationFeedback = useMemo(() => {
+    switch (pronunciationStatus) {
+      case 'correct':
+        return { title: 'Chính xác!', detail: '' };
+      case 'incorrect':
+        return { title: 'Chưa đúng', detail: '' };
+      case 'unsupported':
+        return { title: 'Chưa hỗ trợ', detail: 'Trình duyệt này chưa hỗ trợ nhận diện giọng nói.' };
+      case 'permission-denied':
+        return { title: 'Không thể dùng microphone', detail: 'Hãy cấp quyền microphone và thử lại.' };
+      case 'no-speech':
+        return { title: 'Không nghe thấy giọng nói', detail: 'Hãy nói lại và thử thêm một lần.' };
+      case 'recognition-error':
+        return { title: 'Không thể nhận diện', detail: 'Vui lòng thử lại.' };
+      default:
+        return { title: '', detail: '' };
+    }
+  }, [pronunciationStatus]);
+
+  const isPronunciationTechnicalIssue =
+    pronunciationStatus === 'unsupported' ||
+    pronunciationStatus === 'permission-denied' ||
+    pronunciationStatus === 'no-speech' ||
+    pronunciationStatus === 'recognition-error';
 
   // Keyboard Shortcuts
   useEffect(() => {
@@ -1789,11 +1932,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
                   </button>
                   <p className="text-xs font-bold text-gray-600">Nhấn để nói</p>
                   <button
-                    onClick={() => {
-                      setPronounceSubmitted(true);
-                      setIsPronounceCorrect(true);
-                      setHasRevealedAnswer(true);
-                    }}
+                    onClick={handleNotRemembered}
                     className="text-xs text-gray-400 hover:text-gray-700 font-medium cursor-pointer"
                   >
                     ▷ Bỏ qua chế độ này
@@ -1804,7 +1943,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
               {isRecording && (
                 <div className="space-y-3">
                   <button
-                    onClick={() => setIsRecording(false)}
+                    onClick={handleStopRecording}
                     className="w-20 h-20 mx-auto rounded-full bg-[#E11D48] text-white flex items-center justify-center shadow-lg transition-all animate-pulse cursor-pointer"
                   >
                     <div className="w-6 h-6 bg-white rounded-xs" />
@@ -1830,11 +1969,20 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
                         </>
                       ) : (
                         <>
-                          <X className="w-5 h-5" />
-                          <span>Chưa đúng</span>
+                          {isPronunciationTechnicalIssue ? (
+                            <AlertTriangle className="w-5 h-5" />
+                          ) : (
+                            <X className="w-5 h-5" />
+                          )}
+                          <span>{pronunciationFeedback.title}</span>
                         </>
                       )}
                     </div>
+                    {pronunciationFeedback.detail && (
+                      <p className="text-xs text-gray-600 font-medium">
+                        {pronunciationFeedback.detail}
+                      </p>
+                    )}
                     <p className="text-lg font-black text-gray-900">
                       {currentVocab.word}
                     </p>
@@ -1859,7 +2007,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
                         className="px-4 py-2 rounded-xl bg-white border border-[#FCE7F3] text-gray-700 font-bold text-xs hover:bg-[#FFF1F2] cursor-pointer"
                       >
                         <RotateCcw className="w-3.5 h-3.5 inline mr-1" />
-                        Nói lại
+                        {isPronunciationTechnicalIssue ? 'Thử lại' : 'Nói lại'}
                       </button>
                       <button
                         onClick={handleNotRemembered}
