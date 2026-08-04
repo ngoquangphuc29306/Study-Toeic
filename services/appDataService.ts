@@ -2,14 +2,45 @@ import type { Collection, StudyStats, Topic, Vocabulary } from '../lib/types';
 import { deriveStudyStats } from '../lib/srs/deriveProgress';
 import { getCollections, getTopics, getVocabByTopic } from './vocabService';
 import { getDashboardMetrics, getWeekActivity, type DashboardMetrics } from './dashboardService';
+import { withSessionRetry } from '../lib/supabase/authRetry';
+
+export interface AppDerivedData {
+  dashboardMetrics: DashboardMetrics | null;
+  weekActivity: Array<{ date: string; count: number }> | null;
+  aggregateErrors: {
+    dashboardMetrics?: unknown;
+    weekActivity?: unknown;
+  };
+}
 
 export interface AppDataSnapshot {
   collections: Collection[];
   topics: Topic[];
   vocabularies: Vocabulary[];
   stats: StudyStats;
-  dashboardMetrics: DashboardMetrics;
-  weekActivity: Array<{ date: string; count: number }>;
+  dashboardMetrics: DashboardMetrics | null;
+  weekActivity: Array<{ date: string; count: number }> | null;
+  aggregateErrors: AppDerivedData['aggregateErrors'];
+}
+
+/**
+ * Aggregates are useful but non-critical. Their failure must not prevent the
+ * core vocabulary snapshot from reaching the page.
+ */
+export async function loadAppDerivedData(authenticatedUserId: string): Promise<AppDerivedData> {
+  const [metricsResult, weekResult] = await Promise.allSettled([
+    withSessionRetry(() => getDashboardMetrics(authenticatedUserId)),
+    withSessionRetry(() => getWeekActivity(authenticatedUserId)),
+  ]);
+
+  return {
+    dashboardMetrics: metricsResult.status === 'fulfilled' ? metricsResult.value : null,
+    weekActivity: weekResult.status === 'fulfilled' ? weekResult.value : null,
+    aggregateErrors: {
+      ...(metricsResult.status === 'rejected' ? { dashboardMetrics: metricsResult.reason } : {}),
+      ...(weekResult.status === 'rejected' ? { weekActivity: weekResult.reason } : {}),
+    },
+  };
 }
 
 /**
@@ -17,13 +48,12 @@ export interface AppDataSnapshot {
  * snapshot instead of fetching the same resources independently.
  */
 export async function loadAppDataSnapshot(authenticatedUserId: string): Promise<AppDataSnapshot> {
-  const [collections, topics, vocabularies, dashboardMetrics, weekActivity] = await Promise.all([
-    getCollections(authenticatedUserId),
-    getTopics(undefined, authenticatedUserId),
-    getVocabByTopic('all', authenticatedUserId),
-    getDashboardMetrics(authenticatedUserId),
-    getWeekActivity(authenticatedUserId),
+  const [collections, topics, vocabularies] = await Promise.all([
+    withSessionRetry(() => getCollections(authenticatedUserId)),
+    withSessionRetry(() => getTopics(undefined, authenticatedUserId)),
+    withSessionRetry(() => getVocabByTopic('all', authenticatedUserId)),
   ]);
+  const derived = await loadAppDerivedData(authenticatedUserId);
 
   const composedCollections = collections.map((collection) => {
     const collectionTopicIds = new Set(
@@ -44,7 +74,6 @@ export async function loadAppDataSnapshot(authenticatedUserId: string): Promise<
     topics,
     vocabularies,
     stats: deriveStudyStats(vocabularies),
-    dashboardMetrics,
-    weekActivity,
+    ...derived,
   };
 }

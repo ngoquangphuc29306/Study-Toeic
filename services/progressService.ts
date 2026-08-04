@@ -6,6 +6,7 @@
  */
 
 import { createClient } from '@/lib/supabase/client';
+import { throwIfUnauthorized } from '@/lib/supabase/authRetry';
 import type { LearningStatus } from '@/lib/types';
 
 export interface ProgressRecord {
@@ -94,6 +95,7 @@ export async function getProgressForVocabularies(
     .in('vocabulary_id', vocabularyIds);
 
   if (error) {
+    throwIfUnauthorized(error);
     console.error('getProgressForVocabularies error:', error);
     throw new Error('Không thể tải tiến độ học. Vui lòng thử lại.');
   }

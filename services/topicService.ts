@@ -14,6 +14,7 @@
  */
 
 import { createClient } from '@/lib/supabase/client';
+import { isUnauthorizedError, throwIfUnauthorized } from '@/lib/supabase/authRetry';
 import { Topic } from '@/lib/types';
 import { TopicHasVocabulariesError } from './topicErrors';
 
@@ -49,6 +50,7 @@ export async function getTopics(collectionId?: string, authenticatedUserId?: str
     const { data, error } = await query;
 
     if (error) {
+      throwIfUnauthorized(error);
       console.error('Supabase getTopics error:', error.message);
       throw new Error('Không thể tải học phần. Vui lòng thử lại.');
     }
@@ -74,6 +76,7 @@ export async function getTopics(collectionId?: string, authenticatedUserId?: str
       .in('topic_id', topicIds);
 
     if (vocabError) {
+      throwIfUnauthorized(vocabError);
       console.error('Supabase vocabulary count error:', vocabError.message);
       throw new Error('Unable to load vocabulary counts. Please try again.');
     }
@@ -95,6 +98,7 @@ export async function getTopics(collectionId?: string, authenticatedUserId?: str
       };
     });
   } catch (err) {
+    if (isUnauthorizedError(err)) throw err;
     console.error('getTopics exception:', err);
     throw new Error('Không thể tải học phần. Vui lòng thử lại.');
   }

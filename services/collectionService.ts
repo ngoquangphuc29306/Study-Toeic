@@ -14,6 +14,7 @@
  */
 
 import { createClient } from '@/lib/supabase/client';
+import { isUnauthorizedError, throwIfUnauthorized } from '@/lib/supabase/authRetry';
 import { Collection } from '@/lib/types';
 import { CollectionHasChildrenError } from './collectionErrors';
 
@@ -40,12 +41,14 @@ export async function getCollections(authenticatedUserId?: string): Promise<Coll
       .order('created_at', { ascending: true });
 
     if (error) {
+      throwIfUnauthorized(error);
       console.error('Supabase getCollections error:', error.message);
       throw new Error('Không thể tải bộ sưu tập. Vui lòng thử lại.');
     }
 
     return data || [];
   } catch (err) {
+    if (isUnauthorizedError(err)) throw err;
     console.error('getCollections exception:', err);
     throw new Error('Không thể tải bộ sưu tập. Vui lòng thử lại.');
   }

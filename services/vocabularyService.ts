@@ -14,6 +14,7 @@
  */
 
 import { createClient } from '@/lib/supabase/client';
+import { isUnauthorizedError, throwIfUnauthorized } from '@/lib/supabase/authRetry';
 import { Vocabulary } from '@/lib/types';
 import { VocabularyValidationError } from './vocabularyErrors';
 
@@ -49,12 +50,14 @@ export async function getVocabularies(topicId?: string, authenticatedUserId?: st
     const { data, error } = await query;
 
     if (error) {
+      throwIfUnauthorized(error);
       console.error('Supabase getVocabularies error:', error.message);
       throw new Error('Không thể tải từ vựng. Vui lòng thử lại.');
     }
 
     return data || [];
   } catch (err) {
+    if (isUnauthorizedError(err)) throw err;
     console.error('getVocabularies exception:', err);
     throw new Error('Không thể tải từ vựng. Vui lòng thử lại.');
   }

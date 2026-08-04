@@ -59,7 +59,12 @@ import {
 import { CollectionHasChildrenError } from '../../services/collectionErrors';
 import { TopicHasVocabulariesError } from '../../services/topicErrors';
 import type { RatingResult } from '../../services/progressService';
-import { loadAppDataSnapshot, type AppDataSnapshot } from '../../services/appDataService';
+import {
+  loadAppDataSnapshot,
+  loadAppDerivedData,
+  type AppDataSnapshot,
+  type AppDerivedData,
+} from '../../services/appDataService';
 import { createClient } from '@/lib/supabase/client';
 import { clearStudySession } from '@/lib/session/storage';
 import { buildLoginUrl } from '@/lib/auth/safe-redirect';
@@ -67,17 +72,17 @@ import {
   exportVocabulariesAsCSV,
   exportBackupAsJSON
 } from '../../services/importExportService';
-import {
-  getDashboardMetrics,
-  getWeekActivity,
-  type DashboardMetrics
-} from '../../services/dashboardService';
 import { createRequestCoordinator } from '../../lib/data/requestCoordinator';
 import { isCurrentRequest } from '../../lib/data/requestGeneration';
+import {
+  isAuthRetryExhaustedError,
+  isAuthSessionExpiredError,
+} from '@/lib/supabase/authRetry';
 import { applyRatingResult } from '../../lib/srs/applyRatingResult';
 import { deriveStudyStats, mergeVocabularyProgressIntoMetrics } from '../../lib/srs/deriveProgress';
 
 import { Collection, FlashcardInitialFilter, Topic, Vocabulary, StudyStats, LearningStatus } from '../../lib/types';
+import type { DashboardMetrics } from '../../services/dashboardService';
 
 type CreateModalMode = 'collection' | 'section';
 type VocabularyUpdate = Partial<
@@ -102,13 +107,8 @@ type DataStatus = 'idle' | 'loading' | 'success' | 'error';
 const DATA_STALE_MS = 5 * 60 * 1000;
 const RESUME_DEBOUNCE_MS = 750;
 
-interface DerivedDataSnapshot {
-  dashboardMetrics: DashboardMetrics;
-  weekActivity: Array<{ date: string; count: number }>;
-}
-
 const appDataCoordinator = createRequestCoordinator<AppDataSnapshot>();
-const derivedDataCoordinator = createRequestCoordinator<DerivedDataSnapshot>();
+const derivedDataCoordinator = createRequestCoordinator<AppDerivedData>();
 
 export default function AppPage() {
   const router = useRouter();
@@ -168,12 +168,23 @@ export default function AppPage() {
   const ratingDerivedNeedsRetryRef = useRef(false);
   const ratingDerivedWarningShownRef = useRef(false);
   const ratingDerivedRefreshRef = useRef<() => void>(() => undefined);
+  const authFailureHandlerRef = useRef<(userId: string) => void>(() => undefined);
+  const authRetryBlockedRef = useRef(false);
   const sessionCheckResolvedRef = useRef(false);
   const vocabulariesRef = useRef<Vocabulary[]>([]);
   const localDataRevisionRef = useRef(0);
 
-  // Helper to re-fetch data
-  // RC2 Fix: Used only for mutations (add/update/delete), NOT for initial load
+  const scheduleDerivedRetry = useCallback(() => {
+    if (ratingDerivedRetryTimerRef.current || !ratingDerivedNeedsRetryRef.current) return;
+
+    ratingDerivedRetryAttemptRef.current = 1;
+    ratingDerivedRetryTimerRef.current = setTimeout(() => {
+      ratingDerivedRetryTimerRef.current = null;
+      void ratingDerivedRefreshRef.current();
+    }, 3000);
+  }, []);
+
+  // Shared app-data refresh for initial load, resume, and mutations.
   const refreshAppData = useCallback(async () => {
     const currentUserId = authUserIdRef.current;
     if (authStatusRef.current !== 'authenticated' || !currentUserId) return;
@@ -193,6 +204,10 @@ export default function AppPage() {
           () => loadAppDataSnapshot(currentUserId)
         );
 
+        const aggregateAuthError = Object.values(snapshot.aggregateErrors)
+          .find((error) => isAuthSessionExpiredError(error) || isAuthRetryExhaustedError(error));
+        if (aggregateAuthError) throw aggregateAuthError;
+
         if (!isCurrentRequest(
           { userId: currentUserId, generation },
           { userId: authUserIdRef.current || '', generation: loadGenerationRef.current }
@@ -208,10 +223,17 @@ export default function AppPage() {
         vocabulariesRef.current = effectiveVocabularies;
         setVocabularies(effectiveVocabularies);
         setStats(hasLocalChanges ? deriveStudyStats(effectiveVocabularies) : snapshot.stats);
-        setDashboardMetrics(
-          mergeVocabularyProgressIntoMetrics(snapshot.dashboardMetrics, effectiveVocabularies)
-        );
-        setWeekActivity(snapshot.weekActivity);
+        if (snapshot.dashboardMetrics) {
+          setDashboardMetrics(
+            mergeVocabularyProgressIntoMetrics(snapshot.dashboardMetrics, effectiveVocabularies)
+          );
+        }
+        if (snapshot.weekActivity) {
+          setWeekActivity(snapshot.weekActivity);
+        }
+        if (Object.keys(snapshot.aggregateErrors).length > 0) {
+          console.warn('Core EasyTOEIC data loaded, but some aggregate data is unavailable.', snapshot.aggregateErrors);
+        }
         hasSuccessfulDataRef.current = true;
         dataStatusRef.current = 'success';
         setDataStatus('success');
@@ -220,15 +242,34 @@ export default function AppPage() {
         lastDataLoadedAtRef.current = loadedAt;
         setLastDataLoadedAt(loadedAt);
         setIsLoadingDashboardMetrics(false);
-        ratingDerivedNeedsRetryRef.current = false;
-        ratingDerivedRetryAttemptRef.current = 0;
-        ratingDerivedWarningShownRef.current = false;
+        const hasAggregateErrors = Object.keys(snapshot.aggregateErrors).length > 0;
+        ratingDerivedNeedsRetryRef.current = hasAggregateErrors;
+        if (hasAggregateErrors) {
+          scheduleDerivedRetry();
+        } else {
+          ratingDerivedRetryAttemptRef.current = 0;
+          ratingDerivedWarningShownRef.current = false;
+        }
       } catch (err) {
         console.error('Error loading EasyTOEIC data:', err);
         if (!isCurrentRequest(
           { userId: currentUserId, generation },
           { userId: authUserIdRef.current || '', generation: loadGenerationRef.current }
         ) || authStatusRef.current !== 'authenticated') return;
+
+        if (isAuthSessionExpiredError(err)) {
+          authFailureHandlerRef.current(currentUserId);
+          return;
+        }
+
+        if (isAuthRetryExhaustedError(err)) {
+          authRetryBlockedRef.current = true;
+          dataStatusRef.current = 'error';
+          setDataStatus('error');
+          setDataError(err.message);
+          setIsLoadingDashboardMetrics(false);
+          return;
+        }
 
         dataStatusRef.current = 'error';
         setDataStatus('error');
@@ -239,7 +280,7 @@ export default function AppPage() {
       }
     })();
     return request;
-  }, []);
+  }, [scheduleDerivedRetry]);
 
   // Phase 2C Fix: Auth state change listener
   // Phase 6 Fix: Track user identity to detect actual user switches
@@ -508,7 +549,21 @@ export default function AppPage() {
     ratingDerivedNeedsRetryRef.current = false;
     ratingDerivedRetryAttemptRef.current = 0;
     ratingDerivedWarningShownRef.current = false;
+    authRetryBlockedRef.current = false;
   }, []);
+
+  const handleSessionExpired = useCallback((outgoingUserId: string) => {
+    clearAppData(outgoingUserId);
+    authStatusRef.current = 'unauthenticated';
+    authUserIdRef.current = null;
+    setAuthUserId(null);
+    setAuthStatus('unauthenticated');
+    router.replace(buildLoginUrl('/app'));
+  }, [clearAppData, router]);
+
+  useEffect(() => {
+    authFailureHandlerRef.current = handleSessionExpired;
+  }, [handleSessionExpired]);
 
   const scheduleResumeRefresh = useCallback(() => {
     if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
@@ -524,13 +579,20 @@ export default function AppPage() {
       ) return;
 
       const isStale = !lastDataLoadedAtRef.current || Date.now() - lastDataLoadedAtRef.current > DATA_STALE_MS;
-      const shouldRefreshApp = dataStatusRef.current === 'error' || dataStatusRef.current === 'idle' || isStale;
+      const shouldRefreshApp = !authRetryBlockedRef.current && (
+        dataStatusRef.current === 'error' || dataStatusRef.current === 'idle' || isStale
+      );
       if (shouldRefreshApp) {
         void refreshAppData();
       } else if (ratingDerivedNeedsRetryRef.current) {
         ratingDerivedRefreshRef.current();
       }
     }, RESUME_DEBOUNCE_MS);
+  }, [refreshAppData]);
+
+  const handleManualDataRetry = useCallback(() => {
+    authRetryBlockedRef.current = false;
+    void refreshAppData();
   }, [refreshAppData]);
 
   const handleAuthSession = useCallback((event: AuthChangeEvent, session: { user?: { id: string } } | null) => {
@@ -563,6 +625,7 @@ export default function AppPage() {
     previousUserIdRef.current = currentUserId;
     authUserIdRef.current = currentUserId;
     authStatusRef.current = 'authenticated';
+    authRetryBlockedRef.current = false;
     setAuthUserId(currentUserId);
     setAuthStatus('authenticated');
 
@@ -630,37 +693,66 @@ export default function AppPage() {
     if (authStatusRef.current !== 'authenticated' || !currentUserId) return;
 
     const generation = loadGenerationRef.current;
-    const request = derivedDataCoordinator.getOrCreate(currentUserId, async () => {
-      const [dashboardMetrics, weekActivity] = await Promise.all([
-        getDashboardMetrics(currentUserId),
-        getWeekActivity(currentUserId),
-      ]);
-      return { dashboardMetrics, weekActivity };
-    });
+    const request = derivedDataCoordinator.getOrCreate(
+      currentUserId,
+      () => loadAppDerivedData(currentUserId)
+    );
 
     try {
       const snapshot = await request;
+      const aggregateAuthError = Object.values(snapshot.aggregateErrors)
+        .find((error) => isAuthSessionExpiredError(error) || isAuthRetryExhaustedError(error));
+      if (aggregateAuthError) throw aggregateAuthError;
       if (!isCurrentRequest(
         { userId: currentUserId, generation },
         { userId: authUserIdRef.current || '', generation: loadGenerationRef.current }
       ) || authStatusRef.current !== 'authenticated') return;
 
-      setDashboardMetrics(
-        mergeVocabularyProgressIntoMetrics(snapshot.dashboardMetrics, vocabulariesRef.current)
-      );
-      setWeekActivity(snapshot.weekActivity);
-      ratingDerivedNeedsRetryRef.current = false;
-      ratingDerivedRetryAttemptRef.current = 0;
-      ratingDerivedWarningShownRef.current = false;
-      if (ratingDerivedRetryTimerRef.current) {
-        clearTimeout(ratingDerivedRetryTimerRef.current);
-        ratingDerivedRetryTimerRef.current = null;
+      if (snapshot.dashboardMetrics) {
+        setDashboardMetrics(
+          mergeVocabularyProgressIntoMetrics(snapshot.dashboardMetrics, vocabulariesRef.current)
+        );
+      }
+      if (snapshot.weekActivity) {
+        setWeekActivity(snapshot.weekActivity);
+      }
+
+      const hasAggregateErrors = Object.keys(snapshot.aggregateErrors).length > 0;
+      ratingDerivedNeedsRetryRef.current = hasAggregateErrors;
+      if (hasAggregateErrors) {
+        if (!ratingDerivedWarningShownRef.current) {
+          ratingDerivedWarningShownRef.current = true;
+          showToast('Một số thống kê chưa cập nhật được. Ứng dụng sẽ tự thử lại.', 'info');
+        }
+        scheduleDerivedRetry();
+      } else {
+        ratingDerivedRetryAttemptRef.current = 0;
+        ratingDerivedWarningShownRef.current = false;
+        if (ratingDerivedRetryTimerRef.current) {
+          clearTimeout(ratingDerivedRetryTimerRef.current);
+          ratingDerivedRetryTimerRef.current = null;
+        }
       }
     } catch (error) {
       if (!isCurrentRequest(
         { userId: currentUserId, generation },
         { userId: authUserIdRef.current || '', generation: loadGenerationRef.current }
       ) || authStatusRef.current !== 'authenticated') return;
+
+      if (isAuthSessionExpiredError(error)) {
+        authFailureHandlerRef.current(currentUserId);
+        return;
+      }
+
+      if (isAuthRetryExhaustedError(error)) {
+        ratingDerivedNeedsRetryRef.current = false;
+        console.warn('Derived data refresh stopped after a second 401.');
+        if (!ratingDerivedWarningShownRef.current) {
+          ratingDerivedWarningShownRef.current = true;
+          showToast('Không thể xác thực lại thống kê. Vui lòng thử lại sau.', 'info');
+        }
+        return;
+      }
 
       ratingDerivedNeedsRetryRef.current = true;
       console.warn('Some derived rating data could not be refreshed. Keeping the last successful snapshot.', error);
@@ -671,15 +763,9 @@ export default function AppPage() {
       }
 
       // Retry once in the background. Further retries happen on focus/resume.
-      if (ratingDerivedRetryAttemptRef.current === 0 && !ratingDerivedRetryTimerRef.current) {
-        ratingDerivedRetryAttemptRef.current = 1;
-        ratingDerivedRetryTimerRef.current = setTimeout(() => {
-          ratingDerivedRetryTimerRef.current = null;
-          void ratingDerivedRefreshRef.current();
-        }, 3000);
-      }
+      scheduleDerivedRetry();
     }
-  }, [showToast]);
+  }, [scheduleDerivedRetry, showToast]);
 
   useEffect(() => {
     ratingDerivedRefreshRef.current = () => {
@@ -1056,7 +1142,7 @@ export default function AppPage() {
           <p className="mt-2 text-sm text-gray-500">{dataError || 'Vui lòng thử lại.'}</p>
           <button
             type="button"
-            onClick={() => void refreshAppData()}
+            onClick={handleManualDataRetry}
             className="mt-4 rounded-xl bg-[#F472B6] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#EC4899]"
           >
             Thử lại
@@ -1085,7 +1171,7 @@ export default function AppPage() {
             <span>Dữ liệu hiện tại có thể đã cũ. {dataError}</span>
             <button
               type="button"
-              onClick={() => void refreshAppData()}
+              onClick={handleManualDataRetry}
               className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-bold text-amber-900 hover:bg-amber-100"
             >
               Thử lại
