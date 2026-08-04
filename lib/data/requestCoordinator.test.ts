@@ -17,6 +17,7 @@ describe('request coordinator', () => {
     const second = coordinator.getOrCreate('user-a', factory);
 
     expect(second).toBe(first);
+    await Promise.resolve();
     expect(calls).toBe(1);
 
     resolveRequest?.(42);
