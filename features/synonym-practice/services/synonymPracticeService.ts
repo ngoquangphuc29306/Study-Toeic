@@ -8,7 +8,17 @@ import type {
 } from '../types';
 import { parseSynonyms } from '../utils/parseSynonyms';
 import { normalizeSynonym } from '../utils/normalizeSynonym';
-import { shuffle } from '../utils/shuffle';
+import { seededShuffle } from '../utils/shuffle';
+
+function uniqueLabels(labels: string[]): string[] {
+  const seen = new Set<string>();
+  return labels.filter((label) => {
+    const normalized = normalizeSynonym(label);
+    if (!normalized || seen.has(normalized)) return false;
+    seen.add(normalized);
+    return true;
+  });
+}
 
 export function mapVocabularyToSynonymItems(
   vocabularies: Vocabulary[],
@@ -65,18 +75,19 @@ function getDistractorWords(target: SynonymPracticeItem, pool: SynonymPracticeIt
       all.findIndex((candidate) => normalizeSynonym(candidate.word) === normalized) === index;
   });
 
-  return shuffle(candidates).slice(0, count).map((item) => item.word);
+  return seededShuffle(candidates, `${target.vocabularyId}:distractors`).slice(0, count).map((item) => item.word);
 }
 
 export function buildMultipleChoiceQuestion(
   target: SynonymPracticeItem,
   pool: SynonymPracticeItem[]
 ): MultipleChoiceQuestion | null {
-  const correct = shuffle(target.synonyms)[0];
+  const correct = seededShuffle(target.synonyms, `${target.vocabularyId}:correct`)[0];
   const distractors = getDistractorWords(target, pool, 3);
-  if (!correct || distractors.length < 3) return null;
+  const labels = uniqueLabels([correct || '', ...distractors]);
+  if (!correct || labels.length < 4) return null;
 
-  const options = shuffle([correct, ...distractors]).map((label, index) => ({
+  const options = seededShuffle(labels, `${target.vocabularyId}:options`).map((label, index) => ({
     id: `${target.vocabularyId}-option-${index}`,
     label,
     isCorrect: normalizeSynonym(label) === normalizeSynonym(correct),
@@ -94,7 +105,8 @@ export function buildMultipleChoiceQuestions(
   pool: SynonymPracticeItem[],
   count: number
 ): MultipleChoiceQuestion[] {
-  return shuffle(pool).map((target) => buildMultipleChoiceQuestion(target, pool)).filter(
+  const poolSeed = pool.map((item) => item.vocabularyId).join('|');
+  return seededShuffle(pool, `multiple-choice:${poolSeed}:${count}`).map((target) => buildMultipleChoiceQuestion(target, pool)).filter(
     (question): question is MultipleChoiceQuestion => question !== null
   ).slice(0, count);
 }
@@ -103,30 +115,34 @@ export function buildMatchingQuestion(
   pool: SynonymPracticeItem[],
   count: number
 ): MatchingQuestion | null {
-  const items = shuffle(pool).slice(0, Math.min(8, Math.max(4, count)));
+  const poolSeed = pool.map((item) => item.vocabularyId).join('|');
+  const items = seededShuffle(pool, `matching:${poolSeed}:${count}`).slice(0, Math.min(8, Math.max(4, count)));
   if (items.length < 2) return null;
 
   const usedSynonyms = new Set<string>();
   const pairs: MatchingPair[] = items.flatMap((item) => {
-    const synonym = shuffle(item.synonyms).find((candidate) => !usedSynonyms.has(candidate));
+    const synonym = seededShuffle(item.synonyms, `${item.vocabularyId}:matching-synonyms`)
+      .find((candidate) => !usedSynonyms.has(normalizeSynonym(candidate)));
     if (!synonym) return [];
-    usedSynonyms.add(synonym);
+    usedSynonyms.add(normalizeSynonym(synonym));
     return [{ id: `${item.vocabularyId}-pair`, item, synonym }];
   });
 
-  return pairs.length >= 2 ? { id: `matching-${Date.now()}`, pairs } : null;
+  return pairs.length >= 2 ? { id: `matching-${pairs.map((pair) => pair.id).join('-')}`, pairs } : null;
 }
 
 export function buildSelectAllQuestion(
   target: SynonymPracticeItem,
   pool: SynonymPracticeItem[]
 ): SelectAllQuestion | null {
-  const correctAnswers = [...target.synonyms];
+  const correctAnswers = uniqueLabels(target.synonyms);
   if (correctAnswers.length > 8) return null;
   const distractors = getDistractorWords(target, pool, Math.max(0, 8 - correctAnswers.length));
-  const labels = shuffle([...correctAnswers, ...distractors]).slice(0, 8);
+  const labels = seededShuffle(uniqueLabels([...correctAnswers, ...distractors]), `${target.vocabularyId}:select-all`).slice(0, 8);
 
   if (labels.length < 6 || correctAnswers.length === 0) return null;
+
+  const correctSet = new Set(correctAnswers.map(normalizeSynonym));
 
   return {
     id: target.vocabularyId,
@@ -134,7 +150,7 @@ export function buildSelectAllQuestion(
     options: labels.map((label, index) => ({
       id: `${target.vocabularyId}-select-${index}`,
       label,
-      isCorrect: correctAnswers.includes(label),
+      isCorrect: correctSet.has(normalizeSynonym(label)),
     })),
     correctAnswers,
   };
@@ -144,7 +160,8 @@ export function buildSelectAllQuestions(
   pool: SynonymPracticeItem[],
   count: number
 ): SelectAllQuestion[] {
-  return shuffle(pool).map((target) => buildSelectAllQuestion(target, pool)).filter(
+  const poolSeed = pool.map((item) => item.vocabularyId).join('|');
+  return seededShuffle(pool, `select-all:${poolSeed}:${count}`).map((target) => buildSelectAllQuestion(target, pool)).filter(
     (question): question is SelectAllQuestion => question !== null
   ).slice(0, count);
 }

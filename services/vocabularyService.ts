@@ -25,15 +25,16 @@ import { VocabularyValidationError } from './vocabularyErrors';
  * @param topicId - Optional topic filter ('all' loads all user vocabularies)
  * @returns Array of Vocabularies from Supabase
  */
-export async function getVocabularies(topicId?: string): Promise<Vocabulary[]> {
+export async function getVocabularies(topicId?: string, authenticatedUserId?: string): Promise<Vocabulary[]> {
   const supabase = createClient();
 
   try {
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      console.error('Authentication required for getVocabularies');
-      throw new Error('AUTH_REQUIRED');
+    if (!authenticatedUserId) {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        console.error('Authentication required for getVocabularies');
+        throw new Error('AUTH_REQUIRED');
+      }
     }
 
     let query = supabase

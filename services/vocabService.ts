@@ -103,9 +103,9 @@ function getSupabase() {
  * as topics and vocabularies, avoiding a second nested fetch during restore.
  * Phase 2E: Collections, Topics, and Vocabularies in Supabase
  */
-export async function getCollections(): Promise<Collection[]> {
+export async function getCollections(authenticatedUserId?: string): Promise<Collection[]> {
   try {
-    return await getCollectionsFromSupabase();
+    return await getCollectionsFromSupabase(authenticatedUserId);
   } catch (err) {
     console.error('getCollections error:', err);
     throw err;
@@ -164,9 +164,9 @@ export async function deleteCollection(colId: string): Promise<void> {
 
 // --- TOPIC / SECTION METHODS (Phase 2D: Migrated to Supabase) ---
 
-export async function getTopics(collectionId?: string): Promise<Topic[]> {
+export async function getTopics(collectionId?: string, authenticatedUserId?: string): Promise<Topic[]> {
   try {
-    return await getTopicsFromSupabase(collectionId);
+    return await getTopicsFromSupabase(collectionId, authenticatedUserId);
   } catch (err) {
     console.error('getTopics error:', err);
     throw err;
@@ -206,11 +206,11 @@ export async function deleteTopic(topicId: string): Promise<void> {
  * Get vocabularies from Supabase with merged study/SRS progress from Supabase
  * Phase 5: Vocabulary domain data from Supabase, progress from Supabase user_vocab_progress
  */
-export async function getVocabByTopic(topicId?: string): Promise<Vocabulary[]> {
-  await getAuthUserId();
+export async function getVocabByTopic(topicId?: string, authenticatedUserId?: string): Promise<Vocabulary[]> {
+  await (authenticatedUserId ? Promise.resolve(authenticatedUserId) : getAuthUserId());
   try {
     // Load vocabularies from Supabase
-    const supabaseVocabs = await getVocabulariesFromSupabase(topicId);
+    const supabaseVocabs = await getVocabulariesFromSupabase(topicId, authenticatedUserId);
 
     if (supabaseVocabs.length === 0) {
       return [];

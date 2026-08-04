@@ -52,6 +52,8 @@ import { motionTokens } from '../lib/animation/motionTokens';
 import { usePrefersReducedMotion } from '../hooks/use-prefers-reduced-motion';
 import { isVocabularyDue } from '../features/review-reminder';
 import { evaluatePronunciation } from '../lib/pronunciation/evaluatePronunciation';
+import { seededShuffle } from '../lib/quiz/seededShuffle';
+import { uniqueQuizLabels } from '../lib/quiz/labels';
 
 type PronunciationStatus =
   | 'idle'
@@ -113,22 +115,6 @@ interface FlashcardModeProps {
 }
 
 type StudySubMode = 'flashcard' | 'quiz' | 'typing' | 'pronounce';
-
-// Pure deterministic shuffle helper using seed
-function seededShuffle<T>(array: T[], seed: string): T[] {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = (hash << 5) - hash + seed.charCodeAt(i);
-    hash |= 0;
-  }
-  const result = [...array];
-  for (let i = result.length - 1; i > 0; i--) {
-    hash = (hash * 9301 + 49297) % 233280;
-    const j = Math.abs(hash) % (i + 1);
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-  return result;
-}
 
 export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   vocabularies,
@@ -611,7 +597,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       .map((v) => v.meaning);
 
     const seededDistractors = seededShuffle(distractors, currentVocab.id + '_distractors').slice(0, 3);
-    const choices = [currentVocab.meaning, ...seededDistractors];
+    const choices = uniqueQuizLabels([currentVocab.meaning, ...seededDistractors]);
     const shuffled = seededShuffle(choices, currentVocab.id + '_choices');
 
     return {

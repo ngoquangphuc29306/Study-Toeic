@@ -1,7 +1,7 @@
 import React from 'react';
 import { ArrowRight, CheckCircle2, Link2, XCircle } from 'lucide-react';
 import type { MatchingQuestion, SynonymPracticeResult } from '../../types';
-import { shuffle } from '../../utils/shuffle';
+import { seededShuffle } from '../../utils/shuffle';
 import { useSynonymPracticeSession } from '../../hooks/useSynonymPracticeSession';
 import { SynonymSessionHeader } from '../SynonymSessionHeader';
 
@@ -9,7 +9,7 @@ interface MatchingSessionProps { question: MatchingQuestion; onComplete: (result
 
 export function MatchingSession({ question, onComplete, onExit }: MatchingSessionProps) {
   const session = useSynonymPracticeSession({ mode: 'matching', totalQuestions: question.pairs.length, onComplete });
-  const [shuffledPairs] = React.useState(() => shuffle(question.pairs));
+  const [shuffledPairs] = React.useState(() => seededShuffle(question.pairs, `${question.id}:display`));
   const [leftId, setLeftId] = React.useState<string | null>(null);
   const [matched, setMatched] = React.useState<string[]>([]);
   const [wrongId, setWrongId] = React.useState<string | null>(null);

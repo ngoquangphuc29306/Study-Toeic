@@ -43,13 +43,15 @@ export interface RecentActivity {
  * Get dashboard metrics for current authenticated user
  * All queries are user-scoped through Supabase RLS
  */
-export async function getDashboardMetrics(): Promise<DashboardMetrics> {
+export async function getDashboardMetrics(authenticatedUserId?: string): Promise<DashboardMetrics> {
   const supabase = createClient();
 
   // Verify authentication
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) {
-    throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+  if (!authenticatedUserId) {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+    }
   }
 
   const now = new Date();
@@ -240,13 +242,15 @@ export async function getRecentActivity(limit: number = 10): Promise<RecentActiv
  * Get study dates for week visualization
  * Returns array of { date: 'YYYY-MM-DD', count: number } for last 7 days
  */
-export async function getWeekActivity(): Promise<Array<{ date: string; count: number }>> {
+export async function getWeekActivity(authenticatedUserId?: string): Promise<Array<{ date: string; count: number }>> {
   const supabase = createClient();
 
   // Verify authentication
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) {
-    throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+  if (!authenticatedUserId) {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+    }
   }
 
   const today = new Date();

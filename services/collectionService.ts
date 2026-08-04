@@ -22,15 +22,16 @@ import { CollectionHasChildrenError } from './collectionErrors';
  * Get all collections for the authenticated user
  * RLS enforces user_id = auth.uid()
  */
-export async function getCollections(): Promise<Collection[]> {
+export async function getCollections(authenticatedUserId?: string): Promise<Collection[]> {
   const supabase = createClient();
 
   try {
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      console.error('Authentication required for getCollections');
-      throw new Error('AUTH_REQUIRED');
+    if (!authenticatedUserId) {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        console.error('Authentication required for getCollections');
+        throw new Error('AUTH_REQUIRED');
+      }
     }
 
     const { data, error } = await supabase
