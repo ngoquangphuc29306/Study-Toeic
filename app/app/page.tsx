@@ -63,6 +63,7 @@ import {
 import { CollectionHasChildrenError } from '../../services/collectionErrors';
 import { TopicHasVocabulariesError } from '../../services/topicErrors';
 import { VocabularyValidationError } from '../../services/vocabularyErrors';
+import type { RatingResult } from '../../services/progressService';
 import { createClient } from '@/lib/supabase/client';
 import { clearStudySession } from '@/lib/session/storage';
 import { buildLoginUrl } from '@/lib/auth/safe-redirect';
@@ -156,6 +157,8 @@ export default function AppPage() {
   const loadGenerationRef = useRef(0);
   const loadPromiseRef = useRef<Promise<void> | null>(null);
   const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ratingDerivedRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ratingDerivedRetryAttemptRef = useRef(0);
   const sessionCheckResolvedRef = useRef(false);
 
   // Helper to re-fetch data
@@ -605,30 +608,79 @@ export default function AppPage() {
     };
   }, [scheduleResumeRefresh]);
 
-  // Handle Updates & Actions
-  // Phase 5: handleUpdateProgress now throws errors for FlashcardMode to handle
-  const handleUpdateProgress = async (vocabId: string, status: LearningStatus, rating?: SrsRating): Promise<void> => {
-    await updateUserProgress(vocabId, status, rating);
+  // Rating has two independent phases: the RPC mutation is critical for the
+  // study session; aggregates are eventually consistent and must never reject it.
+  const refreshRatingDerivedData = useCallback(() => {
+    void (async () => {
+      const [vocabulariesResult, statsResult, metricsResult, weekActivityResult] = await Promise.allSettled([
+        getVocabByTopic('all'),
+        getStudyStats(),
+        getDashboardMetrics(),
+        getWeekActivity(),
+      ]);
 
-    // Batch Fix Phase 10: Refetch affected vocabulary progress + all aggregates
-    // Progress update affects: single vocabulary progress, stats (status counts), metrics (streak/today), weekActivity (review log)
-    // Cannot use optimistic update per task constraints - must refetch after server confirmation
+      if (authStatusRef.current !== 'authenticated') return;
 
-    // Refetch the updated vocabulary's progress by reloading all vocabularies for current topic
-    // This is necessary because progress fields are joined data from user_vocab_progress table
-    const updatedVocabs = await getVocabByTopic('all');
-    setVocabularies(updatedVocabs);
+      if (vocabulariesResult.status === 'fulfilled') setVocabularies(vocabulariesResult.value);
+      if (statsResult.status === 'fulfilled') setStats(statsResult.value);
+      if (metricsResult.status === 'fulfilled') setDashboardMetrics(metricsResult.value);
+      if (weekActivityResult.status === 'fulfilled') setWeekActivity(weekActivityResult.value);
 
-    // Refetch all three aggregates that depend on progress
-    const [updatedStats, updatedMetrics, updatedWeekActivity] = await Promise.all([
-      getStudyStats(),
-      getDashboardMetrics(),
-      getWeekActivity(),
-    ]);
-    setStats(updatedStats);
-    setDashboardMetrics(updatedMetrics);
-    setWeekActivity(updatedWeekActivity);
-  };
+      const hasFailure = [vocabulariesResult, statsResult, metricsResult, weekActivityResult]
+        .some((result) => result.status === 'rejected');
+
+      if (!hasFailure) {
+        ratingDerivedRetryAttemptRef.current = 0;
+        return;
+      }
+
+      console.warn('Some derived rating data could not be refreshed. Keeping the last successful snapshot.');
+      showToast('Đã lưu đánh giá. Một số thống kê sẽ được cập nhật lại sau.', 'info');
+
+      // Retry once in the background. Further retries happen through the
+      // existing focus/resume path, so an offline device cannot loop requests.
+      if (ratingDerivedRetryAttemptRef.current === 0 && !ratingDerivedRetryTimerRef.current) {
+        ratingDerivedRetryAttemptRef.current = 1;
+        ratingDerivedRetryTimerRef.current = setTimeout(() => {
+          ratingDerivedRetryTimerRef.current = null;
+          void refreshAppData();
+        }, 3000);
+      }
+    })();
+  }, [refreshAppData, showToast]);
+
+  useEffect(() => {
+    return () => {
+      if (ratingDerivedRetryTimerRef.current) clearTimeout(ratingDerivedRetryTimerRef.current);
+    };
+  }, []);
+
+  // The RPC result is the immediate progress source of truth. Derived refresh
+  // runs separately and intentionally cannot reject this mutation promise.
+  const handleUpdateProgress = useCallback(async (
+    vocabId: string,
+    status: LearningStatus,
+    rating?: SrsRating,
+    idempotencyKey?: string
+  ): Promise<RatingResult> => {
+    const ratingResult = await updateUserProgress(vocabId, status, rating, idempotencyKey);
+
+    setVocabularies((previous) => previous.map((vocabulary) => (
+      vocabulary.id === vocabId
+        ? {
+            ...vocabulary,
+            status: ratingResult.new_status,
+            next_review_at: ratingResult.next_review_at,
+            interval_hours: ratingResult.interval_hours,
+            review_count: ratingResult.review_count,
+            again_count: ratingResult.again_count,
+          }
+        : vocabulary
+    )));
+
+    refreshRatingDerivedData();
+    return ratingResult;
+  }, [refreshRatingDerivedData]);
 
   const handleAddCollection = async (newCol: Omit<Collection, 'id'>) => {
     try {

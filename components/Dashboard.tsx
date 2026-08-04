@@ -320,7 +320,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     id: v.id,
     word: v.word,
     meaning: v.meaning,
-    due_in: formatTimeRemaining(v.next_review_at, nowMs),
+    due_in: formatTimeRemaining(v.next_review_at ?? undefined, nowMs),
   }));
 
   const realMastered = vocabularies

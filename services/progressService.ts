@@ -33,6 +33,20 @@ export interface RatingResult {
 
 export type SrsRating = 'again' | 'hard' | 'good' | 'easy' | 'mastered';
 
+function isRatingResult(data: unknown): data is RatingResult {
+  if (!data || typeof data !== 'object') return false;
+
+  const result = data as Record<string, unknown>;
+  return (
+    (result.status === 'success' || result.status === 'already_processed') &&
+    (result.new_status === 'new' || result.new_status === 'learning' || result.new_status === 'mastered') &&
+    (typeof result.next_review_at === 'string' || result.next_review_at === null) &&
+    typeof result.interval_hours === 'number' &&
+    typeof result.again_count === 'number' &&
+    typeof result.review_count === 'number'
+  );
+}
+
 /**
  * Get progress for multiple vocabularies
  * Returns map of vocabulary_id -> progress
@@ -126,11 +140,11 @@ export async function submitVocabularyRating(
     throw new Error('Không thể lưu kết quả học. Vui lòng thử lại.');
   }
 
-  if (!data) {
+  if (!isRatingResult(data)) {
     throw new Error('Không nhận được phản hồi từ máy chủ. Vui lòng thử lại.');
   }
 
-  return data as RatingResult;
+  return data;
 }
 
 /**

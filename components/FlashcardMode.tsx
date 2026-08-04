@@ -28,7 +28,16 @@ import {
 import confetti from 'canvas-confetti';
 import { FlashcardInitialFilter, Vocabulary, Topic } from '../lib/types';
 import { SrsRating } from '../services/vocabService';
-import { saveStudySession, loadStudySession, clearStudySession } from '../lib/session/storage';
+import type { RatingResult } from '../services/progressService';
+import {
+  saveStudySession,
+  loadStudySession,
+  clearStudySession,
+  savePendingRatingAction,
+  loadPendingRatingAction,
+  clearPendingRatingAction,
+  type PendingRatingAction,
+} from '../lib/session/storage';
 import { useToast } from '../contexts/ToastContext';
 import { applyRatingToQueue } from '../lib/session/queueTransition';
 import type { StudySessionSnapshot } from '../lib/session/types';
@@ -50,7 +59,12 @@ interface FlashcardModeProps {
   topics: Topic[];
   selectedTopicId: string;
   initialStatus?: FlashcardInitialFilter;
-  onUpdateProgress: (vocabId: string, status: 'learning' | 'mastered', rating?: SrsRating) => Promise<void>;
+  onUpdateProgress: (
+    vocabId: string,
+    status: 'learning' | 'mastered',
+    rating?: SrsRating,
+    idempotencyKey?: string
+  ) => Promise<RatingResult>;
   onBackToDashboard: () => void;
   onSwitchToSynonyms: (topicId: string) => void;
   onStudySessionCompleted?: () => void;
@@ -438,6 +452,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
   // Use safe index directly, sync state in next render to avoid cascading updates
   const currentVocab = activeVocabs[safeIndex];
+  const currentVocabId = currentVocab?.id;
   const audioWord = currentVocab?.word;
   const audioVocabularyId = currentVocab?.id;
 
@@ -731,19 +746,68 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
   // Synchronous ref lock for duplicate submission prevention
   const ratingSubmitLockRef = useRef<boolean>(false);
+  const pendingRatingActionRef = useRef<PendingRatingAction | null>(null);
+  const [hasPendingRatingRetry, setHasPendingRatingRetry] = useState(false);
 
-  // Handle Progress Rating with SRS
-  // Hotfix UX: Optimistic card transition with sequential save
+  // Never auto-submit after a remount. If a response was interrupted, restore
+  // only the action metadata so the learner can explicitly retry with its key.
+  useEffect(() => {
+    let cancelled = false;
+    if (!currentVocabId) return;
+
+    void (async () => {
+      const userId = await getUserId();
+      const pendingAction = userId ? loadPendingRatingAction(userId) : null;
+      if (cancelled || !pendingAction || pendingAction.vocabularyId !== currentVocabId) return;
+
+      pendingRatingActionRef.current = pendingAction;
+      setHasPendingRatingRetry(true);
+      setSubmissionError('Đánh giá trước chưa được xác nhận. Hãy thử lại với cùng kết quả.');
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentVocabId, getUserId]);
+
+  // Handle Progress Rating with SRS. The RPC is committed before the queue so
+  // a derived-data refresh can never make this card look like a failed rating.
   const handleRating = useCallback(async (isMastered: boolean, rating?: SrsRating) => {
     if (!currentVocab || ratingSubmitLockRef.current) return;
 
     const srsRating: SrsRating = rating || (isMastered ? 'mastered' : 'good');
     const newStatus = isMastered || srsRating === 'mastered' ? 'mastered' : 'learning';
+    const existingPendingAction = pendingRatingActionRef.current;
+
+    // A transport failure may still have reached the RPC. Do not let a second
+    // rating create a new review log until this logical action is retried with
+    // its original idempotency key.
+    if (
+      existingPendingAction &&
+      (existingPendingAction.vocabularyId !== currentVocab.id || existingPendingAction.rating !== srsRating)
+    ) {
+      setSubmissionError('Đánh giá trước chưa được xác nhận. Hãy thử lại đánh giá đó trước.');
+      setHasPendingRatingRetry(true);
+      return;
+    }
+
+    const pendingAction = existingPendingAction || {
+      vocabularyId: currentVocab.id,
+      isMastered,
+      rating: srsRating,
+      idempotencyKey: crypto.randomUUID(),
+    };
+    pendingRatingActionRef.current = pendingAction;
 
     // 1. Acquire synchronous lock and disable buttons (prevent double-click/double-submit)
     ratingSubmitLockRef.current = true;
     setIsSubmitting(true);
     setSubmissionError(null);
+
+    const actionUserId = await getUserId();
+    if (actionUserId && !existingPendingAction) {
+      savePendingRatingAction(actionUserId, pendingAction);
+    }
 
     // 2. Calculate queue transition IMMEDIATELY (before any await)
     const transition = applyRatingToQueue(
@@ -753,40 +817,37 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       currentVocab.id
     );
 
-    // 3. Store previous state for rollback on save failure
-    const previousQueue = studyQueue;
-    const previousIndex = safeIndex;
-    const previousStats = sessionStats;
     const ratedVocabId = currentVocab.id;
 
     // ✅ FLASH BUG FIX: Reset flip state SYNCHRONOUSLY before index change
     // This prevents Card B from rendering with Card A's isFlipped state
-    setIsFlipped(false);
-    setHasRevealedAnswer(false);
-
-    // 4. OPTIMISTIC UPDATE - Card transitions INSTANTLY (< 10ms)
-    // EXCEPT for final card: do not show completion until save succeeds
-    if (!transition.isComplete) {
-      shouldAnimateCardRef.current = true;
-      setStudyQueue(transition.queue);
-      setCurrentIndex(transition.currentIndex);
-    }
-    setSessionStats((prev) => ({
-      mastered: isMastered || srsRating === 'mastered' ? prev.mastered + 1 : prev.mastered,
-      learningVocabularyIds:
-        !isMastered && srsRating !== 'mastered' && !prev.learningVocabularyIds.includes(ratedVocabId)
-          ? [...prev.learningVocabularyIds, ratedVocabId]
-          : prev.learningVocabularyIds,
-      needsReview: !isMastered && srsRating !== 'mastered' ? prev.needsReview + 1 : prev.needsReview,
-    }));
-
-    // 5. BACKGROUND SAVE - Does not block card transition (except for final card)
-    // ratingSubmitLockRef stays true, preventing rating next card until save completes
     try {
-      // Submit rating via service (handles RPC + idempotency)
-      await onUpdateProgress(ratedVocabId, newStatus, srsRating);
+      // Submit only the mutation. Parent refreshes aggregates best-effort after
+      // this resolves, so refresh errors cannot reach this rollback boundary.
+      await onUpdateProgress(ratedVocabId, newStatus, srsRating, pendingAction.idempotencyKey);
+      pendingRatingActionRef.current = null;
+      setHasPendingRatingRetry(false);
+      if (actionUserId) clearPendingRatingAction(actionUserId);
 
-      // 6. Save session snapshot AFTER server confirms
+      // Reset the visual state immediately before the committed queue advance.
+      // This keeps the next card from inheriting the previous card's back face.
+      setIsFlipped(false);
+      setHasRevealedAnswer(false);
+      if (!transition.isComplete) {
+        shouldAnimateCardRef.current = true;
+        setStudyQueue(transition.queue);
+        setCurrentIndex(transition.currentIndex);
+      }
+      setSessionStats((prev) => ({
+        mastered: isMastered || srsRating === 'mastered' ? prev.mastered + 1 : prev.mastered,
+        learningVocabularyIds:
+          !isMastered && srsRating !== 'mastered' && !prev.learningVocabularyIds.includes(ratedVocabId)
+            ? [...prev.learningVocabularyIds, ratedVocabId]
+            : prev.learningVocabularyIds,
+        needsReview: !isMastered && srsRating !== 'mastered' ? prev.needsReview + 1 : prev.needsReview,
+      }));
+
+      // Save session snapshot only after the server-confirmed queue transition.
       if (transition.isComplete) {
         // Final card: Show completion ONLY after save succeeds
         setIsCompleted(true);
@@ -830,22 +891,17 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
         }
       }
     } catch (err) {
-      // 7. ROLLBACK on save failure - revert to previous card
-      shouldAnimateCardRef.current = false;
-      setStudyQueue(previousQueue);
-      setCurrentIndex(previousIndex);
-      setSessionStats(previousStats);
-
-      // Show safe error message
+      // The queue has not been committed, so the current card stays in place.
       const message = err instanceof Error ? err.message : 'Không thể lưu kết quả. Vui lòng thử lại.';
       setSubmissionError(message);
+      setHasPendingRatingRetry(true);
       console.error('handleRating error:', err);
     } finally {
       // 8. Release lock and re-enable buttons only after save completes (or fails)
       ratingSubmitLockRef.current = false;
       setIsSubmitting(false);
     }
-  }, [currentVocab, safeIndex, onUpdateProgress, onStudySessionCompleted, studyQueue, sessionStats, filterTopic, filterStatus, getUserId, prefersReducedMotion]);
+  }, [currentVocab, safeIndex, onUpdateProgress, onStudySessionCompleted, studyQueue, filterTopic, filterStatus, getUserId, prefersReducedMotion]);
 
   // Handle Rating Selection from 4 evaluation buttons
   const handleSelectSrsRating = useCallback((srsRating: SrsRating) => {
@@ -856,6 +912,13 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     handleRating(isMastered, srsRating);
     setSubMode('flashcard');
   }, [handleRating, playRatingFeedback]);
+
+  const retryPendingRating = useCallback(() => {
+    const pendingAction = pendingRatingActionRef.current;
+    if (!pendingAction || ratingSubmitLockRef.current || pendingAction.vocabularyId !== currentVocab?.id) return;
+    setShowRatingButtons(false);
+    void handleRating(pendingAction.isMastered, pendingAction.rating);
+  }, [currentVocab?.id, handleRating]);
 
   // Handle "Chưa nhớ" -> Immediately transition to next exercise step
   const handleNotRemembered = useCallback(() => {
@@ -1823,7 +1886,18 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
               <AlertTriangle className="w-4 h-4 flex-shrink-0" />
               <span>{submissionError}</span>
             </div>
+            {hasPendingRatingRetry && (
+              <button
+                type="button"
+                onClick={retryPendingRating}
+                disabled={isSubmitting}
+                className="shrink-0 rounded-lg border border-[#E11D48] bg-white px-2.5 py-1 font-bold text-[#E11D48] hover:bg-[#FFF1F2] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Thử lại
+              </button>
+            )}
             <button
+              type="button"
               onClick={() => setSubmissionError(null)}
               className="text-[#E11D48] hover:text-[#BE123C] cursor-pointer"
             >

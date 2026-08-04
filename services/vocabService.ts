@@ -36,6 +36,7 @@ import {
   getProgressForVocabularies,
   submitVocabularyRating as submitRatingViaRpc,
   type SrsRating as ProgressSrsRating,
+  type RatingResult,
 } from './progressService';
 
 // Base localStorage keys (will be scoped per user)
@@ -306,8 +307,9 @@ export type SrsRating = 'again' | 'hard' | 'good' | 'easy' | 'mastered';
 export async function updateUserProgress(
   vocabId: string,
   status: LearningStatus,
-  rating?: SrsRating
-): Promise<void> {
+  rating?: SrsRating,
+  idempotencyKey: string = crypto.randomUUID()
+): Promise<RatingResult> {
   // Phase 5: Submit rating via atomic Supabase RPC
   // Server calculates schedule, updates progress, and inserts review log atomically
   const userId = await getAuthUserId();
@@ -317,15 +319,14 @@ export async function updateUserProgress(
 
   const effectiveRating: ProgressSrsRating = rating || (status === 'mastered' ? 'mastered' : 'good');
 
-  // Generate idempotency key for duplicate protection
-  const idempotencyKey = crypto.randomUUID();
-
   try {
     // Submit rating via RPC - server handles all scheduling logic
-    await submitRatingViaRpc(vocabId, effectiveRating, idempotencyKey);
+    const ratingResult = await submitRatingViaRpc(vocabId, effectiveRating, idempotencyKey);
 
     // Phase 7: No longer update localStorage study dates
-    // Dashboard now queries review_logs directly for streak calculation
+    // Dashboard now queries review_logs directly for streak calculation.
+    // The caller owns this key for the full logical action, including retries.
+    return ratingResult;
   } catch (err) {
     console.error('updateUserProgress error:', err);
     throw err;
