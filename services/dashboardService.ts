@@ -9,6 +9,7 @@
  */
 
 import { createClient } from '@/lib/supabase/client';
+import { isUnauthorizedError, throwIfUnauthorized } from '@/lib/supabase/authRetry';
 import type { LearningStatus } from '@/lib/types';
 import {
   getConsecutiveLocalStreak,
@@ -63,14 +64,20 @@ export async function getDashboardMetrics(authenticatedUserId?: string): Promise
       .from('vocabularies')
       .select('*', { count: 'exact', head: true });
 
-    if (totalError) throw totalError;
+    if (totalError) {
+      throwIfUnauthorized(totalError);
+      throw totalError;
+    }
 
     // Query 2: Progress status counts
     const { data: progressData, error: progressError } = await supabase
       .from('user_vocab_progress')
       .select('status, again_count, next_review_at');
 
-    if (progressError) throw progressError;
+    if (progressError) {
+      throwIfUnauthorized(progressError);
+      throw progressError;
+    }
 
     // Calculate status counts and due count
     const progressMap = new Map<LearningStatus, number>();
@@ -113,7 +120,10 @@ export async function getDashboardMetrics(authenticatedUserId?: string): Promise
       .lte('reviewed_at', endOfToday.toISOString())
       .gt('previous_interval_hours', 0);
 
-    if (todayError) throw todayError;
+    if (todayError) {
+      throwIfUnauthorized(todayError);
+      throw todayError;
+    }
 
     const reviewsToday = todayReviews?.length || 0;
     const uniqueVocabToday = todayReviews
@@ -129,7 +139,10 @@ export async function getDashboardMetrics(authenticatedUserId?: string): Promise
       .lte('reviewed_at', endOfToday.toISOString())
       .eq('previous_interval_hours', 0);
 
-    if (newWordsError) throw newWordsError;
+    if (newWordsError) {
+      throwIfUnauthorized(newWordsError);
+      throw newWordsError;
+    }
 
     const newWordsStudiedToday = todayNewWords
       ? new Set((todayNewWords as Array<{ vocabulary_id: string }>).map(r => r.vocabulary_id)).size
@@ -151,6 +164,7 @@ export async function getDashboardMetrics(authenticatedUserId?: string): Promise
       difficultVocabulary: difficultCount,
     };
   } catch (err) {
+    if (isUnauthorizedError(err)) throw err;
     console.error('getDashboardMetrics error:', err);
     throw new Error('Không thể tải thống kê Dashboard. Vui lòng thử lại.');
   }
@@ -177,7 +191,10 @@ async function calculateStudyStreak(
     .select('reviewed_at')
     .gte('reviewed_at', startBoundary.toISOString());
 
-  if (error) throw error;
+  if (error) {
+    throwIfUnauthorized(error);
+    throw error;
+  }
 
   // No reviews in last 365 days = streak is 0
   if (!reviews || reviews.length === 0) {
@@ -288,6 +305,7 @@ export async function getWeekActivity(authenticatedUserId?: string): Promise<Arr
       .map(([date, count]) => ({ date, count }))
       .sort((a, b) => a.date.localeCompare(b.date));
   } catch (err) {
+    if (isUnauthorizedError(err)) throw err;
     console.error('getWeekActivity error:', err);
     throw new Error('Không thể tải hoạt động tuần. Vui lòng thử lại.');
   }
