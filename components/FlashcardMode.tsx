@@ -105,6 +105,11 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   const typingInputRef = useRef<HTMLInputElement>(null);
   const typingFeedbackRef = useRef<HTMLDivElement>(null);
   const shouldAnimateCardRef = useRef(false);
+  const ratingAudioContextRef = useRef<AudioContext | null>(null);
+  const previousAudioContextRef = useRef<{
+    subMode: StudySubMode;
+    vocabularyId: string | null;
+  }>({ subMode: 'flashcard', vocabularyId: null });
   const prefersReducedMotion = usePrefersReducedMotion();
 
   // Edit vocabulary modal state
@@ -204,6 +209,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
   // Settings Toggles (Match screenshot)
   const [autoPlayAudio, setAutoPlayAudio] = useState<boolean>(true);
+  const [ratingFeedbackSound, setRatingFeedbackSound] = useState<boolean>(true);
   const [showExamples, setShowExamples] = useState<boolean>(true);
   const [showCollocations, setShowCollocations] = useState<boolean>(true);
   const [showSynonyms, setShowSynonyms] = useState<boolean>(true);
@@ -426,6 +432,8 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
   // Use safe index directly, sync state in next render to avoid cascading updates
   const currentVocab = activeVocabs[safeIndex];
+  const audioWord = currentVocab?.word;
+  const audioVocabularyId = currentVocab?.id;
 
   useEffect(() => {
     const card = cardTransitionRef.current;
@@ -611,6 +619,75 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     window.speechSynthesis.speak(utterance);
   }, [voiceAccent, showToast]);
 
+  // Shared, subtle confirmation sound for the four SRS rating buttons.
+  const playRatingFeedback = useCallback(() => {
+    if (!ratingFeedbackSound || typeof window === 'undefined') return;
+
+    const AudioContextConstructor =
+      window.AudioContext ??
+      (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
+    if (!AudioContextConstructor) return;
+
+    const audioContext =
+      ratingAudioContextRef.current?.state === 'closed'
+        ? new AudioContextConstructor()
+        : (ratingAudioContextRef.current ?? new AudioContextConstructor());
+
+    ratingAudioContextRef.current = audioContext;
+
+    if (audioContext.state === 'suspended') {
+      void audioContext.resume();
+    }
+
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    const startTime = audioContext.currentTime;
+    const endTime = startTime + 0.14;
+
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(560, startTime);
+    oscillator.frequency.exponentialRampToValueAtTime(700, startTime + 0.08);
+
+    gainNode.gain.setValueAtTime(0.0001, startTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.6, startTime + 0.01);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, endTime);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    oscillator.start(startTime);
+    oscillator.stop(endTime);
+  }, [ratingFeedbackSound]);
+
+  useEffect(() => {
+    return () => {
+      const audioContext = ratingAudioContextRef.current;
+      if (audioContext && audioContext.state !== 'closed') {
+        void audioContext.close();
+      }
+    };
+  }, []);
+
+  // Automatically pronounce the current word when entering an exercise mode
+  // or when a new vocabulary item appears inside that mode.
+  useEffect(() => {
+    const previousContext = previousAudioContextRef.current;
+    const shouldPlayAudio =
+      autoPlayAudio &&
+      subMode !== 'flashcard' &&
+      Boolean(audioWord) &&
+      (previousContext.subMode !== subMode || previousContext.vocabularyId !== audioVocabularyId);
+
+    previousAudioContextRef.current = {
+      subMode,
+      vocabularyId: audioVocabularyId ?? null,
+    };
+
+    if (shouldPlayAudio && audioWord) {
+      playPronunciation(audioWord);
+    }
+  }, [audioVocabularyId, audioWord, autoPlayAudio, playPronunciation, subMode]);
+
   // Helper for dynamic SRS button interval subtitles
   const getRatingSubtitle = (rating: 'again' | 'hard' | 'good' | 'easy', currentInterval = 0) => {
     // Phase 6: Again now shows queue-based relearning message
@@ -763,11 +840,12 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   // Handle Rating Selection from 4 evaluation buttons
   const handleSelectSrsRating = useCallback((srsRating: SrsRating) => {
     if (ratingSubmitLockRef.current) return;
+    playRatingFeedback();
     setShowRatingButtons(false);
     const isMastered = srsRating === 'mastered';
     handleRating(isMastered, srsRating);
     setSubMode('flashcard');
-  }, [handleRating]);
+  }, [handleRating, playRatingFeedback]);
 
   // Handle "Chưa nhớ" -> Immediately transition to next exercise step
   const handleNotRemembered = useCallback(() => {
@@ -1317,12 +1395,12 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
             >
               {/* 3D Rotating Container: CSS owns this transform exclusively. */}
               <div
-                className={`w-full h-full min-h-[300px] sm:min-h-[320px] relative transition-transform duration-500 [transform-style:preserve-3d] ${
+                className={`grid w-full min-h-[300px] sm:min-h-[320px] relative transition-transform duration-500 [transform-style:preserve-3d] ${
                   isFlipped ? '[transform:rotateY(180deg)]' : '[transform:rotateY(0deg)]'
                 }`}
               >
               {/* FRONT SIDE */}
-              <div className="absolute inset-0 w-full h-full flex flex-col items-center justify-between text-center p-6 sm:p-8 rounded-3xl bg-gradient-to-b from-[#FFFDFE] via-white to-[#FFF5F7] border border-[#FCE7F3] shadow-xs hover:shadow-md transition-shadow backface-hidden">
+              <div className="col-start-1 row-start-1 relative w-full min-h-[300px] sm:min-h-[320px] flex flex-col items-center justify-between text-center p-6 sm:p-8 rounded-3xl bg-gradient-to-b from-[#FFFDFE] via-white to-[#FFF5F7] border border-[#FCE7F3] shadow-xs hover:shadow-md transition-shadow backface-hidden overflow-hidden">
                 <div className="space-y-4 my-auto">
                   <div className="flex items-center justify-center gap-2 flex-wrap">
                     <h2 className="text-3xl sm:text-5xl font-black text-gray-900 tracking-tight break-words max-w-full">
@@ -1374,13 +1452,13 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
               </div>
 
               {/* BACK SIDE */}
-              <div className="absolute inset-0 w-full h-full flex flex-col justify-between text-left p-6 sm:p-8 rounded-3xl bg-gradient-to-b from-[#FFF5F7] via-white to-[#FFF0F5] border border-[#FCE7F3] shadow-xs hover:shadow-md transition-shadow backface-hidden [transform:rotateY(180deg)] overflow-y-auto">
+              <div className="col-start-1 row-start-1 relative w-full min-h-[300px] sm:min-h-[320px] flex flex-col justify-between text-left p-6 sm:p-8 rounded-3xl bg-gradient-to-b from-[#FFF5F7] via-white to-[#FFF0F5] border border-[#FCE7F3] shadow-xs hover:shadow-md transition-shadow backface-hidden [transform:rotateY(180deg)] overflow-hidden">
                 <div className="space-y-4 my-auto w-full">
                   <div className="text-center">
                     <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#ED4F8E] bg-[#FFF1F2] px-3 py-1 rounded-full border border-[#FCE7F3]">
                       Nghĩa từ vựng
                     </span>
-                    <h3 className="text-2xl sm:text-3xl font-black text-[#ED4F8E] mt-2">
+                    <h3 className="text-2xl sm:text-3xl font-black text-[#ED4F8E] mt-2 break-words">
                       {currentVocab.meaning}
                     </h3>
                   </div>
@@ -1400,7 +1478,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
                           <Volume2 className="w-3.5 h-3.5" />
                         </button>
                         <div>
-                          <p className="font-bold text-gray-900 italic text-sm leading-relaxed">
+                          <p className="font-bold text-gray-900 italic text-sm leading-relaxed break-words">
                             &ldquo;{currentVocab.example}&rdquo;
                           </p>
                           {currentVocab.example_translation && (
@@ -1416,12 +1494,12 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
                   {/* Collocations & Synonyms */}
                   <div className="flex flex-wrap gap-2 text-xs">
                     {showCollocations && currentVocab.collocations && (
-                      <span className="px-3 py-1.5 rounded-xl bg-[#E0F2FE] border border-[#BAE6FD] text-[#0284C7] font-bold text-[11px]">
+                      <span className="px-3 py-1.5 rounded-xl bg-[#E0F2FE] border border-[#BAE6FD] text-[#0284C7] font-bold text-[11px] break-words">
                         {currentVocab.collocations}
                       </span>
                     )}
                     {showSynonyms && currentVocab.synonyms && (
-                      <span className="px-3 py-1.5 rounded-xl bg-[#F3E8FF] border border-[#E9D5FF] text-[#A855F7] font-bold text-xs sm:text-sm">
+                      <span className="px-3 py-1.5 rounded-xl bg-[#F3E8FF] border border-[#E9D5FF] text-[#A855F7] font-bold text-xs sm:text-sm break-words">
                         Đồng nghĩa: {currentVocab.synonyms}
                       </span>
                     )}
@@ -1453,7 +1531,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
                     className="inline-flex items-center gap-1.5 text-xs font-bold text-[#ED4F8E]"
                   >
                     <Volume2 className="w-3.5 h-3.5" />
-                    <span>/{currentVocab.phonetic_us}/</span>
+                    <span>{currentVocab.phonetic_us}</span>
                   </button>
                 )}
               </div>
@@ -1912,7 +1990,30 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
                 </button>
               </div>
 
-              {/* 2. Hiện ví dụ */}
+              {/* 2. Âm thanh phản hồi rating */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Volume2 className="w-4 h-4 text-[#ED4F8E]" />
+                  <span className="font-bold text-gray-800 text-xs">Âm thanh phản hồi</span>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Bật hoặc tắt âm thanh phản hồi rating"
+                  aria-pressed={ratingFeedbackSound}
+                  onClick={() => setRatingFeedbackSound(!ratingFeedbackSound)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
+                    ratingFeedbackSound ? 'bg-[#ED4F8E]' : 'bg-gray-200'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition-transform ${
+                      ratingFeedbackSound ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* 3. Hiện ví dụ */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <Eye className="w-4 h-4 text-[#ED4F8E]" />
