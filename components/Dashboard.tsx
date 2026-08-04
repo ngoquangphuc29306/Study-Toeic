@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { FlashcardInitialFilter, Topic, StudyStats, Vocabulary } from '../lib/types';
 import { SrsRating } from '../services/vocabService';
+import type { RatingResult } from '../services/progressService';
 import {
   getDashboardMetrics,
   getWeekActivity,
@@ -54,7 +55,12 @@ interface DashboardProps {
   onSelectTopicForFlashcard: (topicId: string, initialStatus?: FlashcardInitialFilter) => void;
   onSelectTopicForSynonyms: (topicId: string) => void;
   onOpenCollectionModal: () => void;
-  onUpdateProgress?: (vocabId: string, status: 'learning' | 'mastered', rating?: SrsRating) => void;
+  onUpdateProgress?: (
+    vocabId: string,
+    status: 'learning' | 'mastered',
+    rating?: SrsRating,
+    idempotencyKey?: string
+  ) => Promise<RatingResult>;
 }
 
 // Map string icon names to Lucide icon components
@@ -171,6 +177,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isRelearnSubmitting, setIsRelearnSubmitting] = useState<boolean>(false);
   const [relearnError, setRelearnError] = useState<string | null>(null);
   const [relearnSuccess, setRelearnSuccess] = useState<string | null>(null);
+  const relearnSubmitLockRef = useRef(false);
+  const pendingRelearnActionRef = useRef<{
+    vocabId: string;
+    idempotencyKey: string;
+  } | null>(null);
 
   // Stable timestamp for due-time calculations
   const [nowMs] = useState(() => Date.now());
@@ -271,20 +282,36 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // Handler for relearn action with confirmation
   const handleRelearnVocab = async () => {
-    if (!relearnConfirmModal.vocabId || !onUpdateProgress) return;
+    if (!relearnConfirmModal.vocabId || !onUpdateProgress || relearnSubmitLockRef.current) return;
+
+    const vocabId = relearnConfirmModal.vocabId;
+    const existingAction = pendingRelearnActionRef.current;
+    if (existingAction && existingAction.vocabId !== vocabId) {
+      setRelearnError('Một thao tác học lại khác chưa được xác nhận. Vui lòng thử lại thao tác đó trước.');
+      return;
+    }
+
+    const pendingAction = existingAction || {
+      vocabId,
+      idempotencyKey: crypto.randomUUID(),
+    };
+    pendingRelearnActionRef.current = pendingAction;
+    relearnSubmitLockRef.current = true;
 
     setIsRelearnSubmitting(true);
     setRelearnError(null);
 
     try {
-      await onUpdateProgress(relearnConfirmModal.vocabId, 'learning', 'again');
+      await onUpdateProgress(vocabId, 'learning', 'again', pendingAction.idempotencyKey);
 
       setRelearnSuccess(`Đã chuyển từ "${relearnConfirmModal.vocabWord}" về danh sách học lại. Từ này sẽ xuất hiện trong phần "Ôn tập" với lịch ôn tập mới.`);
       setRelearnConfirmModal({ isOpen: false, vocabId: '', vocabWord: '' });
+      pendingRelearnActionRef.current = null;
     } catch (error) {
       setRelearnError('Không thể chuyển từ về danh sách học lại. Vui lòng thử lại.');
       console.error('Relearn error:', error);
     } finally {
+      relearnSubmitLockRef.current = false;
       setIsRelearnSubmitting(false);
     }
   };

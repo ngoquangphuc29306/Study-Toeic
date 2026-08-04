@@ -530,6 +530,10 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   // Use safe index directly, sync state in next render to avoid cascading updates
   const currentVocab = activeVocabs[safeIndex];
   const currentVocabId = currentVocab?.id;
+  const currentVocabIdRef = useRef<string | undefined>(currentVocabId);
+  useEffect(() => {
+    currentVocabIdRef.current = currentVocabId;
+  }, [currentVocabId]);
   const audioWord = currentVocab?.word;
   const audioVocabularyId = currentVocab?.id;
 
@@ -839,7 +843,11 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
       pendingRatingActionRef.current = pendingAction;
       setHasPendingRatingRetry(true);
-      setSubmissionError('Đánh giá trước chưa được xác nhận. Hãy thử lại với cùng kết quả.');
+      setSubmissionError(
+        pendingAction.status === 'confirmed'
+          ? 'Đánh giá trước đã được lưu nhưng phiên học chưa hoàn tất. Hãy tiếp tục với cùng kết quả.'
+          : 'Đánh giá trước chưa được xác nhận. Hãy thử lại với cùng kết quả.'
+      );
     })();
 
     return () => {
@@ -873,6 +881,8 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       isMastered,
       rating: srsRating,
       idempotencyKey: crypto.randomUUID(),
+      startedAt: Date.now(),
+      status: 'pending' as const,
     };
     pendingRatingActionRef.current = pendingAction;
 
@@ -882,8 +892,13 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     setSubmissionError(null);
 
     const actionUserId = await getUserId();
-    if (actionUserId && !existingPendingAction) {
-      savePendingRatingAction(actionUserId, pendingAction);
+    const retryingAction: PendingRatingAction = {
+      ...pendingAction,
+      status: 'retrying',
+    };
+    pendingRatingActionRef.current = retryingAction;
+    if (actionUserId) {
+      savePendingRatingAction(actionUserId, retryingAction);
     }
 
     // 2. Calculate queue transition IMMEDIATELY (before any await)
@@ -902,10 +917,44 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       // Submit only the mutation. Parent refreshes aggregates best-effort after
       // this resolves, so refresh errors cannot reach this rollback boundary.
       await onUpdateProgress(ratedVocabId, newStatus, srsRating, pendingAction.idempotencyKey);
-      pendingRatingActionRef.current = null;
-      setHasPendingRatingRetry(false);
-      if (actionUserId) clearPendingRatingAction(actionUserId);
+    } catch (err) {
+      // A transport failure may still mean that the RPC committed. Keep the
+      // same key in retrying state and do not advance or create a new key.
+      pendingRatingActionRef.current = retryingAction;
+      if (actionUserId) {
+        savePendingRatingAction(actionUserId, retryingAction);
+      }
+      const message = err instanceof Error ? err.message : 'Không thể lưu kết quả. Vui lòng thử lại.';
+      setSubmissionError(message);
+      setHasPendingRatingRetry(true);
+      console.error('handleRating error:', err);
+      ratingSubmitLockRef.current = false;
+      setIsSubmitting(false);
+      return;
+    }
 
+    // The RPC has now returned a validated success/already_processed result.
+    // Keep the key until the local queue/session commit completes so an
+    // unmount cannot lose the recovery record.
+    const confirmedAction: PendingRatingAction = {
+      ...retryingAction,
+      status: 'confirmed',
+    };
+    pendingRatingActionRef.current = confirmedAction;
+    if (actionUserId) {
+      savePendingRatingAction(actionUserId, confirmedAction);
+    }
+
+    // A response from an old mounted action must not overwrite a newer card.
+    // The confirmed record remains available for the next mount to retry with
+    // the same key and receive already_processed.
+    if (!isFlashcardMountedRef.current || currentVocabIdRef.current !== ratedVocabId) {
+      ratingSubmitLockRef.current = false;
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
       // Reset the visual state immediately before the committed queue advance.
       // This keeps the next card from inheriting the previous card's back face.
       stopRecognition();
@@ -934,10 +983,8 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
         setStudyQueue(transition.queue);
         setCurrentIndex(transition.currentIndex);
 
-        // Clear session on completion
-        const userId = await getUserId();
-        if (userId) {
-          clearStudySession(userId);
+        if (actionUserId) {
+          clearStudySession(actionUserId);
         }
         if (!prefersReducedMotion) {
           try {
@@ -951,30 +998,31 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
             // Fallback
           }
         }
-      } else {
+      } else if (actionUserId && transition.queue.length > 0) {
         // Save session with exact transition result
-        const userId = await getUserId();
-        if (userId && transition.queue.length > 0) {
-          const snapshot: StudySessionSnapshot = {
-            version: 1,
-            userId,
-            mode: filterStatus === 'new' ? 'new' : 'review',
-            vocabularyIds: transition.queue,
-            currentIndex: transition.currentIndex,
-            selectedTopicId: filterTopic,
-            initialStatus: filterStatus,
-            startedAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          };
-          saveStudySession(snapshot);
-        }
+        const snapshot: StudySessionSnapshot = {
+          version: 1,
+          userId: actionUserId,
+          mode: filterStatus === 'new' ? 'new' : 'review',
+          vocabularyIds: transition.queue,
+          currentIndex: transition.currentIndex,
+          selectedTopicId: filterTopic,
+          initialStatus: filterStatus,
+          startedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        saveStudySession(snapshot);
       }
+
+      pendingRatingActionRef.current = null;
+      setHasPendingRatingRetry(false);
+      if (actionUserId) clearPendingRatingAction(actionUserId);
     } catch (err) {
-      // The queue has not been committed, so the current card stays in place.
-      const message = err instanceof Error ? err.message : 'Không thể lưu kết quả. Vui lòng thử lại.';
-      setSubmissionError(message);
+      // The mutation is already confirmed. Never expose this as an RPC
+      // failure or allow a new key; keep the confirmed record for recovery.
+      console.error('Confirmed rating local commit error:', err);
+      setSubmissionError('Đã lưu đánh giá. Phiên học sẽ được khôi phục khi bạn thử lại.');
       setHasPendingRatingRetry(true);
-      console.error('handleRating error:', err);
     } finally {
       // 8. Release lock and re-enable buttons only after save completes (or fails)
       ratingSubmitLockRef.current = false;
@@ -998,6 +1046,11 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     setShowRatingButtons(false);
     void handleRating(pendingAction.isMastered, pendingAction.rating);
   }, [currentVocab?.id, handleRating]);
+
+  const handleBackToDashboard = useCallback(() => {
+    if (ratingSubmitLockRef.current) return;
+    onBackToDashboard();
+  }, [onBackToDashboard]);
 
   // Handle "Chưa nhớ" -> Immediately transition to next exercise step
   const handleNotRemembered = useCallback(() => {
@@ -1356,7 +1409,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
           )}
 
           <button
-            onClick={onBackToDashboard}
+            onClick={handleBackToDashboard}
             className="px-5 py-2.5 bg-gradient-to-r from-[#ED4F8E] to-[#F472B6] text-white font-bold rounded-2xl text-xs cursor-pointer shadow-2xs hover:opacity-95 transition-opacity"
           >
             Quay về Dashboard
@@ -1422,7 +1475,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
           </button>
 
           <button
-            onClick={onBackToDashboard}
+            onClick={handleBackToDashboard}
             className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-gray-100 text-gray-700 font-bold text-xs transition-all cursor-pointer hover:bg-gray-200"
           >
             Về Trang Chủ
@@ -1449,7 +1502,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       {/* Top Header Navigation */}
       <div className="flex items-center justify-between gap-2 sm:gap-4">
         <button
-          onClick={onBackToDashboard}
+          onClick={handleBackToDashboard}
           className="inline-flex items-center gap-2 text-xs font-bold text-gray-700 hover:text-[#ED4F8E] bg-white px-3 sm:px-4 py-2 rounded-2xl border border-[#FCE7F3] shadow-2xs transition-all cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />

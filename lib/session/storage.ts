@@ -14,6 +14,8 @@ export interface PendingRatingAction {
   isMastered: boolean;
   rating: 'again' | 'hard' | 'good' | 'easy' | 'mastered';
   idempotencyKey: string;
+  startedAt: number;
+  status: 'pending' | 'retrying' | 'confirmed';
 }
 
 /**
@@ -56,7 +58,14 @@ export function loadPendingRatingAction(userId: string): PendingRatingAction | n
       return null;
     }
 
-    return action as PendingRatingAction;
+    return {
+      vocabularyId: action.vocabularyId as string,
+      isMastered: action.isMastered as boolean,
+      rating: action.rating as PendingRatingAction['rating'],
+      idempotencyKey: action.idempotencyKey as string,
+      startedAt: typeof action.startedAt === 'number' ? action.startedAt : Date.now(),
+      status: action.status === 'confirmed' || action.status === 'retrying' ? action.status : 'pending',
+    };
   } catch (err) {
     console.warn('Failed to load pending rating action:', err);
     return null;

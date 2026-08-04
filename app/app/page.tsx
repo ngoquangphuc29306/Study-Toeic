@@ -663,7 +663,10 @@ export default function AppPage() {
     rating?: SrsRating,
     idempotencyKey?: string
   ): Promise<RatingResult> => {
-    const ratingResult = await updateUserProgress(vocabId, status, rating, idempotencyKey);
+    // Callers that own a retry lifecycle provide the original key. Legacy or
+    // non-retrying callers still get one key per logical mutation invocation.
+    const mutationIdempotencyKey = idempotencyKey || crypto.randomUUID();
+    const ratingResult = await updateUserProgress(vocabId, status, rating, mutationIdempotencyKey);
 
     setVocabularies((previous) => previous.map((vocabulary) => (
       vocabulary.id === vocabId

@@ -30,8 +30,6 @@ import {
   setUserScopedObject,
 } from './localStorageHelpers';
 import { createClient } from '@/lib/supabase/client';
-import { calculateNextReview } from '@/lib/srs/scheduler';
-import type { SrsProgress } from '@/lib/srs/types';
 import { getConsecutiveLocalStreak } from '@/lib/date/localDate';
 import {
   getProgressForVocabularies,
@@ -308,8 +306,8 @@ export type SrsRating = 'again' | 'hard' | 'good' | 'easy' | 'mastered';
 export async function updateUserProgress(
   vocabId: string,
   status: LearningStatus,
-  rating?: SrsRating,
-  idempotencyKey: string = crypto.randomUUID()
+  rating: SrsRating | undefined,
+  idempotencyKey: string
 ): Promise<RatingResult> {
   // Phase 5: Submit rating via atomic Supabase RPC
   // Server calculates schedule, updates progress, and inserts review log atomically
