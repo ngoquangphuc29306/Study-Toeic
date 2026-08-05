@@ -24,6 +24,7 @@ import {
   Download
 } from 'lucide-react';
 import { Collection, Vocabulary, Topic, LearningStatus } from '../lib/types';
+import type { VocabularyExportScope } from '../lib/excelUtils';
 import { AddVocabModal } from './AddVocabModal';
 import gsap from 'gsap';
 import { motionTokens } from '../lib/animation/motionTokens';
@@ -54,8 +55,10 @@ interface VocabManagerProps {
   onOpenSectionModal: (collectionId: string) => void;
   onOpenSqlModal: () => void;
   onExportCSV?: () => void;
+  onExportExcel?: (scope: VocabularyExportScope) => void;
   onExportJSON?: () => void;
   isExportingCSV?: boolean;
+  isExportingExcel?: boolean;
   isExportingJSON?: boolean;
 }
 
@@ -76,7 +79,9 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
   onOpenCollectionModal,
   onOpenSectionModal,
   onExportCSV,
+  onExportExcel,
   isExportingCSV = false,
+  isExportingExcel = false,
 }) => {
   // Active dropdown state tracking
   const [activeManageDropdown, setActiveManageDropdown] = useState<string | null>(null);
@@ -306,6 +311,21 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                 <Download className="w-4 h-4 text-blue-600" />
                 <span>{isExportingCSV ? 'Đang xuất...' : 'Xuất CSV'}</span>
               </button>
+
+              <button
+                onClick={() => {
+                  setIsTopCreateOpen(false);
+                  onExportExcel?.({ type: 'all' });
+                }}
+                disabled={isExportingExcel}
+                aria-busy={isExportingExcel}
+                aria-label="Xuất toàn bộ từ vựng ra Excel"
+                title="Xuất toàn bộ từ vựng ra Excel"
+                className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-emerald-50 text-gray-700 font-semibold cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                <span>{isExportingExcel ? 'Đang xuất...' : 'Xuất Excel'}</span>
+              </button>
             </div>
           )}
         </div>
@@ -385,6 +405,25 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                       </button>
 
                       <button
+                        onClick={() => {
+                          setActiveCollectionMenu(null);
+                          onExportExcel?.({
+                            type: 'collection',
+                            collectionId: col.id,
+                            collectionTitle: col.title,
+                          });
+                        }}
+                        disabled={isExportingExcel}
+                        aria-busy={isExportingExcel}
+                        aria-label={`Xuất Excel bộ từ vựng ${col.title}`}
+                        title="Xuất Excel bộ từ vựng này"
+                        className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-emerald-50 text-gray-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Download className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Xuất Excel</span>
+                      </button>
+
+                      <button
                         onClick={async () => {
                           setActiveCollectionMenu(null);
                           if (confirm(`Bạn có chắc chắn muốn xóa bộ từ vựng "${col.title}" và toàn bộ bài học bên trong?`)) {
@@ -460,6 +499,26 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                               >
                                 <Edit3 className="w-3.5 h-3.5 text-blue-500" />
                                 <span>Đổi tên Section</span>
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  setActiveSectionMenu(null);
+                                  onExportExcel?.({
+                                    type: 'section',
+                                    sectionId: topic.id,
+                                    sectionTitle: topic.title,
+                                    collectionTitle: col.title,
+                                  });
+                                }}
+                                disabled={isExportingExcel}
+                                aria-busy={isExportingExcel}
+                                aria-label={`Xuất Excel Section ${topic.title}`}
+                                title="Xuất Excel Section này"
+                                className="w-full text-left flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-emerald-50 text-gray-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <Download className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Xuất Excel</span>
                               </button>
 
                               <button
@@ -640,6 +699,25 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                             >
                               <Edit3 className="w-3.5 h-3.5 text-blue-500" />
                               <span>Đổi tên Section</span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setActiveSectionMenu(null);
+                                onExportExcel?.({
+                                  type: 'section',
+                                  sectionId: topic.id,
+                                  sectionTitle: topic.title,
+                                });
+                              }}
+                              disabled={isExportingExcel}
+                              aria-busy={isExportingExcel}
+                              aria-label={`Xuất Excel Section ${topic.title}`}
+                              title="Xuất Excel Section này"
+                              className="w-full text-left flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-emerald-50 text-gray-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <Download className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Xuất Excel</span>
                             </button>
 
                             <button
