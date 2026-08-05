@@ -663,3 +663,24 @@ submission and contains no transcript, translation, explanation or vocabulary
 content. Browser roles still cannot directly read answer keys or mutate answer
 rows. Official scaled-score conversion and review content joining remain
 deferred.
+
+## 20. Phase 9 history, progress and wrong-question retry
+
+Phase 9 adds a separate owner-private analytics/read boundary and a
+server-authorized wrong-question retry mutation. `list_toeic_attempt_history`
+uses explicit metadata columns and the stored `submission_result`; it never
+rescored answers or joins the answer key. `get_toeic_test_progress` aggregates
+bounded catalog test IDs from attempts/results and applies the owner-private
+visibility preference. The catalog treats progress loading independently from
+catalog metadata, so it does not render fake zero values.
+
+`start_toeic_wrong_question_attempt` accepts only a submitted attempt owned by
+the authenticated user. The server derives the incorrect question set from
+`toeic_test_answers.is_correct IS FALSE`, preserves source snapshot order and
+creates a new Practice snapshot with the existing start-idempotency key
+mechanism. Unanswered questions are excluded in this phase. Source attempts,
+answers and results are immutable.
+
+Official scaled score remains deliberately rejected for now: raw counts are
+authoritative and `scaledScore` remains `null` until a versioned approved
+conversion source exists. See `docs/TOEIC_TEST_PHASE9_HISTORY_PROGRESS.md`.

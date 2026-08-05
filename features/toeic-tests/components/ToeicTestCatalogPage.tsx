@@ -6,6 +6,8 @@ import { ArrowLeft, ArrowRight, ClipboardCheck, Clock3, ListChecks, RefreshCcw, 
 import { listPublishedToeicTests } from '../services/toeicTestReadService';
 import type { ToeicTestCatalogItem } from '../readContracts';
 import { ToeicReadError } from '../readContracts';
+import { getToeicTestProgress, setToeicTestProgressVisibility } from '../services/toeicHistoryService';
+import type { ToeicTestProgressSummary } from '../historyContracts';
 
 function formatDuration(seconds: number) {
   const minutes = Math.round(seconds / 60);
@@ -20,6 +22,10 @@ export function ToeicTestCatalogPage() {
   const [applied, setApplied] = useState({ year: '', setName: '', source: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [progress, setProgress] = useState<ReadonlyArray<ToeicTestProgressSummary>>([]);
+  const [progressLoading, setProgressLoading] = useState(false);
+  const [progressError, setProgressError] = useState<Error | null>(null);
+  const [visibilityBusy, setVisibilityBusy] = useState<ReadonlySet<string>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -33,12 +39,34 @@ export function ToeicTestCatalogPage() {
         offset: 0,
       });
       setTests(result);
+      setProgress([]);
+      setProgressLoading(true);
+      setProgressError(null);
+      try {
+        setProgress(await getToeicTestProgress(result.map((test) => test.id)));
+      } catch (progressCause) {
+        setProgressError(progressCause instanceof Error ? progressCause : new Error('Không thể tải tiến độ'));
+      } finally {
+        setProgressLoading(false);
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause : new Error('Không thể tải danh sách đề'));
     } finally {
       setLoading(false);
     }
   }, [applied]);
+
+  const toggleProgressVisibility = async (testId: string, hidden: boolean) => {
+    setVisibilityBusy((current) => new Set(current).add(testId));
+    try {
+      const nextHidden = await setToeicTestProgressVisibility(testId, hidden);
+      setProgress((current) => current.map((item) => item.testId === testId ? { ...item, hiddenFromProgress: nextHidden } : item));
+    } catch {
+      setProgressError(new Error('Không thể cập nhật hiển thị tiến độ'));
+    } finally {
+      setVisibilityBusy((current) => { const next = new Set(current); next.delete(testId); return next; });
+    }
+  };
 
   useEffect(() => {
     void Promise.resolve().then(load);
@@ -61,6 +89,7 @@ export function ToeicTestCatalogPage() {
           <p className="mt-3 text-sm leading-6 text-gray-600 sm:text-base">Làm bài theo đúng tập câu của đề. Đáp án được lưu tự động trong phiên để bạn có thể quay lại bất cứ lúc nào.</p>
         </header>
 
+        <div className="mt-5"><Link href="/app/tests/history" className="inline-flex min-h-10 items-center rounded-xl border border-[#FBCFE8] px-3 text-sm font-bold text-[#9D174D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6]">Lịch sử làm bài</Link></div>
         <form onSubmit={applyFilters} className="mt-7 grid gap-3 rounded-3xl border border-[#FCE7F3] bg-white p-4 shadow-sm sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end">
           <label className="text-sm font-semibold text-[#493B42]">Năm
             <input value={year} onChange={(event) => setYear(event.target.value)} type="number" min="2000" max="2100" placeholder="Tất cả" className="mt-1 min-h-11 w-full rounded-xl border border-[#FBCFE8] bg-[#FFFDFD] px-3 font-normal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6]" />
@@ -92,6 +121,15 @@ export function ToeicTestCatalogPage() {
                 <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wider text-[#F472B6]">{test.setName}</p><h2 className="mt-1 text-lg font-extrabold text-[#493B42]">{test.name}</h2></div><span className="rounded-full bg-[#FFF1F2] px-2.5 py-1 text-xs font-bold text-[#9D174D]">{test.year}</span></div>
                 {test.description && <p className="mt-3 line-clamp-2 text-sm text-gray-600">{test.description}</p>}
                 <div className="mt-auto grid grid-cols-2 gap-2 pt-5 text-xs font-semibold text-gray-500"><span className="inline-flex items-center gap-1.5"><ListChecks className="h-4 w-4 text-[#F472B6]" aria-hidden="true" />{test.totalQuestions} câu</span><span className="inline-flex items-center gap-1.5"><Clock3 className="h-4 w-4 text-[#F472B6]" aria-hidden="true" />{formatDuration(test.durationSeconds)}</span></div>
+                {(() => {
+                  const summary = progress.find((item) => item.testId === test.id);
+                  const bestExam = summary?.bestExamCorrectQuestions !== null && summary?.bestExamCorrectQuestions !== undefined && summary.bestExamTotalQuestions !== null && summary.bestExamTotalQuestions !== undefined ? `${summary.bestExamCorrectQuestions}/${summary.bestExamTotalQuestions}` : '—';
+                  const bestPractice = summary?.bestPracticeCorrectQuestions !== null && summary?.bestPracticeCorrectQuestions !== undefined && summary.bestPracticeTotalQuestions !== null && summary.bestPracticeTotalQuestions !== undefined ? `${summary.bestPracticeCorrectQuestions}/${summary.bestPracticeTotalQuestions}` : '—';
+                  return <div className="mt-4 rounded-2xl bg-[#FFF8FA] p-3" aria-label={`Tiến độ ${test.name}`}>
+                    {progressLoading ? <div className="space-y-2" aria-label="Đang tải tiến độ"><div className="h-3 w-28 animate-pulse rounded bg-[#FCE7F3]" /><div className="h-3 w-44 animate-pulse rounded bg-[#FCE7F3]" /></div> : progressError ? <p className="text-xs text-gray-500">Tiến độ tạm thời chưa tải được.</p> : summary?.hiddenFromProgress ? <p className="text-xs font-semibold text-gray-500">Tiến độ đang được ẩn.</p> : <><div className="flex items-center justify-between gap-2 text-xs"><span className="font-bold text-[#493B42]">{summary?.totalAttempts ? `${summary.totalAttempts} lần làm` : 'Chưa làm'}</span><span className="text-gray-500">{summary?.latestCorrectQuestions !== null && summary?.latestCorrectQuestions !== undefined && summary.latestTotalQuestions !== null && summary.latestTotalQuestions !== undefined ? `Gần nhất ${summary.latestCorrectQuestions}/${summary.latestTotalQuestions}` : 'Chưa có kết quả'}</span></div><div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-500"><span>Exam tốt nhất: {bestExam}</span><span>Practice tốt nhất: {bestPractice}</span></div></>}
+                    <button type="button" onClick={() => void toggleProgressVisibility(test.id, !(summary?.hiddenFromProgress ?? false))} disabled={visibilityBusy.has(test.id)} className="mt-2 min-h-8 text-xs font-bold text-[#9D174D] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] disabled:opacity-50">{summary?.hiddenFromProgress ? 'Hiện lại tiến độ' : 'Ẩn tiến độ'}</button>
+                  </div>;
+                })()}
                 <Link href={`/app/tests/${test.id}`} className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#F472B6] px-4 text-sm font-extrabold text-white transition hover:bg-[#DB2777] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] focus-visible:ring-offset-2">Xem đề và bắt đầu <ArrowRight className="h-4 w-4" aria-hidden="true" /></Link>
               </article>
             ))}

@@ -169,6 +169,38 @@ from the `Status` column above:
 
 ## Prototype Button and Control Inventory
 
+## Phase 9 status overrides
+
+The following rows from the original Phase 7.5 inventory are superseded by
+the Phase 9 implementation evidence below. The earlier rows are retained as
+historical audit context; these overrides are the canonical acceptance status.
+
+| ID | New status | Production evidence | Acceptance evidence |
+|---|---|---|---|
+| TOEIC-HISTORY | COMPLETE | `/app/tests/history`, `ToeicAttemptHistoryPage`, `list_toeic_attempt_history`, `toeicHistoryService`, `toeicHistoryMapper` | Owner-only deterministic pagination, filters, loading/empty/error/retry, result/review links and non-score closed-attempt states. |
+| TOEIC-PROGRESS | COMPLETE | `get_toeic_test_progress`, catalog progress loading/summary, `ToeicTestProgressSummary` | Server-derived progress, Exam/Practice best values separated, active-attempt flag and no fake zero while loading. |
+| TOEIC-WRONG-RETRY | COMPLETE | `start_toeic_wrong_question_attempt`, `ToeicWrongQuestionRetryButton` in result/history | Submitted owner source only; server selects incorrect answers; source immutable; retry key reuses the created attempt; empty set and active conflict have stable errors. |
+| TOEIC-RESET-PROGRESS | COMPLETE | `toeic_test_progress_preferences`, `set_toeic_test_progress_visibility`, catalog hide/restore control | Visibility changes preserve attempts, answers, results and review history. |
+| TOEIC-SCORE-CALCULATOR | REJECTED | No production calculator by approved DEC-10 policy | No unapproved 10–990 approximation or misleading raw-only calculator. |
+| TOEIC-SCALED-SCORE | REJECTED | Result/history keep `scaledScore: null` | No official score is shown until source, version, test mapping and owner approval exist. |
+
+### Phase 9 canonical counts
+
+| Status | Count |
+|---|---:|
+| COMPLETE | 29 |
+| PARTIAL | 9 |
+| MISSING | 14 |
+| REPLACED | 3 |
+| REJECTED | 4 |
+| NOT_APPLICABLE | 0 |
+| UNKNOWN | 2 |
+| **Total audited features** | **61** |
+
+The total is 61 because the Phase 9 history route and explicit visibility
+control are tracked as separate acceptance behaviors in the addendum. The
+original 60-row audit remains available above for traceability.
+
 This inventory includes controls only when confirmed in the prototype source.
 Controls are counted separately from the 60 feature rows.
 

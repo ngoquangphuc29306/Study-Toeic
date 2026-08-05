@@ -37,3 +37,17 @@ Until a row is `APPROVED`, implementation must preserve the current safe
 production contract and must not infer behavior from a prototype-only control.
 An approved decision must be converted into acceptance tests before UI/RPC
 work begins.
+
+## Phase 9 approval addendum
+
+The following decisions are now approved for Phase 9 and supersede their
+earlier `OPEN` audit rows:
+
+| Decision ID | Approved policy | Evidence | Status |
+|---|---|---|---|
+| DEC-10 | Raw result only; `scaledScore` remains `null`; no calculator or 10–990 approximation. | `submission_result`, `ToeicAttemptResultPage`, Phase 9 history/progress contract. | APPROVED |
+| DEC-14 | Reset progress hides/restores owner progress summaries and never deletes attempts/results. | `toeic_test_progress_preferences`, `set_toeic_test_progress_visibility`, catalog control. | APPROVED |
+| DEC-15 | Wrong retry creates a new Practice attempt from server-selected incorrect answers; source attempt is immutable. | `start_toeic_wrong_question_attempt`, provenance column, idempotency and SQL verification. | APPROVED |
+
+The remaining OPEN rows continue to block their planned phases and are not
+implicitly changed by Phase 9.

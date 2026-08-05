@@ -309,3 +309,24 @@ Phase 7.5 has not staged, committed, pushed, or deployed anything. Existing
 untracked files from before this audit were preserved. The final status output
 must be checked to distinguish those pre-existing files from the three new
 audit documents.
+
+## Phase 9 canonical update
+
+Phase 9 is complete for the declared history/progress/retry scope. The
+canonical count is maintained in the Phase 9 addendum of the parity matrix:
+
+| Status | Count |
+|---|---:|
+| COMPLETE | 29 |
+| PARTIAL | 9 |
+| MISSING | 14 |
+| REPLACED | 3 |
+| REJECTED | 4 |
+| NOT_APPLICABLE | 0 |
+| UNKNOWN | 2 |
+| **Total audited features** | **61** |
+
+The four Phase 9 behavior changes are: history, server-derived progress,
+hide/restore progress visibility and wrong-question retry. Score calculator
+and official scaled score are rejected for now under DEC-10. The original
+Phase 7.5 counts remain above as historical traceability.
