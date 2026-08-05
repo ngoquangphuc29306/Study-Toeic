@@ -783,15 +783,25 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     // Phase 6: Again now shows queue-based relearning message
     if (rating === 'again') return 'Sau 5 thẻ';
     const formatHoursLabel = (hours: number) => {
-      if (hours < 1) {
-        const mins = Math.max(1, Math.round(hours * 60));
-        return `${mins} phút`;
-      }
-      if (hours < 24) {
-        return `${Math.round(hours)} giờ`;
-      }
-      const days = Math.round(hours / 24);
+    if (hours < 1) {
+      const minutes = Math.max(1, Math.round(hours * 60));
+      return `${minutes} phút`;
+    }
+
+    const roundedHours = Math.round(hours);
+
+    if (roundedHours < 24) {
+      return `${roundedHours} giờ`;
+    }
+
+    const days = Math.floor(roundedHours / 24);
+    const remainingHours = roundedHours % 24;
+
+    if (remainingHours === 0) {
       return `${days} ngày`;
+    }
+
+      return `${days} ngày ${remainingHours} giờ`;
     };
 
     if (rating === 'hard') {
