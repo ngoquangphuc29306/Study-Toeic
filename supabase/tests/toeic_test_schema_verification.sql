@@ -1,6 +1,7 @@
--- TOEIC Phase 2 catalog/security verification
+-- TOEIC Phase 4 catalog/security verification
 -- Run after `supabase db reset` against the local database.
--- This script checks schema metadata and privileges without inserting data.
+-- This script checks schema metadata, read RPC privileges and private media
+-- configuration without inserting data.
 -- JWT-level User A/User B RLS tests require an authenticated PostgREST session
 -- and are listed in the manual verification notes at the end.
 
@@ -62,10 +63,10 @@ $$;
 
 DO $$
 BEGIN
-    IF NOT has_table_privilege('authenticated', 'public.toeic_tests', 'SELECT')
-       OR NOT has_table_privilege('authenticated', 'public.toeic_passages', 'SELECT')
-       OR NOT has_table_privilege('authenticated', 'public.toeic_questions', 'SELECT') THEN
-        RAISE EXCEPTION 'Authenticated SELECT grants are missing for client-safe content';
+    IF has_table_privilege('authenticated', 'public.toeic_tests', 'SELECT')
+       OR has_table_privilege('authenticated', 'public.toeic_passages', 'SELECT')
+       OR has_table_privilege('authenticated', 'public.toeic_questions', 'SELECT') THEN
+        RAISE EXCEPTION 'Authenticated direct SELECT bypasses the Phase 4 safe read boundary';
     END IF;
 
     IF has_table_privilege('authenticated', 'public.toeic_question_answer_keys', 'SELECT')
@@ -77,6 +78,47 @@ BEGIN
        OR has_table_privilege('authenticated', 'public.toeic_test_attempts', 'INSERT')
        OR has_table_privilege('authenticated', 'public.toeic_test_answers', 'UPDATE') THEN
         RAISE EXCEPTION 'Browser mutation privilege is broader than the Phase 2 boundary';
+    END IF;
+END;
+$$;
+
+DO $$
+DECLARE
+    catalog_function REGPROCEDURE := 'public.list_published_toeic_tests(integer,text,text,integer,integer)'::REGPROCEDURE;
+    part_function REGPROCEDURE := 'public.get_published_toeic_test_part(uuid,smallint)'::REGPROCEDURE;
+BEGIN
+    IF NOT has_function_privilege('authenticated', catalog_function, 'EXECUTE')
+       OR NOT has_function_privilege('authenticated', part_function, 'EXECUTE') THEN
+        RAISE EXCEPTION 'Authenticated safe TOEIC read RPC grants are missing';
+    END IF;
+    IF has_function_privilege('anon', catalog_function, 'EXECUTE')
+       OR has_function_privilege('anon', part_function, 'EXECUTE') THEN
+        RAISE EXCEPTION 'TOEIC read RPC privileges are broader than intended';
+    END IF;
+END;
+$$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM storage.buckets
+        WHERE id = 'toeic-test-media'
+          AND name = 'toeic-test-media'
+          AND public = FALSE
+          AND file_size_limit = 52428800
+    ) THEN
+        RAISE EXCEPTION 'Private toeic-test-media bucket is missing or public';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM pg_policies
+        WHERE schemaname = 'storage'
+          AND tablename = 'objects'
+          AND policyname ILIKE '%toeic%'
+    ) THEN
+        RAISE EXCEPTION 'TOEIC media unexpectedly has a browser storage policy';
     END IF;
 END;
 $$;
@@ -163,10 +205,12 @@ $$;
 ROLLBACK;
 
 -- Manual JWT/PostgREST verification still required when local Supabase is running:
--- 1. Anonymous: cannot SELECT tests, passages, questions or answer keys.
--- 2. Authenticated User A: can SELECT published content, not draft/archived.
--- 3. User A cannot SELECT User B's attempts or answers.
--- 4. User A cannot insert/update attempts, attempt snapshots or answers directly.
--- 5. User A cannot read answer keys or write is_correct.
--- 6. A passage/question from another test fails the composite FK.
--- 7. selected_parts with duplicates/out-of-range values fails its CHECK helper.
+-- 1. Anonymous: cannot execute TOEIC read RPCs or SELECT content tables.
+-- 2. Authenticated User A: can execute catalog/part RPCs for published content.
+-- 3. Safe RPC JSON does not contain correct_answer, transcript, translation,
+--    explanation_en, explanation_vi, ai_explanation or vocabulary_content.
+-- 4. User A cannot SELECT User B's attempts or answers.
+-- 5. User A cannot insert/update attempts, attempt snapshots or answers directly.
+-- 6. User A cannot read answer keys or write is_correct.
+-- 7. A passage/question from another test fails the composite FK.
+-- 8. selected_parts with duplicates/out-of-range values fails its CHECK helper.

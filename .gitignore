@@ -11,3 +11,4 @@ Thumbs.db
 .vscode/
 tsconfig.tsbuildinfo
 *.tsbuildinfo
+reports/toeic/
