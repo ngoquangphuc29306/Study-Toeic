@@ -1,10 +1,12 @@
 # VocabTOEIC — Phased Roadmap
 
-**Document Version**: 3.1
+**Document Version**: 3.2
 **Created**: 2026-07-30
-**Updated**: 2026-07-31
-**Status**: Official Development Roadmap (Phase 2E Complete)
+**Updated**: 2026-08-05
+**Status**: Historical Development Roadmap
 **Authority**: Defines phase sequence and acceptance criteria
+
+> **Current-state note:** This roadmap preserves historical phase decisions and reports. It is not a live implementation checklist. Current behavior must be verified from source and the current contract documents, especially for Supabase-backed progress, RPC idempotency, local timezone utilities, request coordination, session recovery and Vitest.
 
 ---
 

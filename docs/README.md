@@ -1,8 +1,17 @@
 # VocabTOEIC — Documentation Index
 
-**Version**: 1.0  
+**Version**: 1.1
 **Created**: 2026-07-30  
+**Updated**: 2026-08-05
 **Status**: Official Documentation Index
+
+## Current implementation snapshot
+
+The current source of truth is the code and migrations on the active branch. The authenticated app runs at `/app` with tabs for Dashboard, Flashcard, Synonym Practice and Vocabulary Manager. Supabase owns vocabulary progress and review logs; the browser uses `sessionStorage` only for bounded study-session and pending-rating recovery.
+
+Rating scheduling is server-authoritative through `submit_vocabulary_rating`. `success` and `already_processed` are successful mutation results. Again uses queue-based re-learning (`interval_hours = 0`, `next_review_at = null`). Current data loading uses request coordination, user/generation stale-response guards, aggregate failure isolation and controlled auth retry.
+
+Historical `PHASE_*`, `*_AUDIT`, `*_REPORT` and `*_SUMMARY` documents are retained as decision and incident history. Their older implementation claims must not override the current contract documents below.
 
 ---
 
@@ -56,11 +65,11 @@ When documents contain conflicting information, the following precedence order a
 ---
 
 ### 3. SRS_TARGET_SPEC.md
-**Purpose**: Specify the approved SRS algorithm and safety requirements.
+**Purpose**: Specify the current SRS RPC, client reconciliation, queue and idempotency contract.
 
 **Scope**:
-- Current SRS algorithm (verified from code)
-- Approved MVP SRS target (preserves current behaviour)
+- Current SRS behavior (verified from code and migration)
+- Authoritative RPC result contract and client reconciliation
 - Safety requirements (pure functions, idempotency, atomicity)
 - Deferred algorithm research (SM-2, FSRS)
 - Test requirements with fixed timestamps
@@ -73,7 +82,7 @@ When documents contain conflicting information, the following precedence order a
 **Purpose**: Document current routing and approved future routing plans.
 
 **Scope**:
-- Current state: SPA with tab navigation at `/`
+- Current state: SPA with tab navigation at `/app`
 - First vertical slice: `/login`, `/signup` routes
 - Deferred: full route migration, deep linking, admin routes
 - Navigation patterns and URL parameters
@@ -136,10 +145,10 @@ When documents contain conflicting information, the following precedence order a
 **Resolution**: PRODUCT_DECISIONS.md takes precedence. Phase 5 must preserve current algorithm. SM-2 is deferred and requires explicit approval before implementation.
 
 ### Example 2: Routing Migration
-- **ROUTE_CONTRACT.md** states: "Keep `/` for first vertical slice"
+- **ROUTE_CONTRACT.md** states: "Keep `/app` for the authenticated vertical slice"
 - **PHASED_ROADMAP.md** originally stated: "Phase 2: Move to `/dashboard`"
 
-**Resolution**: ROUTE_CONTRACT.md takes precedence. Phase 2 keeps current SPA at `/`, adds `/login` and `/signup` only.
+**Resolution**: ROUTE_CONTRACT.md takes precedence. The current authenticated SPA remains at `/app`; `/` is the public landing page.
 
 ### Example 3: localStorage Usage
 - **DATA_OWNERSHIP_CONTRACT.md** states: "Supabase is source of truth after migration"
@@ -153,13 +162,13 @@ When documents contain conflicting information, the following precedence order a
 
 | Document | Status | Last Updated | Approval Required |
 |----------|--------|--------------|-------------------|
-| README.md | ✅ Current | 2026-07-30 | N/A |
-| PRODUCT_DECISIONS.md | ✅ Approved | 2026-07-30 | Product Owner |
-| DATA_OWNERSHIP_CONTRACT.md | ✅ Corrected | 2026-07-30 | Product Owner + Security Review |
-| SRS_TARGET_SPEC.md | ✅ Corrected | 2026-07-30 | Product Owner |
-| ROUTE_CONTRACT.md | ✅ Corrected | 2026-07-30 | Product Owner |
+| README.md | ✅ Current | 2026-08-05 | N/A |
+| PRODUCT_DECISIONS.md | ✅ Approved/current notes corrected | 2026-08-05 | Product Owner |
+| DATA_OWNERSHIP_CONTRACT.md | ✅ Current notes corrected | 2026-08-05 | Product Owner + Security Review |
+| SRS_TARGET_SPEC.md | ✅ Current implementation reference | 2026-08-05 | Product Owner |
+| ROUTE_CONTRACT.md | ✅ Current | 2026-08-05 | Product Owner |
 | UI_PRESERVATION_CONTRACT.md | ✅ Corrected | 2026-07-30 | Product Owner |
-| TARGET_ARCHITECTURE.md | ✅ Corrected | 2026-07-30 | Technical Lead |
+| TARGET_ARCHITECTURE.md | ⚠️ Target patterns plus current notes | 2026-08-05 | Technical Lead |
 | PHASED_ROADMAP.md | ✅ Corrected | 2026-07-30 | Product Owner |
 
 ---

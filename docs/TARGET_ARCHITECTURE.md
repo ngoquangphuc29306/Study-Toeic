@@ -1,12 +1,27 @@
 # VocabTOEIC — Target Architecture
 
-**Document Version**: 2.1
+**Document Version**: 2.2
 **Created**: 2026-07-30
-**Updated**: 2026-08-01  
+**Updated**: 2026-08-05
 **Status**: Official Architecture Contract  
 **Authority**: Defines target architecture patterns for production
 
 ---
+
+## Current implementation snapshot
+
+This document contains target layering patterns and current implementation notes. The following facts are verified against the current source and take precedence over illustrative examples later in the document:
+
+- `app/app/page.tsx` owns authenticated app data, auth/data state and tab orchestration.
+- `Dashboard`, `FlashcardMode`, `SynonymPractice` and `VocabManager` receive data and callbacks from `AppPage`; they do not own the app-wide snapshot.
+- `loadAppDataSnapshot()` loads core collections/topics/vocabularies. Dashboard metrics and week activity are derived aggregates loaded best-effort and isolated with `Promise.allSettled()`.
+- `handleUpdateProgress()` submits the RPC, validates/uses `RatingResult` through `applyRatingResult()`, then refreshes aggregates without making refresh failure a mutation failure.
+- `createRequestCoordinator()` deduplicates in-flight requests by user key. `isCurrentRequest()` protects against stale user/generation responses.
+- SRS scheduling is authoritative in Supabase RPC `submit_vocabulary_rating`; the client does not calculate a replacement schedule after rating.
+- Current state management is React `useState`/`useRef`/props plus small utilities. TanStack Query, Zustand, Redux Toolkit and a repository abstraction layer are not installed or used.
+- Unit tests run with Vitest. There is no E2E browser harness or mobile automation in this repository.
+
+The diagrams and code examples below are architectural patterns. They are not claims that every proposed layer or example file already exists.
 
 ## 1. Architecture Overview
 
@@ -491,6 +506,21 @@ export const supabaseServer = createClient(
 
 ### 3.1. Rate Vocabulary Flow
 
+**Current implementation**:
+
+```text
+FlashcardMode.handleRating()
+  → AppPage.handleUpdateProgress()
+  → updateUserProgress()
+  → submit_vocabulary_rating RPC
+  → validated RatingResult
+  → applyRatingResult() patches local vocabulary
+  → FlashcardMode commits queue transition/session snapshot
+  → dashboard metrics/week activity refresh best-effort
+```
+
+The client does not call a scheduler to replace the RPC result. The flow below is a target-layering illustration, not the current production call path.
+
 ```
 User clicks "Good" button
   ↓
@@ -541,6 +571,8 @@ const rateCard = async (rating: SrsRating) => {
 ```
 
 ### 3.2. Load Dashboard Stats Flow
+
+**Current implementation correction**: `Dashboard` receives the app snapshot from `AppPage`; it does not independently own the initial auth/data fetch. `AppPage` loads core data, commits it, then loads dashboard metrics and week activity as isolated best-effort aggregates. Focus/visibility/online refresh is debounced and coordinated.
 
 **Phase 7: Real Supabase Data**
 
@@ -801,6 +833,8 @@ try {
 
 ## 6. Testing Strategy
 
+**Current test boundary (2026-08-05):** Vitest is configured and is the only automated test runner in the repository. Current tests are unit/service tests with mocked boundaries; there is no configured Supabase integration harness, React Testing Library suite, Playwright E2E harness, or mobile automation. The example sections below describe possible future layers and are not current coverage claims.
+
 ### 6.1. Unit Tests (Domain Services)
 
 **Target**: Pure functions, business logic
@@ -824,10 +858,10 @@ describe('SRS Scheduler', () => {
     
     const result = calculateNextReview(progress, 'again', now);
     
-    expect(result.intervalHours).toBe(1 / 60); // 1 min
+    expect(result.intervalHours).toBe(0); // queue-based relearning
     expect(result.againCount).toBe(2);
     expect(result.status).toBe('learning');
-    expect(result.nextReviewMs).toBe(now + 60 * 1000);
+    expect(result.nextReviewMs).toBeNull();
   });
 });
 ```
@@ -1067,5 +1101,6 @@ Supabase
 | 1.0 | 2026-07-30 | Phase 0 | Initial target architecture |
 | 2.0 | 2026-07-30 | Phase 0 Correction | Replaced Modified SM-2 algorithm examples with current-algorithm-neutral examples (Again=5min, Hard=6h/×2, Good=24h/×3, Easy=72h/×4), removed ease_factor/lapseCount fields, updated to againCount field, updated test examples with fixed timestamps, clarified repository interfaces not required for MVP (introduce abstractions incrementally) |
 | 2.1 | 2026-07-31 | Parameter Update | Updated Again interval from 5 minutes to 1 minute in all examples (Again=1min, Hard/Good/Easy unchanged). Product parameter change only, not algorithm redesign. |
+| 2.2 | 2026-08-05 | Current Implementation Audit | Marked target examples as illustrative, documented the current AppPage data owner, RPC-authoritative RatingResult flow, request guards, aggregate isolation and Vitest boundary. |
 
 **Approval**: This document defines target architecture. Incremental migration plan requires approval before execution.

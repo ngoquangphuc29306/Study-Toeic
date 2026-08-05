@@ -8,6 +8,14 @@
 
 **IMPORTANT**: All SQL examples in this document are **PROPOSED architectural drafts** and are **NOT migration-ready**. They require validation, testing, and adjustment before deployment to Supabase.
 
+## Current implementation status (2026-08-05)
+
+- Collections, topics, vocabularies and user progress are read from Supabase through RLS-enforced services.
+- `review_logs` are written only by `submit_vocabulary_rating`; the browser does not insert review logs directly.
+- Progress fields (`status`, `review_count`, `last_reviewed_at`, `next_review_at`, `interval_hours`, `again_count`) are not maintained as a long-term localStorage fallback.
+- `sessionStorage` is used only for bounded study-session recovery and pending rating recovery, scoped by authenticated user ID.
+- The migration sections later in this document describe historical transitions and must not be read as the current data source.
+
 ---
 
 ## 1. Core Principles
@@ -898,6 +906,8 @@ EXECUTE FUNCTION set_owner_from_auth();
 
 ## 5. Migration from localStorage
 
+> **Historical migration note:** The progress/localStorage status described in the older Phase 2E text below is no longer current. Production progress and review logs are Supabase-backed; only bounded session/pending-action recovery remains in `sessionStorage`.
+
 ### 5.1. One-Time Import Only
 
 **CRITICAL**: After a domain is migrated to Supabase, localStorage must NOT be used as a silent long-term persistence fallback for that domain.
@@ -914,9 +924,10 @@ EXECUTE FUNCTION set_owner_from_auth();
   - **Topic Validation**: Must reference valid Supabase Topic UUIDs
   - **Database UUIDs**: Vocabularies use database-generated UUIDs
   - **Legacy Keys**: localStorage Vocabulary keys (vocab_local_vocabularies_v1:<user-id>) are no longer read or written for domain data
-- 🔄 Progress: Still in user-scoped localStorage (Phase 2E+)
-  - **Progress References**: localStorage progress references Supabase Vocabulary UUIDs
-  - **Deletion Cleanup**: Deleting a Vocabulary cleans its localStorage progress references
+- ✅ Progress: Supabase-backed through `user_vocab_progress` (current implementation)
+  - **Progress Source**: `services/progressService.ts` reads progress from Supabase
+  - **Rating Writes**: `submit_vocabulary_rating` atomically updates progress and review logs
+  - **Session Recovery**: `sessionStorage` stores only bounded queue/pending-action recovery metadata
 
 **Approved localStorage Uses**:
 1. **One-time migration**: Import existing data on first login

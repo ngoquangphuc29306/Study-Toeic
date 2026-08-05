@@ -192,7 +192,7 @@ Header (sticky top-0 backdrop-blur)
   ├── Navigation Tabs (Desktop: md:flex, Mobile: bottom row)
   │     ├── Tổng Quan (Home icon)
   │     ├── Luyện Flashcards (Sparkles icon)
-  │     ├── Bài Tập Quiz (HelpCircle icon)
+  │     ├── Luyện từ đồng nghĩa (GitCompareArrows icon)
   │     └── Quản Lý Từ Vựng (Layers icon)
   └── Action Badges
         ├── Daily Streak (Flame icon + "{n} Ngày Streak")
@@ -254,7 +254,7 @@ Dashboard Container
 **Preserved Interactions**:
 - Click collection → expand/collapse topics
 - Click "Học Ngay" → navigate to flashcard
-- Click "Làm Quiz" → navigate to quiz
+- Click "Luyện từ đồng nghĩa" → navigate to Synonym Practice
 - Click "Thêm Từ" → open AddVocabModal
 
 ### 3.3. Flashcard Mode (components/FlashcardMode.tsx)
@@ -284,7 +284,7 @@ FlashcardMode Container
 
 **Visual Rules**:
 - Card: Large centered `rounded-3xl` with shadow-xl
-- Flip animation: `transform rotateY(180deg)` with `transition-transform duration-600`
+- Flip animation: CSS `rotateY(180deg)` with `transition-transform duration-500` and `transform-style: preserve-3d`
 - Front side: Large word text (`text-3xl font-extrabold`)
 - Back side: Organized sections (meaning, example, synonyms, collocations)
 - Rating buttons: Full-width row, rounded-2xl, color-coded
@@ -297,6 +297,8 @@ FlashcardMode Container
 - Confetti on session complete
 
 ### 3.4. Quiz Mode (components/QuizMode.tsx)
+
+> **Current implementation correction (2026-08-05):** The active `/app` navigation renders Synonym Practice instead of `QuizMode`. The current feature is implemented by `features/synonym-practice/` with four modes: multiple choice, matching, select all and typing. `components/QuizMode.tsx` is not the active app tab and should not be treated as the current navigation contract.
 
 **Structure**:
 ```

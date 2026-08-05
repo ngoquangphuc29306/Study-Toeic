@@ -1,10 +1,12 @@
 # VocabTOEIC — Product Decisions
 
-**Document Version**: 2.0  
+**Document Version**: 2.1
 **Created**: 2026-07-30  
-**Updated**: 2026-07-30  
+**Updated**: 2026-08-05
 **Status**: Product Owner Approved  
 **Authority**: Highest precedence — all other documents must align with approved decisions here
+
+> **Current implementation correction (2026-08-05):** Older sections in this historical decision document may mention `/`, Quiz navigation, localStorage progress, or time-based Again scheduling. The current source of truth is the authenticated app at `/app`, the `synonyms` tab for Synonym Practice, Supabase-backed progress/review logs, and queue-based Again with `interval_hours = 0` and `next_review_at = null`. See `docs/ROUTE_CONTRACT.md` and `docs/SRS_TARGET_SPEC.md`.
 
 ---
 
@@ -32,10 +34,10 @@
 
 **Status**: ✅ APPROVED for MVP
 
-The MVP SRS algorithm **preserves current behaviour** exactly as implemented in `services/vocabService.ts` lines 557-656.
+The MVP SRS algorithm **preserves current behaviour** exactly as implemented by the `submit_vocabulary_rating` RPC and consumed through `services/progressService.ts`.
 
 **Rating System**: Four buttons
-- **Again** (Quên): 1 minute
+- **Again** (Quên): queue-based re-learning; `interval_hours = 0`, `next_review_at = null`
 - **Hard** (Khó): initial 6 hours if first review, then ×2 current interval
 - **Good** (Được): initial 24 hours if first review, then ×3 current interval  
 - **Easy** (Dễ): initial 72 hours if first review, then ×4 current interval
@@ -53,7 +55,7 @@ The MVP SRS algorithm **preserves current behaviour** exactly as implemented in 
 **Behaviour**:
 - First review: uses initial intervals (6h, 24h, 72h)
 - Subsequent reviews: multiplies current `interval_hours` (×2, ×3, ×4)
-- Again: resets to 1 minute, increments `again_count`
+- Again: sets interval to `0`, clears `next_review_at`, requeues in the active session and increments `again_count`
 - No automatic mastery promotion
 - No interval cap
 - No ease factors
@@ -131,14 +133,14 @@ After a domain is migrated to Supabase:
 
 **Current Application**:
 - SPA at `/` with tab-based navigation
-- Tabs: Dashboard, Flashcards, Quiz, Vocab Manager
+- Tabs: Dashboard, Flashcards, Synonym Practice, Vocab Manager
 - React state switching, no URL changes
 
 **First Vertical Slice Routes**:
 - Add `/login` page (new)
 - Add `/signup` page (new)
-- Keep existing app at `/` (no changes to current SPA)
-- After login: redirect to `/` (current dashboard tab)
+- Keep existing app at `/app` (no changes to current SPA)
+- After login: redirect to `/app` (current dashboard tab)
 
 **Deferred**:
 - 🔮 Move app to `/dashboard`
@@ -161,7 +163,7 @@ The first vertical slice validates the full stack from UI to database with RLS:
 **User Flow**:
 1. Sign up at `/signup`
 2. Sign in at `/login`
-3. Navigate to Dashboard (current `/` app)
+3. Navigate to Dashboard (current `/app` app)
 4. Create Collection
 5. Create Topic under Collection
 6. Add Vocabulary to Topic
@@ -249,8 +251,8 @@ All SQL examples in documentation (SCHEMA definitions, RLS policies, indexes, co
 These behaviours are verified from current codebase and must be preserved unless explicitly changed by approved decision.
 
 ### 3.1. SRS Scheduling
-From `services/vocabService.ts`:
-- Again: 1 minute (`1 / 60 hours`)
+From the current `submit_vocabulary_rating` RPC:
+- Again: queue-based re-learning (`interval_hours = 0`, `next_review_at = null`)
 - Hard: `currentInterval > 0 ? currentInterval * 2 : 6` hours
 - Good: `currentInterval > 0 ? currentInterval * 3 : 24` hours
 - Easy: `currentInterval > 0 ? currentInterval * 4 : 72` hours
@@ -271,16 +273,16 @@ mastery_level?: number
 
 ### 3.3. Study Session Behaviour
 - Flashcard session fetches vocabularies filtered by topic/status
-- Cards shown in order (or shuffled if implemented)
-- Each rating updates progress immediately
-- Session state kept in React component state (not persisted)
-- Refresh loses session progress (no recovery in current code)
+- Queue order is explicit: due learning, not-due learning, new, then mastered for the `all` filter
+- Each successful rating updates local progress from `RatingResult`
+- Again cards are reinserted after a gap of five cards
+- Queue/index snapshots are persisted in user-scoped `sessionStorage` and restored when context matches
 
 ### 3.4. Streak Calculation
-From `services/vocabService.ts` lines 636-640:
-- Records today's date in localStorage `STUDY_DATES_KEY`
-- Streak calculated from consecutive dates array
-- Persists to localStorage only (not Supabase)
+From `services/dashboardService.ts` and `lib/date/localDate.ts`:
+- Review events are queried from Supabase `review_logs`
+- Calendar-day keys use the browser's local timezone
+- Same-day events are deduplicated before consecutive-day streak calculation
 
 ### 3.5. UI Interactions (Verified)
 - Tab navigation via React state (`setActiveTab`)
@@ -335,7 +337,7 @@ These features are NOT approved for MVP and require explicit product owner appro
 
 **Open Question**: Can a card appear multiple times in one session?
 
-**Current Behaviour**: Not explicitly defined in code. Cards fetched once per session start, no re-queue logic visible.
+**Current Behaviour**: Implemented in `lib/session/queueTransition.ts`. Again cards are reinserted after a five-card gap; other ratings advance the index; completion occurs when the next index reaches the queue length.
 
 **Options**:
 1. **One appearance per session** (strict):
@@ -352,7 +354,7 @@ These features are NOT approved for MVP and require explicit product owner appro
    - "Again" cards re-queued with max 2 appearances per session
    - After 2nd "Again", card exits session
 
-**Decision Required**: Product owner must specify queue behaviour if different from current implementation.
+**Decision Required**: No new queue behavior is required unless product scope changes.
 
 ---
 
@@ -567,8 +569,8 @@ These features are explicitly OUT of scope for VocabTOEIC and should NOT be adde
 - Vocabulary CRUD (manual add, edit, delete)
 - Import (Excel, CSV)
 - **Flashcard mode** (SRS-based review)
-- **Quiz mode** (multiple choice, fill-in-blank)
-- **Typing mode** (nếu đã triển khai hoặc dự kiến)
+- **Synonym Practice** (multiple choice, matching, select-all, typing)
+- Flashcard submodes: quiz, typing and pronunciation
 - Spaced Repetition System (SRS) scheduling
 - Daily goals (số từ học mỗi ngày)
 - Streak tracking (số ngày liên tục học)
@@ -600,6 +602,8 @@ These features are explicitly OUT of scope for VocabTOEIC and should NOT be adde
 ---
 
 ## 5. Study Session Behavior
+
+**Implementation correction (2026-08-05):** The historical target/baseline text in this section predates session recovery. The current implementation uses `saveStudySession()` and `loadStudySession()` in `lib/session/storage.ts`, stores queue/index in user-scoped `sessionStorage`, and clears the snapshot on explicit completion or restart. `Again` requeue behavior is implemented by `lib/session/queueTransition.ts`.
 
 ### 5.1. Session Persistence
 **Target Behavior** (phase sau):
@@ -658,7 +662,7 @@ These features are explicitly OUT of scope for VocabTOEIC and should NOT be adde
 - Algorithm tuning (A/B test intervals)
 - Compliance (data export requests)
 
-**Current State**: Chưa implement review_logs table. Phase 4 sẽ thêm.
+**Current State**: `review_logs` is implemented in Supabase and inserts are performed by the rating RPC only. Current result snapshot fields support deterministic `already_processed` responses.
 
 ---
 
@@ -701,7 +705,7 @@ Example:
 🔴 **Pending Decisions**:
 
 1. **SRS Algorithm**: Giữ current simple algorithm hay migrate sang SM-2/FSRS?
-   - Current: Again=5min, Hard=×2, Good=×3, Easy=×4
+   - Current: Again uses queue-based relearning; Hard=×2, Good=×3, Easy=×4 after their initial intervals
    - Option: SM-2 với ease factor
    - Option: FSRS (machine learning based)
 
