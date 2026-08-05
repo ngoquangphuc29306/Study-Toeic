@@ -582,3 +582,49 @@ The RPC is not executable by `anon` or `authenticated`; only `service_role` rece
 The sample dry-run completed with 200 questions, 42 passages, 200 answer keys, 54 audio objects, 11 image objects, zero errors and source warnings for the metadata year mismatch, one passage translation variation and one partially parsed vocabulary line. Local apply completed with `status = draft`; a follow-up query confirmed 1 test, 42 passages, 200 questions, 200 answer keys and 0 attempts. Re-running without `--replace-draft` was refused and the RPC transaction rolled back; `--replace-draft` then completed successfully.
 
 No production bucket was accessed or uploaded to. UI, routes, attempt creation, autosave, scoring, signed URLs, importer admin page and vocabulary-save UI remain deferred.
+
+## 17. Phase 4 safe reads and private media
+
+Phase 4 moved browser content reads behind explicit catalog and part RPC
+projections. Authenticated direct `SELECT` on `toeic_tests`,
+`toeic_passages` and `toeic_questions` is revoked; the safe RPCs return no
+answer key, transcript, translation, explanation or vocabulary fields. The
+`toeic-test-media` bucket is private and has no browser storage policy.
+
+The browser uses the existing Supabase singleton for safe RPC reads. A
+server-only route validates the normal authenticated session and signs only
+published-test media paths that are referenced by the database. Signed URLs
+are short-lived and returned with `Cache-Control: private, no-store`.
+
+See `docs/TOEIC_TEST_PHASE4_READ_SECURITY.md` for the audit and verification
+details.
+
+## 18. Phase 5 attempt lifecycle
+
+Phase 5 adds server-authoritative attempt RPCs without implementing UI,
+submission or scoring:
+
+- `start_toeic_attempt` validates the authenticated user, published test,
+  mode and selected parts, then chooses and snapshots questions in deterministic
+  order. Exam attempts require Parts 1–7 and receive a server deadline;
+  Practice attempts may use a subset and have no deadline.
+- `save_toeic_attempt_answers` validates an owner, active/deadline state,
+  snapshot membership, answer shape and a maximum batch of 50 before one
+  atomic upsert. `is_correct` is never accepted as a write field.
+- `get_toeic_attempt_session` returns the owner-only snapshot and safe answer
+  state. It expires an overdue Exam attempt using server time before returning.
+- `abandon_toeic_attempt` transitions only an owner `in_progress` attempt,
+  preserves snapshots and answers, and is safe to call again after abandon.
+
+Start idempotency uses the new `start_idempotency_key` and a unique
+user/key index. A second start with the same key returns the same attempt. A
+different key cannot silently reuse an active attempt: Exam conflicts are
+per-user/test and Practice conflicts are per-user/test/selected-parts, both
+returning the stable `DUPLICATE_ACTIVE_ATTEMPT` code. Autosave idempotency uses
+the `toeic_attempt_mutations` ledger keyed by user/mutation key; a retry returns
+the original saved result without repeating the upsert.
+
+Browser roles have no direct attempt, snapshot, answer or mutation-ledger
+table privileges. Existing RLS remains enabled/forced, while the RPCs use
+fixed `search_path` SECURITY DEFINER functions and `auth.uid()` ownership
+checks. Submit/scoring remains reserved for a later phase.
