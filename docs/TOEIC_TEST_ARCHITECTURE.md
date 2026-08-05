@@ -408,9 +408,20 @@ The importer must not infer passage grouping from question numbers, trust client
 
 ### Phase 8 — Explanation and vocabulary save
 
-- add explicit Collection/Section selection;
-- call current vocabulary service through an adaptor;
-- avoid automatic duplicate containers.
+- add explicit Practice feedback and submitted-review learning boundaries;
+- keep `get_published_toeic_test_part` free of explanations, transcript,
+  translation, vocabulary and answer keys;
+- add explicit Collection/Section selection through the current vocabulary
+  service adapter;
+- avoid automatic duplicate containers and preserve the vocabulary/SRS
+  boundary.
+
+Phase 8 implementation is recorded in
+`docs/TOEIC_TEST_PHASE8_LEARNING_CONTENT.md`. The new
+`check_toeic_practice_answer` and `get_toeic_attempt_review_content` RPCs are
+owner-authorized, return only the checked question/submitted snapshot, and do
+not write answer correctness. Practice feedback is ephemeral UI state; it is
+not persisted in localStorage and is not available in Exam before submit.
 
 ### Phase 9 — Review/history/analytics
 

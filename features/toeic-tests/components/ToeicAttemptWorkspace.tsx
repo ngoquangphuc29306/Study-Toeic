@@ -12,10 +12,15 @@ import { ToeicPartContentCache } from '../services/toeicPartContentCache';
 import { createBrowserToeicMediaClient } from '../services/toeicMediaClient';
 import { getRemainingToeicSeconds, getServerClockOffsetMs } from '../timer';
 import { useToeicAutosaveController } from '../services/toeicAutosaveController';
+import { canCheckToeicPracticeAnswer } from '../services/toeicPracticeFeedbackState';
+import { checkToeicPracticeAnswer } from '../services/toeicLearningService';
+import type { ToeicLearningVocabularyItem, ToeicPracticeFeedback } from '../learningContracts';
 import { ToeicPassageRenderer } from './ToeicPassageRenderer';
 import { ToeicMediaView } from './ToeicMediaView';
 import { ToeicAbandonDialog } from './ToeicAbandonDialog';
 import { ToeicSubmitDialog } from './ToeicSubmitDialog';
+import { ToeicPracticeFeedbackPanel } from './ToeicPracticeFeedbackPanel';
+import { ToeicVocabularySaveDialog } from './ToeicVocabularySaveDialog';
 
 const OPTION_KEYS: ReadonlyArray<ToeicOptionKey> = ['A', 'B', 'C', 'D'];
 const PARTS: ReadonlyArray<ToeicTestPart> = [1, 2, 3, 4, 5, 6, 7];
@@ -49,7 +54,7 @@ function AutosaveIndicator({ status, pendingCount, onRetry }: { status: string; 
 }
 
 function Palette({ session, answers, currentIndex, onSelect }: { session: ToeicAttemptSession; answers: Record<string, LocalAnswer>; currentIndex: number; onSelect: (index: number) => void }) {
-  return <div className="grid grid-cols-5 gap-2 sm:grid-cols-8 lg:grid-cols-5">{session.questions.map((question, index) => { const answer = answers[question.questionId] ?? emptyAnswer(); const current = currentIndex === index; return <button key={question.questionId} type="button" onClick={() => onSelect(index)} className={`relative min-h-10 rounded-xl border text-sm font-extrabold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] ${current ? 'border-[#9D174D] ring-2 ring-[#FBCFE8]' : answer.isFlagged ? 'border-amber-400 bg-amber-50 text-amber-700' : answer.selectedAnswer ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-[#FCE7F3] bg-white text-gray-500'}`} aria-label={`Câu ${index + 1}${answer.selectedAnswer ? ', đã trả lời' : ', chưa trả lời'}${answer.isFlagged ? ', đã đánh dấu' : ''}`} aria-current={current ? 'step' : undefined}>{index + 1}{answer.isFlagged && <Flag className="absolute -right-1 -top-1 h-3.5 w-3.5 fill-amber-400 text-amber-500" aria-hidden="true" />}</button>; })}</div>;
+  return <div className="grid grid-cols-5 gap-2 sm:grid-cols-8 lg:grid-cols-5">{session.questions.map((question, index) => { const answer = answers[question.questionId] ?? emptyAnswer(); const current = currentIndex === index; return <button key={question.questionId} type="button" onClick={() => onSelect(index)} className={`relative min-h-10 rounded-xl border text-sm font-extrabold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] ${current ? 'border-[#9D174D] ring-2 ring-[#FBCFE8]' : answer.isFlagged ? 'border-amber-400 bg-amber-50 text-amber-700' : answer.selectedAnswer ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-[#FCE7F3] bg-white text-slate-700'}`} aria-label={`Câu ${index + 1}${answer.selectedAnswer ? ', đã trả lời' : ', chưa trả lời'}${answer.isFlagged ? ', đã đánh dấu' : ''}`} aria-current={current ? 'step' : undefined}>{index + 1}{answer.isFlagged && <Flag className="absolute -right-1 -top-1 h-3.5 w-3.5 fill-amber-400 text-amber-500" aria-hidden="true" />}</button>; })}</div>;
 }
 
 function AnswerOptions({ question, answer, disabled, onSelect }: { question: ToeicAttemptContentQuestion; answer: LocalAnswer; disabled: boolean; onSelect: (option: ToeicOptionKey) => void }) {
@@ -70,6 +75,11 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
   const [abandonOpen, setAbandonOpen] = useState(false);
   const [abandonBusy, setAbandonBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [practiceFeedback, setPracticeFeedback] = useState<ToeicPracticeFeedback | null>(null);
+  const [practiceFeedbackLoading, setPracticeFeedbackLoading] = useState(false);
+  const [practiceFeedbackError, setPracticeFeedbackError] = useState<Error | null>(null);
+  const [practiceFeedbackErrorQuestionId, setPracticeFeedbackErrorQuestionId] = useState<string | null>(null);
+  const [vocabularyToSave, setVocabularyToSave] = useState<ToeicLearningVocabularyItem | null>(null);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [submitBusy, setSubmitBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -132,6 +142,8 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
   const currentModel = useMemo(() => scopedSession && currentPayload ? buildToeicAttemptContentModel({ session: scopedSession, partPayloads: [currentPayload] }) : null, [currentPayload, scopedSession]);
   const currentContent = currentModel?.questions.find((item) => item.ref.questionId === currentRef?.questionId) ?? null;
   const currentAnswer = currentRef ? answers[currentRef.questionId] ?? emptyAnswer() : emptyAnswer();
+  const activePracticeFeedback = practiceFeedback?.questionId === currentRef?.questionId ? practiceFeedback : null;
+  const activePracticeFeedbackError = practiceFeedbackErrorQuestionId === currentRef?.questionId ? practiceFeedbackError : null;
   const canMutate = session?.status === 'in_progress' && (remaining === null || remaining > 0);
   const canSubmit = session?.status === 'in_progress' || (session?.status === 'expired' && session.mode === 'exam');
   const serverOffset = useMemo(() => session ? getServerClockOffsetMs(session.serverNow) : 0, [session]);
@@ -182,11 +194,39 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
   };
 
   function updateAnswer(option: ToeicOptionKey) {
-    if (!currentRef || !canMutate) return;
+    if (!currentRef || !canMutate || activePracticeFeedback) return;
     const next = { ...currentAnswer, selectedAnswer: option, answeredAt: new Date().toISOString() };
     setAnswers((current) => ({ ...current, [currentRef.questionId]: next }));
     enqueueCurrent(next);
   }
+
+  async function checkPracticeAnswer() {
+    if (!session || session.mode !== 'practice' || !currentRef || !currentAnswer.selectedAnswer || !canMutate || activePracticeFeedback || practiceFeedbackLoading) return;
+    if (autosave.status === 'pending' || autosave.status === 'saving' || autosave.status === 'error') return;
+    setPracticeFeedbackLoading(true);
+    setPracticeFeedbackError(null);
+    setPracticeFeedbackErrorQuestionId(null);
+    try {
+      const feedback = await checkToeicPracticeAnswer({ attemptId, questionId: currentRef.questionId });
+      if (mountedRef.current) setPracticeFeedback(feedback);
+    } catch (cause) {
+      if (mountedRef.current) {
+        setPracticeFeedbackError(cause instanceof Error ? cause : new Error('Không thể kiểm tra đáp án.'));
+        setPracticeFeedbackErrorQuestionId(currentRef.questionId);
+      }
+    } finally {
+      if (mountedRef.current) setPracticeFeedbackLoading(false);
+    }
+  }
+
+  const canCheckPracticeAnswer = canCheckToeicPracticeAnswer({
+    isPractice: session?.mode === 'practice',
+    hasSelectedAnswer: Boolean(currentRef && currentAnswer.selectedAnswer),
+    canMutate: Boolean(canMutate),
+    hasFeedback: Boolean(activePracticeFeedback),
+    loading: practiceFeedbackLoading,
+    autosaveStatus: autosave.status,
+  });
 
   function toggleFlag() {
     if (!currentRef || !canMutate) return;
@@ -267,7 +307,7 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
             {!contentLoading && contentError && <div className="rounded-2xl bg-[#FFF1F2] p-5 text-[#9D174D]" role="alert"><p className="font-bold">Không thể tải nội dung câu hỏi.</p><button type="button" onClick={() => { if (currentPart) { cacheRef.current.clear(); setLoadedParts((current) => { const next = { ...current }; delete next[currentPart]; return next; }); } }} className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-xl bg-white px-3 font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6]"><RefreshCcw className="h-4 w-4" aria-hidden="true" /> Thử lại</button></div>}
             {!contentLoading && !contentError && currentContent && <>
               {currentContent.passage && <div className="mb-5 space-y-3"><ToeicPassageRenderer passage={currentContent.passage} /><ToeicMediaView testId={session.testId} path={currentContent.passage.audioPath} kind="audio" mediaClient={mediaClient} /></div>}
-              <div className="space-y-5"><div className="flex flex-wrap items-center justify-between gap-2"><span className="rounded-full bg-[#FFF1F2] px-3 py-1 text-xs font-bold text-[#9D174D]">Part {currentContent.ref.part} · Câu {currentContent.question.questionNumber}</span><button type="button" onClick={toggleFlag} disabled={!canMutate} aria-pressed={currentAnswer.isFlagged} className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-3 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] ${currentAnswer.isFlagged ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-[#FCE7F3] text-gray-500'}`}><Flag className={`h-4 w-4 ${currentAnswer.isFlagged ? 'fill-amber-400' : ''}`} aria-hidden="true" /> {currentAnswer.isFlagged ? 'Đã đánh dấu' : 'Đánh dấu'}</button></div><ToeicMediaView testId={session.testId} path={currentContent.question.imagePath} kind="image" alt={`Hình ảnh câu ${currentContent.question.questionNumber}`} mediaClient={mediaClient} /><ToeicMediaView testId={session.testId} path={currentContent.question.audioPath} kind="audio" mediaClient={mediaClient} /><h2 className="text-xl font-extrabold leading-8 text-[#493B42] sm:text-2xl">{currentContent.question.questionText || 'Hãy chọn đáp án phù hợp.'}</h2><AnswerOptions question={currentContent} answer={currentAnswer} disabled={!canMutate} onSelect={updateAnswer} /></div>
+              <div className="space-y-5"><div className="flex flex-wrap items-center justify-between gap-2"><span className="rounded-full bg-[#FFF1F2] px-3 py-1 text-xs font-bold text-[#9D174D]">Part {currentContent.ref.part} · Câu {currentContent.question.questionNumber}</span><button type="button" onClick={toggleFlag} disabled={!canMutate} aria-pressed={currentAnswer.isFlagged} className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-3 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] ${currentAnswer.isFlagged ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-[#FCE7F3] text-gray-500'}`}><Flag className={`h-4 w-4 ${currentAnswer.isFlagged ? 'fill-amber-400' : ''}`} aria-hidden="true" /> {currentAnswer.isFlagged ? 'Đã đánh dấu' : 'Đánh dấu'}</button></div><ToeicMediaView testId={session.testId} path={currentContent.question.imagePath} kind="image" alt={`Hình ảnh câu ${currentContent.question.questionNumber}`} mediaClient={mediaClient} /><ToeicMediaView testId={session.testId} path={currentContent.question.audioPath} kind="audio" mediaClient={mediaClient} /><h2 className="text-xl font-extrabold leading-8 text-[#493B42] sm:text-2xl">{currentContent.question.questionText || 'Hãy chọn đáp án phù hợp.'}</h2><AnswerOptions question={currentContent} answer={currentAnswer} disabled={!canMutate || Boolean(activePracticeFeedback)} onSelect={updateAnswer} />{session.mode === 'practice' && <div className="rounded-2xl border border-[#FCE7F3] bg-[#FFF9FB] p-4"><button type="button" onClick={() => void checkPracticeAnswer()} disabled={!canCheckPracticeAnswer} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-[#F472B6] px-4 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] disabled:cursor-not-allowed disabled:opacity-50">{practiceFeedbackLoading ? 'Đang kiểm tra…' : activePracticeFeedback ? 'Đã kiểm tra' : 'Kiểm tra đáp án'}</button>{!activePracticeFeedback && <p className="mt-2 text-xs text-gray-500">Chọn đáp án và chờ trạng thái đã lưu rồi mới kiểm tra.</p>}<ToeicPracticeFeedbackPanel feedback={activePracticeFeedback} loading={practiceFeedbackLoading} error={activePracticeFeedbackError} onRetry={() => void checkPracticeAnswer()} onReset={() => { setPracticeFeedback(null); setPracticeFeedbackError(null); setPracticeFeedbackErrorQuestionId(null); }} onSaveVocabulary={setVocabularyToSave} /></div>}</div>
             </>}
           </div>
           <div className="mt-4 flex items-center justify-between gap-3"><button type="button" onClick={() => setCurrentIndex((index) => Math.max(0, index - 1))} disabled={currentIndex === 0} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#FCE7F3] bg-white px-4 text-sm font-bold text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] disabled:opacity-40"><ChevronLeft className="h-4 w-4" aria-hidden="true" /> Câu trước</button><button type="button" onClick={() => setCurrentIndex((index) => Math.min(session.questions.length - 1, index + 1))} disabled={currentIndex === session.questions.length - 1} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#F472B6] px-4 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] disabled:opacity-40">Câu tiếp <ChevronRight className="h-4 w-4" aria-hidden="true" /></button></div>
@@ -276,6 +316,7 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
       </div>
       <ToeicAbandonDialog open={abandonOpen} busy={abandonBusy} onCancel={() => setAbandonOpen(false)} onConfirm={() => void abandon()} />
       <ToeicSubmitDialog open={submitOpen} busy={submitBusy} answered={Object.values(answers).filter((answer) => answer.selectedAnswer !== null).length} unanswered={Math.max(0, session.totalQuestions - Object.values(answers).filter((answer) => answer.selectedAnswer !== null).length)} flagged={Object.values(answers).filter((answer) => answer.isFlagged).length} remainingLabel={formatTime(remaining)} errorMessage={submitError} onRetry={() => void retrySubmitAutosave()} onCancel={() => { if (!submitBusy) setSubmitOpen(false); }} onConfirm={() => void submit()} />
+      <ToeicVocabularySaveDialog item={vocabularyToSave} open={vocabularyToSave !== null} onClose={() => setVocabularyToSave(null)} />
     </main>
   );
 }

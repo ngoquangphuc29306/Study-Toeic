@@ -1,4 +1,4 @@
-# TOEIC Test Phase 7.5 — Executive Parity Summary
+# TOEIC Test Phase 8 — Executive Parity Summary
 
 Audit date: 2026-08-05
 
@@ -13,31 +13,30 @@ The counts below are calculated from the 60 feature rows in
 
 | Status | Count |
 |---|---:|
-| COMPLETE | 18 |
-| PARTIAL | 10 |
-| MISSING | 24 |
+| COMPLETE | 25 |
+| PARTIAL | 9 |
+| MISSING | 18 |
 | REPLACED | 3 |
 | REJECTED | 2 |
 | NOT_APPLICABLE | 0 |
 | UNKNOWN | 3 |
 | **Total audited features** | **60** |
 
-There are 45 confirmed prototype controls in the separate control inventory.
+There are 49 confirmed prototype controls in the separate control inventory.
 Control counts are not added to the feature total because multiple controls
 belong to one behavior feature.
 
 Parity conclusion: **not yet achieved**. The production core is ready for
 server-authoritative start, resume, answer/flag autosave, submit, result and
-owner-only review. Prototype parity is still missing for post-submit learning
-content, vocabulary integration, history/progress, notes/annotations, and
-advanced CBT controls.
+owner-only review. Phase 8 learning content and explicit vocabulary save are
+now complete for the declared scope; parity is still missing for
+history/progress, notes/annotations, wrong-question retry and advanced CBT
+controls.
 
 ### Most important P0/P1 gaps
 
 - Listening navigation/replay/seek and timeout/auto-submit policy are not yet
   fully aligned with the prototype report.
-- Explanations, transcript, translation and vocabulary display/save are absent
-  from the production TOEIC flow.
 - Attempt history, progress and wrong-question retry are absent.
 - Audio speed/mute and palette filters are absent.
 - Official scaled score, entitlement, and content licensing remain product or
@@ -65,9 +64,29 @@ Evidence:
   `features/toeic-tests/mappers/` and service tests under
   `features/toeic-tests/services/`.
 
-Official scaled score conversion, explanations, transcript/translation,
-vocabulary/SRS integration, analytics, notes and annotations are explicitly
-deferred and are not counted as Phase 7 defects.
+Official scaled score conversion, analytics, notes and annotations remain
+deferred. Phase 8 learning content does not alter vocabulary rating or SRS.
+
+## Phase 8 status
+
+`PHASE_8_COMPLETE_FOR_DECLARED_SCOPE`.
+
+Evidence:
+
+- `supabase/migrations/20260805160000_create_toeic_learning_content.sql`
+  adds separate owner-authorized Practice and submitted-review RPCs. The
+  existing safe Part read RPC remains unchanged.
+- `features/toeic-tests/learningContracts.ts` and
+  `features/toeic-tests/mappers/toeicLearningMapper.ts` validate learning DTOs,
+  UUIDs, Parts, options, membership, duplicate IDs and unexpected fields.
+- `ToeicPracticeFeedbackPanel` and `ToeicLearningContentPanel` require an
+  explicit Practice check, show loading/error states, use accessible
+  accordions and render shared passage content once in Review.
+- `toeicVocabularyAdapter` and `ToeicVocabularySaveDialog` reuse current
+  vocabulary services, require an existing Collection/Section, report
+  normalized duplicates, and never create containers or call SRS.
+- `supabase/tests/toeic_phase8_learning_verification.sql`, 127 passing unit
+  tests and the local Test 1 integration flow verify the boundaries.
 
 ## Files audited
 
@@ -122,14 +141,16 @@ not all safe for a pre-submit browser projection.
 - `supabase/migrations/20260805130000_create_toeic_attempt_lifecycle.sql`
 - `supabase/migrations/20260805140000_create_toeic_active_attempt_read.sql`
 - `supabase/migrations/20260805150000_create_toeic_submission_result_review.sql`
+- `supabase/migrations/20260805160000_create_toeic_learning_content.sql`
 - `supabase/tests/toeic_test_schema_verification.sql`
 - `supabase/tests/toeic_attempt_lifecycle_verification.sql`
 - `supabase/tests/toeic_phase6_ui_verification.sql`
 - `supabase/tests/toeic_submission_verification.sql`
+- `supabase/tests/toeic_phase8_learning_verification.sql`
 
 ## Prototype inventory
 
-The audit inventory has 60 behavior features and 45 confirmed controls. The
+The audit inventory has 60 behavior features and 49 confirmed controls. The
 main groups are:
 
 - Catalog/selection: catalog, filters, mode, Parts, start, resume, access.
@@ -153,10 +174,14 @@ The production implementation has evidence for:
   abandon, submit, result and review RPCs.
 - Workspace answer/flag navigation, server-clock timer, media retry, submit
   confirmation and focus-managed dialogs.
+- Explicit Practice feedback after autosave, post-submit learning content
+  review, runtime learning mappers, and existing-vocabulary destination/save
+  adapter.
 - Runtime DTO mappers that reject sensitive fields.
 - Private media signing API and private bucket boundary.
 - Owner-only result/review and server-side scoring.
-- Unit tests for mappers/services/cache/timer/autosave/media/importer and SQL
+- Unit tests for mappers/services/cache/timer/autosave/media/importer/learning
+  content and SQL
   verification for grants/RLS/answer-key/mutation invariants.
 
 ## Button/control coverage
@@ -164,7 +189,8 @@ The production implementation has evidence for:
 Complete or substantially covered controls include start mode, Part selection,
 start, resume active attempt, A-D answers, flag, Part navigation, next, submit,
 submit confirmation, autosave retry, media retry, abandon, result and review
-Part filter.
+Part filter, explicit Practice check, feedback reset and vocabulary save
+destination selection.
 
 The most important missing/partial controls are:
 
@@ -174,10 +200,10 @@ The most important missing/partial controls are:
 - palette filters;
 - strike-through;
 - image zoom and font size;
-- notes, vocabulary, lookup, annotations, dictation and flip;
+- notes, lookup, annotations, dictation and flip;
 - wrong-question retry, history, reset progress and score calculator.
 
-See the full 45-row inventory in the matrix for exact evidence and decisions.
+See the full 49-row inventory in the matrix for exact evidence and decisions.
 
 ## Security differences
 
