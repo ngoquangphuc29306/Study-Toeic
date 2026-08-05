@@ -1,8 +1,8 @@
 # VocabTOEIC — Route Contract
 
-**Document Version**: 3.0  
+**Document Version**: 3.1
 **Created**: 2026-07-30  
-**Updated**: 2026-07-30  
+**Updated**: 2026-08-05
 **Status**: Product Owner Approved  
 **Authority**: Describes current state and approved routes
 
@@ -54,7 +54,7 @@
 
 **State-Based Tabs**:
 ```typescript
-type ActiveTab = 'dashboard' | 'flashcard' | 'quiz' | 'vocab-manager';
+type ActiveTab = 'dashboard' | 'flashcard' | 'synonyms' | 'vocab-manager';
 const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
 ```
 
@@ -63,7 +63,7 @@ const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
 |-----------|-----------|-------------|
 | `'dashboard'` | `<Dashboard />` | Tổng quan, stats, collections, topics |
 | `'flashcard'` | `<FlashcardMode />` | Chế độ học flashcard với SRS |
-| `'quiz'` | `<QuizMode />` | Chế độ quiz trắc nghiệm |
+| `'synonyms'` | `<SynonymPractice />` | Luyện từ đồng nghĩa |
 | `'vocab-manager'` | `<VocabManager />` | Quản lý CRUD vocabularies |
 
 **Navigation Trigger**:
@@ -73,7 +73,7 @@ const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
 - Logo/home button in Navbar navigates to dashboard tab (within `/app`)
 
 **Preserved Behavior from Phase 2B**:
-- All existing UI components unchanged
+- Dashboard, Flashcard, Synonym Practice và Vocabulary Manager là các tab hiện tại
 - State management unchanged
 - localStorage unchanged
 - Modal behavior unchanged
@@ -205,7 +205,7 @@ export function getSafeRedirectPath(
 
 **Current** (không support):
 ```
-https://vocabtoeic.app/app
+https://<deployment-host>/app
 ```
 
 **Proposed** (Phase 6+, NOT approved):
@@ -347,7 +347,7 @@ export default async function AdminLayout({ children }) {
 
 **Incremental Steps**:
 1. Move `/app` SPA → separate routes within `/app/*`
-2. Break tabs into: `/app/dashboard`, `/app/flashcards`, `/app/quiz`, `/app/vocabularies`
+2. Break tabs into: `/app/dashboard`, `/app/flashcards`, `/app/synonyms`, `/app/vocabularies`
 3. Eventually: Add deep linking with URL parameters
 
 **File Structure** (if approved):
@@ -361,7 +361,7 @@ app/
   │     ├── page.tsx                # Redirects to /app/dashboard
   │     ├── dashboard/page.tsx      # Current dashboard tab
   │     ├── flashcards/page.tsx     # Flashcard mode
-  │     ├── quiz/page.tsx           # Quiz mode
+  │     ├── synonyms/page.tsx        # Synonym Practice
   │     └── vocabularies/page.tsx   # Vocab manager
   └── layout.tsx
 ```
@@ -371,7 +371,7 @@ app/
 // Change from setState to Next.js Link
 <Link href="/app/dashboard">Tổng Quan</Link>
 <Link href="/app/flashcards">Luyện Flashcards</Link>
-<Link href="/app/quiz">Bài Tập Quiz</Link>
+<Link href="/app/synonyms">Luyện từ đồng nghĩa</Link>
 <Link href="/app/vocabularies">Quản Lý Từ Vựng</Link>
 ```
 
@@ -393,9 +393,9 @@ app/
 | `shuffle` | query | boolean | true | Shuffle card order |
 | `limit` | query | number | 20 | Max cards per session |
 
-### 8.2. Quiz Route (Proposed)
+### 8.2. Synonym Practice Route (Proposed)
 
-**Proposed**: `/quiz/[topicId]?count=10&type=mixed`
+**Proposed**: `/synonyms/[topicId]?count=10&type=mixed`
 
 ### 8.3. Vocabularies Route (Proposed)
 
