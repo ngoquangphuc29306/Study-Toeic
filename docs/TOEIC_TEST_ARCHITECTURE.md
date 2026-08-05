@@ -628,3 +628,6 @@ Browser roles have no direct attempt, snapshot, answer or mutation-ledger
 table privileges. Existing RLS remains enabled/forced, while the RPCs use
 fixed `search_path` SECURITY DEFINER functions and `auth.uid()` ownership
 checks. Submit/scoring remains reserved for a later phase.
+## Phase 6 — Production UI vertical slice
+
+Phase 6 adds the protected `/app/tests` catalog, test overview/start flow, and `/app/tests/attempts/[attemptId]` workspace. The existing `/app` shell remains intact. The workspace is server-backed, snapshot-order-driven, autosaves answer/flag state through the Phase 5 RPC, resumes closed/reloaded tabs, and never submits or scores. See `docs/TOEIC_TEST_PHASE6_UI.md` for the route, content-join, media, timer, accessibility, and deferred-work contract.

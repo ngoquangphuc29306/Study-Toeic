@@ -7,6 +7,12 @@ export interface StartToeicAttemptInput {
   idempotencyKey: string;
 }
 
+export interface GetActiveToeicAttemptInput {
+  testId: string;
+  mode: ToeicTestMode;
+  selectedParts: ReadonlyArray<ToeicTestPart>;
+}
+
 export interface ToeicAttemptQuestionRef {
   questionId: string;
   part: ToeicTestPart;

@@ -4,6 +4,7 @@ import {
   type SaveToeicAttemptAnswersInput,
   type SaveToeicAttemptAnswersResult,
   type StartToeicAttemptInput,
+  type GetActiveToeicAttemptInput,
   type ToeicAttemptSession,
 } from '../attemptContracts';
 import {
@@ -43,6 +44,17 @@ function validateParts(parts: ReadonlyArray<ToeicTestPart>): void {
 function validateStartInput(input: StartToeicAttemptInput): void {
   validateUuid(input.testId, 'test id');
   validateUuid(input.idempotencyKey, 'start idempotency key');
+  if (input.mode !== 'exam' && input.mode !== 'practice') {
+    throw new ToeicAttemptError('INVALID_INPUT', 'Invalid TOEIC attempt mode');
+  }
+  validateParts(input.selectedParts);
+  if (input.mode === 'exam' && input.selectedParts.join(',') !== ALL_TOEIC_PARTS.join(',')) {
+    throw new ToeicAttemptError('INVALID_INPUT', 'Exam attempts require all TOEIC parts');
+  }
+}
+
+function validateActiveAttemptInput(input: GetActiveToeicAttemptInput): void {
+  validateUuid(input.testId, 'test id');
   if (input.mode !== 'exam' && input.mode !== 'practice') {
     throw new ToeicAttemptError('INVALID_INPUT', 'Invalid TOEIC attempt mode');
   }
@@ -120,6 +132,17 @@ export function createToeicAttemptService(client: ToeicAttemptRpcClient) {
       return mapToeicAttemptSessionResponse(data);
     },
 
+    async getActiveToeicAttempt(input: GetActiveToeicAttemptInput): Promise<ToeicAttemptSession> {
+      validateActiveAttemptInput(input);
+      const { data, error } = await client.rpc('get_active_toeic_attempt', {
+        p_test_id: input.testId,
+        p_mode: input.mode,
+        p_selected_parts: [...input.selectedParts],
+      });
+      if (error) throw mapRpcError(error, 'READ_FAILED');
+      return mapToeicAttemptSessionResponse(data);
+    },
+
     async saveToeicAttemptAnswers(
       input: SaveToeicAttemptAnswersInput
     ): Promise<SaveToeicAttemptAnswersResult> {
@@ -160,6 +183,12 @@ async function getBrowserAttemptService() {
 
 export async function startToeicAttempt(input: StartToeicAttemptInput): Promise<ToeicAttemptSession> {
   return (await getBrowserAttemptService()).startToeicAttempt(input);
+}
+
+export async function getActiveToeicAttempt(
+  input: GetActiveToeicAttemptInput
+): Promise<ToeicAttemptSession> {
+  return (await getBrowserAttemptService()).getActiveToeicAttempt(input);
 }
 
 export async function saveToeicAttemptAnswers(

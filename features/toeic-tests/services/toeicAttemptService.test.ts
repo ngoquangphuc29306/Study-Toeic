@@ -65,6 +65,25 @@ describe('TOEIC attempt service', () => {
     }]);
   });
 
+  it('reads the exact active-attempt key after a duplicate start', async () => {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const client: ToeicAttemptRpcClient = {
+      rpc: async (name, args) => {
+        calls.push({ name, args });
+        return { data: session, error: null };
+      },
+    };
+    await createToeicAttemptService(client).getActiveToeicAttempt({
+      testId,
+      mode: 'practice',
+      selectedParts: [5],
+    });
+    expect(calls).toEqual([{
+      name: 'get_active_toeic_attempt',
+      args: { p_test_id: testId, p_mode: 'practice', p_selected_parts: [5] },
+    }]);
+  });
+
   it('maps raw RPC failures to stable errors', async () => {
     const service = createToeicAttemptService(clientFor(null, { message: 'ATTEMPT_EXPIRED internal detail' }));
     await expect(service.getToeicAttemptSession(attemptId)).rejects.toMatchObject({ code: 'ATTEMPT_EXPIRED' });
