@@ -1,7 +1,7 @@
 # EasyTOEIC TOEIC Test Module — Phase 1 Architecture and Audit
 
-Ngày audit: 2026-08-05  
-Phạm vi: chỉ audit và safe foundation. Chưa triển khai exam UI, route mới, migration, media upload, import database hoặc scoring RPC.
+Ngày audit: 2026-08-05
+Phase 1 đã hoàn tất; Phase 2 schema/RLS foundation được triển khai ở cuối tài liệu. Chưa triển khai exam UI, route mới, media upload, importer, autosave coordinator hoặc scoring RPC hoàn chỉnh.
 
 ## 1. Kết luận điều hành
 
@@ -14,14 +14,14 @@ Codebase hiện có một app học từ vựng production dùng Next.js App Rou
 - một số API tra từ/translation được gọi trực tiếp từ browser;
 - prototype tạo collection/topic tự động khi lưu từ, trong khi production cần user chọn đích lưu và dùng flow CRUD hiện có.
 
-Phase 1 chỉ tạo boundary an toàn để các phase sau có thể xây dựng trên đó:
+Phase 1 đã tạo boundary an toàn để các phase sau có thể xây dựng trên đó:
 
 - `features/toeic-tests/types.ts`: typed domain model, tách content khỏi answer key;
 - `features/toeic-tests/mediaPath.ts`: pure resolver cho bucket-relative media paths và legacy URLs;
 - `features/toeic-tests/mediaPath.test.ts`: unit tests, không gọi Supabase thật;
 - tài liệu này.
 
-Không có file prototype, UI production, migration, RPC, schema, RLS, package version hoặc navigation nào bị thay đổi.
+Phase 2 chỉ thêm một migration TOEIC mới và loại prototype reference khỏi TypeScript production compilation. Không có migration cũ, RPC SRS, schema vocabulary, UI production, package version hoặc navigation nào bị thay đổi.
 
 ## 2. Current production architecture audit
 
@@ -92,7 +92,7 @@ Prototype có thể cung cấp visual/presentation reference sau khi product ph�
 
 ## 4. Complete analysis of sample JSON
 
-File: `prototype/2026-test-1-id_ad780150.json`  
+File: `prototype/2026-test-1-id_ad780150.json`
 Array `questions`: 200 items. Top-level keys: `test`, `scrapedAt`, `questionCount`, `passageCount`, `aiExplanationCount`, `mediaCheck`, `questions`.
 
 ### 4.1 Metadata
@@ -219,7 +219,7 @@ The resolver:
 
 The unit tests cover legacy URL extraction, ordinary URL extraction, relative/nested paths, slash normalization, encoded names, missing values and unsafe traversal.
 
-## 6. Proposed production data architecture (not migrated)
+## 6. Production data architecture (finalized in Phase 2)
 
 The TOEIC content and user attempt history should be separate from vocabulary/SRS tables. Suggested tables:
 
@@ -270,9 +270,9 @@ Recommended indexes:
 - `toeic_test_answers(attempt_id, question_id)` unique;
 - indexes on every FK used for RLS joins.
 
-Optional tables such as `toeic_test_part_configs` or a separate `toeic_question_answer_keys` should be added only if the final content contract needs them. Do not add denormalized score tables prematurely.
+No analytics, notes, annotations or vocabulary-integration tables are included. The answer-key table is required and is implemented separately in Phase 2. Do not add denormalized score tables prematurely.
 
-## 7. RLS and ownership proposal (not migrated)
+## 7. RLS and ownership model
 
 Content read policy:
 
@@ -464,9 +464,8 @@ Phase 1 verification should cover:
 - no Supabase network calls from tests;
 - no changes to existing SRS/RPC/queue/auth retry/request coordinator behavior.
 
-Deferred intentionally:
+Deferred intentionally after Phase 2:
 
-- all database migrations and RLS policies;
 - TOEIC route/navigation/UI;
 - bucket creation and media upload;
 - JSON importer and database writes;
@@ -474,3 +473,52 @@ Deferred intentionally:
 - prototype cleanup or deletion.
 
 No files were staged, committed, pushed or deployed for this task.
+
+## 15. Phase 2 implementation details
+
+### Prototype build blocker
+
+`prototype/ToeicCbtTest.tsx` imported `../public/data/ets2026_test1.json`, but that file does not exist. The prototype is reference code and is not imported by the production app dependency graph. The smallest safe fix was adding `prototype` to `tsconfig.json` `exclude`; no JSON copy, `@ts-ignore`, strict-mode change or prototype rewrite was used. The prototype remains in the repository for reference and is not deleted.
+
+### Migration and database conventions reused
+
+- Latest pre-Phase-2 migration: `20260804000000_harden_rating_idempotency_contract.sql`.
+- New migration: `supabase/migrations/20260805000000_create_toeic_test_schema.sql`.
+- Tables use UUID primary keys with `gen_random_uuid()`.
+- Server timestamps use `TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()`.
+- Existing `public.set_updated_at()` is reused; no duplicate trigger function was created.
+- Status/mode/section values use text CHECK constraints, matching the current repository convention rather than new PostgreSQL enums.
+- RLS uses `ENABLE ROW LEVEL SECURITY` plus `FORCE ROW LEVEL SECURITY`.
+- RLS helpers use `SECURITY DEFINER SET search_path = public, pg_temp`.
+- Browser privileges are explicitly revoked from `PUBLIC`, `anon` and `authenticated` before granting only required read access.
+- SRS idempotency remains unchanged: review log uniqueness is scoped by `(user_id, idempotency_key)` and the existing rating RPC remains untouched.
+
+### Tables implemented
+
+- `toeic_tests`: catalog metadata, publication status, media folder, question count and duration.
+- `toeic_passages`: one row per passage with structured `content jsonb` using a documents array, plus transcript/translation/media paths.
+- `toeic_questions`: client-safe question content, options, explanations, media paths and test/part/question ordering.
+- `toeic_question_answer_keys`: separate server-controlled A/B/C/D answer key; no browser role grant or SELECT policy.
+- `toeic_test_attempts`: user-owned attempt lifecycle, mode, status, selected parts, deadline and submit idempotency key foundation.
+- `toeic_attempt_questions`: immutable attempt question snapshot with composite same-test/part invariants and stable position.
+- `toeic_test_answers`: selected answer/flag/time state; `is_correct` exists for server output but is not directly writable by browser roles.
+
+### Constraints and indexes
+
+The migration validates non-empty names, year range 2000–2100, positive counts/duration/positions, valid status/mode/section values, safe media paths, object-shaped JSON, A/B/C/D option keys with at least A/B/C, valid selected parts with no duplicates, exam deadlines, submitted timestamps, non-negative time, same-test passage/question/attempt relationships and unique question/position ordering.
+
+Indexes cover published catalog filtering (`status, set_name`), year/source, passage lookup by test/part, question lookup by test/part/number and passage/number, user attempt history/status/test, in-progress user/test lookup, and attempt question lookup by question. Primary/unique indexes are reused instead of adding duplicate indexes.
+
+### Security model implemented
+
+- Authenticated users can read only published tests, passages whose parent test is published and questions whose parent test is published.
+- Anonymous users have no TOEIC table grants or policies.
+- Draft and archived content is not readable through the authenticated client policy.
+- Answer keys have RLS enabled/forced, no browser SELECT policy and no browser table grant.
+- Users can read only their own attempts and child snapshot/answer rows.
+- Attempt creation, snapshot creation, answer mutation and submit are intentionally reserved for future server/RPC boundaries in order to prevent direct changes to `user_id`, `test_id`, `is_correct` or submitted attempts.
+- `is_toeic_test_published()` and `owns_toeic_attempt()` are minimal fixed-search-path SECURITY DEFINER helpers used by child-table policies.
+
+### Verification status
+
+The migration is designed for clean local `supabase db reset` and does not insert sample data, create buckets, publish tests or touch existing vocabulary/SRS tables. `supabase/tests/toeic_test_schema_verification.sql` checks catalog metadata, RLS flags, policies, grants and composite constraints without inserting data. RLS verification must be reported from actual local Supabase execution; it must not be inferred from SQL inspection. The local runtime was unavailable during this run because Docker/Postgres was not running.
