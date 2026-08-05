@@ -82,6 +82,20 @@ END;
 $$;
 
 DO $$
+DECLARE
+    import_function REGPROCEDURE := 'public.import_toeic_test(jsonb,jsonb,jsonb,jsonb,boolean)'::REGPROCEDURE;
+BEGIN
+    IF NOT has_function_privilege('service_role', import_function, 'EXECUTE') THEN
+        RAISE EXCEPTION 'Service role cannot execute the server-only TOEIC import RPC';
+    END IF;
+    IF has_function_privilege('authenticated', import_function, 'EXECUTE')
+       OR has_function_privilege('anon', import_function, 'EXECUTE') THEN
+        RAISE EXCEPTION 'Browser role can execute the server-only TOEIC import RPC';
+    END IF;
+END;
+$$;
+
+DO $$
 BEGIN
     IF EXISTS (
         SELECT 1

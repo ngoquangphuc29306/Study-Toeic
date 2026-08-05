@@ -521,4 +521,64 @@ Indexes cover published catalog filtering (`status, set_name`), year/source, pas
 
 ### Verification status
 
-The migration is designed for clean local `supabase db reset` and does not insert sample data, create buckets, publish tests or touch existing vocabulary/SRS tables. `supabase/tests/toeic_test_schema_verification.sql` checks catalog metadata, RLS flags, policies, grants and composite constraints without inserting data. RLS verification must be reported from actual local Supabase execution; it must not be inferred from SQL inspection. The local runtime was unavailable during this run because Docker/Postgres was not running.
+The migration is designed for clean local `supabase db reset` and does not insert sample data, create buckets, publish tests or touch existing vocabulary/SRS tables. `supabase/tests/toeic_test_schema_verification.sql` checks catalog metadata, RLS flags, policies, grants and composite constraints without inserting data. RLS verification was executed against the local Supabase runtime and passed; it must not be inferred from SQL inspection alone.
+
+## 16. Phase 3 importer implementation
+
+### Runtime and command
+
+The repository runs Node `v22.23.2`, has no `tsx`, `ts-node` or direct `pg` dependency, and uses npm scripts. The importer therefore runs as native TypeScript with Node's `--experimental-default-type=module --experimental-strip-types`; no runtime package or package version was added.
+
+```text
+npm run toeic:import -- --file prototype/2026-test-1-id_ad780150.json --dry-run
+npm run toeic:import -- --file prototype/2026-test-1-id_ad780150.json --apply
+npm run toeic:import -- --file prototype/2026-test-1-id_ad780150.json --apply --replace-draft
+npm run toeic:import -- --file <file> --dry-run --media-dir <directory>
+```
+
+Dry-run is the default. `--apply` requires `SUPABASE_SERVICE_ROLE_KEY` and a local `SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_URL` (`localhost`, `127.0.0.1` or `::1`). The script refuses non-local targets and never logs the key. `--replace-draft` is valid only with `--apply`.
+
+### Raw versus normalized boundary
+
+The importer does not use production domain types for scraped input. It has separate `RawToeicTestFile`/`RawToeicQuestion` types, validates `unknown` at the JSON boundary, then produces `NormalizedToeicImport` containing:
+
+- one draft test row;
+- passage rows grouped by source `passage_id`;
+- client-safe question rows with no answer key;
+- separate answer-key rows;
+- deterministic media manifest;
+- warnings/errors and SHA-256 canonical source fingerprint.
+
+Validation covers UUIDs, exact 200-question/count metadata, unique IDs/numbers, Part/section mapping, A/B/C/D option shape, non-null correct answer, passage IDs, media safety, explanation field types and critical top-level shape. The source anomaly `set_name = 2026` with `year = 2023` remains unchanged and is reported as a warning.
+
+### Passage and vocabulary normalization
+
+Passages are grouped once per `passage_id`, not once per question. Structured content uses the database contract `{ documents: [{ type, title, body }] }` and supports single/double/triple text without JSX/HTML rendering. Shared Part 3/4 audio/image is stored on the passage and removed from duplicate question media fields. Conflicting critical shared fields are errors; the known minor translation variation is reported as a warning and preserved deterministically.
+
+`tu_vung` becomes `{ items, raw }`. The parser supports `Word (part of speech): Meaning`, multi-word phrases, Unicode Vietnamese text and raw fallback. It never calls a dictionary API or guesses malformed rows.
+
+### Media manifest and local files
+
+The existing `features/toeic-tests/mediaPath.ts` resolver is reused. The sample produces 54 audio objects and 11 image objects, sorted by relative object path. Each entry records kind, extension, question numbers and passage ID. The optional `--media-dir` check reports expected/found/missing/extra, duplicate basenames and zero-size files without reading media contents into memory. Missing files are warnings in dry-run and errors during apply; extra files remain warnings.
+
+Default report artifacts are written under `reports/toeic/` (ignored by Git); `--report` can redirect the report and manifest elsewhere.
+
+### Atomic apply and replacement policy
+
+`supabase/migrations/20260805100000_create_toeic_import_rpc.sql` adds the server-only `import_toeic_test` RPC. The importer calls it through Supabase JS with the service role. The RPC runs one PostgreSQL transaction in this order: test → passages → questions → answer keys, then verifies expected counts. Any error rolls back the aggregate.
+
+- New test ID: insert as `draft`.
+- Existing draft: refuse by default.
+- Existing draft with `--replace-draft`: replace only when no attempts exist.
+- Published/archived test: always refuse.
+- Existing attempts: replacement is refused.
+- Source UUIDs are preserved.
+- No sample is published and no attempt data is inserted.
+
+The RPC is not executable by `anon` or `authenticated`; only `service_role` receives execute privilege. The source fingerprint is report metadata only; it was not added to the schema or misused as a security token.
+
+### Phase 3 verification result
+
+The sample dry-run completed with 200 questions, 42 passages, 200 answer keys, 54 audio objects, 11 image objects, zero errors and source warnings for the metadata year mismatch, one passage translation variation and one partially parsed vocabulary line. Local apply completed with `status = draft`; a follow-up query confirmed 1 test, 42 passages, 200 questions, 200 answer keys and 0 attempts. Re-running without `--replace-draft` was refused and the RPC transaction rolled back; `--replace-draft` then completed successfully.
+
+No production bucket was accessed or uploaded to. UI, routes, attempt creation, autosave, scoring, signed URLs, importer admin page and vocabulary-save UI remain deferred.
