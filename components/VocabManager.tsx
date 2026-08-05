@@ -451,7 +451,10 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                 {colTopics.map((topic) => {
                   const topicVocabs = vocabularies.filter((v) => v.topic_id === topic.id);
                   const totalWords = topicVocabs.length;
-                  const masteredCount = topicVocabs.filter((v) => v.status === 'mastered').length;
+                  const studiedCount = topicVocabs.filter((v) => (v.review_count ?? 0) > 0).length;
+                  const studiedProgress = totalWords > 0
+                    ? Math.round((studiedCount / totalWords) * 100)
+                    : 0;
 
                   return (
                     <div
@@ -544,9 +547,23 @@ export const VocabManager: React.FC<VocabManagerProps> = ({
                           {topic.title}
                         </h4>
 
-                        <div className="flex items-center gap-2 text-xs font-bold text-emerald-600">
-                          <span>{masteredCount}/{totalWords}</span>
-                          <span className="text-gray-400 text-[11px] font-normal">đã thuộc</span>
+                        <div className="flex items-center justify-between gap-2 text-xs font-bold text-emerald-600">
+                          <span>{studiedCount}/{totalWords} đã học</span>
+                          <span className="text-gray-400 text-[11px] font-normal">{studiedProgress}%</span>
+                        </div>
+
+                        <div
+                          className="h-1.5 w-full overflow-hidden rounded-full bg-emerald-50"
+                          role="progressbar"
+                          aria-label={`Tiến độ học ${topic.title}`}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-valuenow={studiedProgress}
+                        >
+                          <div
+                            className="h-full rounded-full bg-emerald-500 transition-[width] duration-300"
+                            style={{ width: `${studiedProgress}%` }}
+                          />
                         </div>
                       </div>
 
