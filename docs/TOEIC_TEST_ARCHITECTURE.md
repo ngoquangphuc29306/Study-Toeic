@@ -631,3 +631,24 @@ checks. Submit/scoring remains reserved for a later phase.
 ## Phase 6 — Production UI vertical slice
 
 Phase 6 adds the protected `/app/tests` catalog, test overview/start flow, and `/app/tests/attempts/[attemptId]` workspace. The existing `/app` shell remains intact. The workspace is server-backed, snapshot-order-driven, autosaves answer/flag state through the Phase 5 RPC, resumes closed/reloaded tabs, and never submits or scores. See `docs/TOEIC_TEST_PHASE6_UI.md` for the route, content-join, media, timer, accessibility, and deferred-work contract.
+
+## 19. Phase 7 submission, scoring and review
+
+Phase 7 adds the finalization boundary for an attempt while keeping scoring
+server-authoritative. `submit_toeic_attempt` locks the owner’s attempt,
+validates the complete answer-key set, computes `is_correct` on the server and
+stores one canonical raw result summary. The client uses that stored summary as
+the source of truth and never reimplements answer-key or score logic.
+
+Submit idempotency is serialized by user plus idempotency key. A retry reuses
+the same key; a repeated request returns the persisted result, while reusing a
+key for another attempt returns `SUBMIT_IDEMPOTENCY_CONFLICT`. The submit
+dialog flushes pending autosave before calling the RPC, and a failed flush does
+not submit uncertain answers.
+
+`get_toeic_attempt_result` and `get_toeic_attempt_review` are authenticated,
+owner-only, post-submit projections. Review exposes correct answers only after
+submission and contains no transcript, translation, explanation or vocabulary
+content. Browser roles still cannot directly read answer keys or mutate answer
+rows. Official scaled-score conversion and review content joining remain
+deferred.

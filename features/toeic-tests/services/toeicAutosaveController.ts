@@ -157,7 +157,17 @@ export function useToeicAutosaveController(options: ToeicAutosaveControllerOptio
   return {
     ...state,
     enqueue: (mutation: ToeicAttemptAnswerMutation) => controllerRef.current?.enqueue(mutation),
-    flush: () => controllerRef.current?.flush() ?? Promise.resolve(),
-    retry: () => controllerRef.current?.retry() ?? Promise.resolve(),
+    flush: async () => {
+      const controller = controllerRef.current;
+      if (!controller) return false;
+      await controller.flush();
+      return controller.getState().status !== 'error';
+    },
+    retry: async () => {
+      const controller = controllerRef.current;
+      if (!controller) return false;
+      await controller.retry();
+      return controller.getState().status !== 'error';
+    },
   };
 }

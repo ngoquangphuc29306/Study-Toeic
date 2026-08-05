@@ -7,6 +7,7 @@ import type { ToeicAttemptAnswerMutation, ToeicAttemptAnswerState, ToeicAttemptS
 import type { ToeicOptionKey, ToeicTestPart } from '../types';
 import { buildToeicAttemptContentModel, type ToeicAttemptContentQuestion } from '../contentModel';
 import { getToeicAttemptSession, abandonToeicAttempt, saveToeicAttemptAnswers } from '../services/toeicAttemptService';
+import { submitToeicAttempt } from '../services/toeicSubmissionService';
 import { ToeicPartContentCache } from '../services/toeicPartContentCache';
 import { createBrowserToeicMediaClient } from '../services/toeicMediaClient';
 import { getRemainingToeicSeconds, getServerClockOffsetMs } from '../timer';
@@ -14,6 +15,7 @@ import { useToeicAutosaveController } from '../services/toeicAutosaveController'
 import { ToeicPassageRenderer } from './ToeicPassageRenderer';
 import { ToeicMediaView } from './ToeicMediaView';
 import { ToeicAbandonDialog } from './ToeicAbandonDialog';
+import { ToeicSubmitDialog } from './ToeicSubmitDialog';
 
 const OPTION_KEYS: ReadonlyArray<ToeicOptionKey> = ['A', 'B', 'C', 'D'];
 const PARTS: ReadonlyArray<ToeicTestPart> = [1, 2, 3, 4, 5, 6, 7];
@@ -68,6 +70,10 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
   const [abandonOpen, setAbandonOpen] = useState(false);
   const [abandonBusy, setAbandonBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [submitOpen, setSubmitOpen] = useState(false);
+  const [submitBusy, setSubmitBusy] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const submitKeyRef = useRef<string | null>(null);
   const cacheRef = useRef(new ToeicPartContentCache(async (testId, part) => (await import('../services/toeicTestReadService')).getPublishedToeicTestPart(testId, part)));
   const mediaClient = useMemo(() => createBrowserToeicMediaClient(), []);
   const expiryChecked = useRef(false);
@@ -127,6 +133,7 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
   const currentContent = currentModel?.questions.find((item) => item.ref.questionId === currentRef?.questionId) ?? null;
   const currentAnswer = currentRef ? answers[currentRef.questionId] ?? emptyAnswer() : emptyAnswer();
   const canMutate = session?.status === 'in_progress' && (remaining === null || remaining > 0);
+  const canSubmit = session?.status === 'in_progress' || (session?.status === 'expired' && session.mode === 'exam');
   const serverOffset = useMemo(() => session ? getServerClockOffsetMs(session.serverNow) : 0, [session]);
 
   useEffect(() => {
@@ -142,6 +149,10 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
     expiryChecked.current = true;
     void getToeicAttemptSession(attemptId).then(setSession).catch(() => undefined);
   }, [attemptId, remaining, session]);
+
+  useEffect(() => {
+    if (session?.status === 'submitted') router.replace(`/app/tests/attempts/${attemptId}/result`);
+  }, [attemptId, router, session?.status]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -195,7 +206,8 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
   const abandon = async () => {
     setAbandonBusy(true);
     try {
-      await autosave.flush();
+      const flushed = await autosave.flush();
+      if (!flushed) throw new Error('Chưa lưu xong đáp án. Hãy thử lại trước khi bỏ bài.');
       await abandonToeicAttempt(attemptId);
       router.push('/app/tests');
     } catch (cause) {
@@ -205,14 +217,47 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
     }
   };
 
+  const openSubmit = () => {
+    if (!canSubmit) return;
+    setSubmitError(autosave.status === 'error' ? 'Có thay đổi chưa lưu. Hãy thử lưu lại trước khi nộp bài.' : null);
+    setSubmitOpen(true);
+  };
+
+  const retrySubmitAutosave = async () => {
+    setSubmitError(null);
+    const saved = await autosave.retry();
+    if (!saved) setSubmitError('Chưa lưu được đáp án. Hãy kiểm tra kết nối và thử lại.');
+  };
+
+  const submit = async () => {
+    if (!canSubmit || submitBusy) return;
+    if (autosave.status === 'error') {
+      setSubmitError('Có thay đổi chưa lưu. Hãy thử lưu lại trước khi nộp bài.');
+      return;
+    }
+    setSubmitBusy(true);
+    setSubmitError(null);
+    try {
+      const flushed = await autosave.flush();
+      if (!flushed) throw new Error('Không thể lưu hết đáp án. Hãy thử lưu lại trước khi nộp.');
+      const idempotencyKey = submitKeyRef.current ?? crypto.randomUUID();
+      submitKeyRef.current = idempotencyKey;
+      const result = await submitToeicAttempt({ attemptId, idempotencyKey });
+      router.replace(`/app/tests/attempts/${result.attemptId}/result`);
+    } catch (cause) {
+      setSubmitError(cause instanceof Error ? cause.message : 'Không thể nộp bài lúc này.');
+      setSubmitBusy(false);
+    }
+  };
+
   if (loading) return <main className="min-h-screen bg-[#FFF9FA] p-6"><div className="mx-auto max-w-7xl animate-pulse space-y-4"><div className="h-16 rounded-2xl bg-white" /><div className="h-[60vh] rounded-3xl bg-white" /></div></main>;
   if (error || !session) return <main className="min-h-screen bg-[#FFF9FA] p-6"><div className="mx-auto max-w-xl rounded-3xl border border-[#FBCFE8] bg-white p-8 text-center" role="alert"><h1 className="text-xl font-extrabold text-[#493B42]">Không thể khôi phục phiên</h1><p className="mt-2 text-sm text-gray-600">{error?.message || 'Phiên không còn khả dụng.'}</p><button type="button" onClick={() => void loadSession()} className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#F472B6] px-4 font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6]"><RefreshCcw className="h-4 w-4" aria-hidden="true" /> Thử lại</button></div></main>;
-  if (session.status !== 'in_progress') return <main className="min-h-screen bg-[#FFF9FA] p-6"><div className="mx-auto max-w-xl rounded-3xl border border-[#FCE7F3] bg-white p-8 text-center"><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#F472B6]">Phiên đã đóng</p><h1 className="mt-2 text-2xl font-black text-[#493B42]">{session.status === 'expired' ? 'Phiên đã hết giờ' : session.status === 'abandoned' ? 'Phiên đã bỏ' : 'Phiên đã nộp'}</h1><p className="mt-2 text-sm text-gray-600">Phase này chưa có chức năng chấm điểm hoặc xem lại đáp án.</p><button type="button" onClick={() => router.push('/app/tests')} className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#F472B6] px-4 font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6]"><ArrowLeft className="h-4 w-4" aria-hidden="true" /> Về danh sách đề</button></div></main>;
+  if (session.status === 'abandoned') return <main className="min-h-screen bg-[#FFF9FA] p-6"><div className="mx-auto max-w-xl rounded-3xl border border-[#FCE7F3] bg-white p-8 text-center"><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#F472B6]">Phiên đã đóng</p><h1 className="mt-2 text-2xl font-black text-[#493B42]">Phiên đã bỏ</h1><p className="mt-2 text-sm text-gray-600">Phiên này không thể nộp lại.</p><button type="button" onClick={() => router.push('/app/tests')} className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#F472B6] px-4 font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6]"><ArrowLeft className="h-4 w-4" aria-hidden="true" /> Về danh sách đề</button></div></main>;
 
   return (
     <main className="min-h-screen bg-[#FFF9FA]" id="main-content">
       <header className="sticky top-0 z-30 border-b border-[#FCE7F3] bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6"><div className="min-w-0"><p className="truncate text-xs font-bold uppercase tracking-[0.16em] text-[#F472B6]">{currentContent?.question.section === 'listening' ? 'Listening' : 'Reading'} · {session.mode === 'exam' ? 'Thi toàn bộ' : 'Luyện tập'}</p><h1 className="truncate text-lg font-extrabold text-[#493B42]">Câu {currentIndex + 1} / {session.totalQuestions}</h1></div><div className="flex items-center gap-3"><AutosaveIndicator status={autosave.status} pendingCount={autosave.pendingCount} onRetry={() => void autosave.retry()} /><div className={`rounded-xl px-3 py-2 text-sm font-black ${remaining !== null && remaining < 300 ? 'bg-[#FFF1F2] text-[#E11D48]' : 'bg-[#FFF8FA] text-[#9D174D]'}`} aria-label={remaining === null ? 'Không giới hạn thời gian' : `Còn ${formatTime(remaining)}`}>⏱ {formatTime(remaining)}</div><button type="button" onClick={() => void exit()} className="inline-flex min-h-10 items-center gap-2 rounded-xl px-3 text-sm font-bold text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6]"><ArrowLeft className="h-4 w-4" aria-hidden="true" /> <span className="hidden sm:inline">Thoát</span></button></div></div>
+        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6"><div className="min-w-0"><p className="truncate text-xs font-bold uppercase tracking-[0.16em] text-[#F472B6]">{currentContent?.question.section === 'listening' ? 'Listening' : 'Reading'} · {session.mode === 'exam' ? 'Thi toàn bộ' : 'Luyện tập'}</p><h1 className="truncate text-lg font-extrabold text-[#493B42]">Câu {currentIndex + 1} / {session.totalQuestions}</h1></div><div className="flex items-center gap-3"><AutosaveIndicator status={autosave.status} pendingCount={autosave.pendingCount} onRetry={() => void autosave.retry()} /><div className={`rounded-xl px-3 py-2 text-sm font-black ${remaining !== null && remaining < 300 ? 'bg-[#FFF1F2] text-[#E11D48]' : 'bg-[#FFF8FA] text-[#9D174D]'}`} aria-label={remaining === null ? 'Không giới hạn thời gian' : `Còn ${formatTime(remaining)}`}>⏱ {formatTime(remaining)}</div><button type="button" onClick={openSubmit} disabled={!canSubmit || submitBusy} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#F472B6] px-3 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] disabled:cursor-not-allowed disabled:opacity-50">Nộp bài</button><button type="button" onClick={() => void exit()} className="inline-flex min-h-10 items-center gap-2 rounded-xl px-3 text-sm font-bold text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6]"><ArrowLeft className="h-4 w-4" aria-hidden="true" /> <span className="hidden sm:inline">Thoát</span></button></div></div>
       </header>
       <div className="mx-auto grid max-w-[1400px] gap-4 px-4 py-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_280px]">
         <section className="min-w-0">
@@ -227,9 +272,10 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
           </div>
           <div className="mt-4 flex items-center justify-between gap-3"><button type="button" onClick={() => setCurrentIndex((index) => Math.max(0, index - 1))} disabled={currentIndex === 0} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#FCE7F3] bg-white px-4 text-sm font-bold text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] disabled:opacity-40"><ChevronLeft className="h-4 w-4" aria-hidden="true" /> Câu trước</button><button type="button" onClick={() => setCurrentIndex((index) => Math.min(session.questions.length - 1, index + 1))} disabled={currentIndex === session.questions.length - 1} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#F472B6] px-4 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] disabled:opacity-40">Câu tiếp <ChevronRight className="h-4 w-4" aria-hidden="true" /></button></div>
         </section>
-        <aside className="h-fit rounded-3xl border border-[#FCE7F3] bg-white p-4 shadow-sm lg:sticky lg:top-24"><div className="flex items-center justify-between gap-2"><h2 className="text-sm font-extrabold text-[#493B42]">Bảng câu hỏi</h2><span className="text-xs text-gray-500">{session.answers.length} đã lưu</span></div><p className="mt-1 text-xs text-gray-500">Màu chỉ thể hiện trạng thái trả lời và đánh dấu.</p><div className="mt-4"><Palette session={session} answers={answers} currentIndex={currentIndex} onSelect={setCurrentIndex} /></div><div className="mt-5 border-t border-[#FCE7F3] pt-4"><button type="button" onClick={() => setAbandonOpen(true)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#FBCFE8] text-sm font-bold text-[#9D174D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6]"><LogOut className="h-4 w-4" aria-hidden="true" /> Bỏ bài</button>{notice && <p className="mt-3 rounded-xl bg-[#FFF1F2] p-3 text-xs text-[#9D174D]" role="alert">{notice}</p>}</div></aside>
+        <aside className="h-fit rounded-3xl border border-[#FCE7F3] bg-white p-4 shadow-sm lg:sticky lg:top-24"><div className="flex items-center justify-between gap-2"><h2 className="text-sm font-extrabold text-[#493B42]">Bảng câu hỏi</h2><span className="text-xs text-gray-500">{session.answers.length} đã lưu</span></div><p className="mt-1 text-xs text-gray-500">Màu chỉ thể hiện trạng thái trả lời và đánh dấu.</p><div className="mt-4"><Palette session={session} answers={answers} currentIndex={currentIndex} onSelect={setCurrentIndex} /></div><div className="mt-5 border-t border-[#FCE7F3] pt-4 space-y-2"><button type="button" onClick={openSubmit} disabled={!canSubmit || submitBusy} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#F472B6] text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] disabled:cursor-not-allowed disabled:opacity-50">Nộp bài</button><button type="button" onClick={() => setAbandonOpen(true)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#FBCFE8] text-sm font-bold text-[#9D174D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6]"><LogOut className="h-4 w-4" aria-hidden="true" /> Bỏ bài</button>{notice && <p className="mt-3 rounded-xl bg-[#FFF1F2] p-3 text-xs text-[#9D174D]" role="alert">{notice}</p>}</div></aside>
       </div>
       <ToeicAbandonDialog open={abandonOpen} busy={abandonBusy} onCancel={() => setAbandonOpen(false)} onConfirm={() => void abandon()} />
+      <ToeicSubmitDialog open={submitOpen} busy={submitBusy} answered={Object.values(answers).filter((answer) => answer.selectedAnswer !== null).length} unanswered={Math.max(0, session.totalQuestions - Object.values(answers).filter((answer) => answer.selectedAnswer !== null).length)} flagged={Object.values(answers).filter((answer) => answer.isFlagged).length} remainingLabel={formatTime(remaining)} errorMessage={submitError} onRetry={() => void retrySubmitAutosave()} onCancel={() => { if (!submitBusy) setSubmitOpen(false); }} onConfirm={() => void submit()} />
     </main>
   );
 }
