@@ -1,6 +1,8 @@
 import type { ToeicTestTakingPassage } from '../readContracts';
+import type { ToeicTextAnnotation } from '../toolContracts';
+import { ToeicAnnotatedText } from './ToeicAnnotatedText';
 
-export function ToeicPassageRenderer({ passage }: { passage: ToeicTestTakingPassage }) {
+export function ToeicPassageRenderer({ passage, annotations = [] }: { passage: ToeicTestTakingPassage; annotations?: ReadonlyArray<ToeicTextAnnotation> }) {
   return (
     <section className="rounded-2xl border border-[#FCE7F3] bg-[#FFF8FA] p-4 sm:p-5" aria-labelledby={`passage-${passage.id}`}>
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -15,7 +17,7 @@ export function ToeicPassageRenderer({ passage }: { passage: ToeicTestTakingPass
         {passage.content.documents.map((document, index) => (
           <div key={`${passage.id}-${index}`}>
             {document.title && <h3 className="mb-1 font-bold text-[#493B42]">{document.title}</h3>}
-            <p className="whitespace-pre-wrap">{document.body}</p>
+            <p className="whitespace-pre-wrap" data-toeic-text-target="passage" data-toeic-text-target-id={passage.id} data-toeic-document-index={index}><ToeicAnnotatedText text={document.body} annotations={annotations.filter((annotation) => annotation.passageId === passage.id && annotation.documentIndex === index)} /></p>
           </div>
         ))}
       </div>

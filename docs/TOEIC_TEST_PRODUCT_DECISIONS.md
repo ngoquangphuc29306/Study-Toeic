@@ -51,3 +51,20 @@ earlier `OPEN` audit rows:
 
 The remaining OPEN rows continue to block their planned phases and are not
 implicitly changed by Phase 9.
+
+## Phase 10 approval addendum
+
+The following rows supersede the earlier Phase 7.5 recommendations for the
+Phase 10 learning-tools scope:
+
+| Decision ID | Approved policy | Evidence | Status |
+|---|---|---|---|
+| DEC-11 | Notes support exactly one test note and one note per question. Notes are plain text, owner-private, editable, deletable, server-authoritative and cross-device. Passage-only notes are deferred. | `toeic_test_notes`, note RPCs, `toeicToolService`, `ToeicLearningToolsPanel`. | APPROVED |
+| DEC-12 | Annotations target question text or passage document text. MVP styles are `highlight` and `underline`, with an optional short comment; annotations use offsets plus a quote snapshot and remain owner-private. | `toeic_text_annotations`, annotation RPCs, `toeicAnnotationAnchoring`, semantic `mark` rendering. | APPROVED |
+| DEC-23 | Dictionary lookup is server-controlled. No provider or secret is passed by the browser; this repository returns a deterministic unavailable state until a provider is configured. | `/api/toeic-tools/lookup`, `toeicDictionaryService`, lookup allowlist mapper. | APPROVED |
+| DEC-24 | Dictation is Practice-only, available after authorized Practice feedback exposes transcript, and compares normalized text without changing answers or scores. | `toeicDictation`, `ToeicLearningToolsPanel`, Phase 8 learning boundary. | APPROVED |
+| DEC-25 | Flip is Practice-only vocabulary UI state. It does not write `toeic_test_answers`, SRS state or review logs; vocabulary saving reuses the existing explicit destination dialog. | `ToeicLearningToolsPanel`, `ToeicVocabularySaveDialog`. | APPROVED |
+
+Phase 10 does not approve pause, audio speed, mute, seek/replay policy,
+offline sync, multi-tab coordination, auto-submit, entitlement or licensing
+release behavior. Those decisions remain open for their planned phases.

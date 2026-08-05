@@ -14,6 +14,9 @@ import { getRemainingToeicSeconds, getServerClockOffsetMs } from '../timer';
 import { useToeicAutosaveController } from '../services/toeicAutosaveController';
 import { canCheckToeicPracticeAnswer } from '../services/toeicPracticeFeedbackState';
 import { checkToeicPracticeAnswer } from '../services/toeicLearningService';
+import { buildSelectionDraft, type ToeicTextSelectionDraft } from '../services/toeicAnnotationAnchoring';
+import { listToeicAnnotations } from '../services/toeicToolService';
+import type { ToeicTextAnnotation } from '../toolContracts';
 import type { ToeicLearningVocabularyItem, ToeicPracticeFeedback } from '../learningContracts';
 import { ToeicPassageRenderer } from './ToeicPassageRenderer';
 import { ToeicMediaView } from './ToeicMediaView';
@@ -21,6 +24,8 @@ import { ToeicAbandonDialog } from './ToeicAbandonDialog';
 import { ToeicSubmitDialog } from './ToeicSubmitDialog';
 import { ToeicPracticeFeedbackPanel } from './ToeicPracticeFeedbackPanel';
 import { ToeicVocabularySaveDialog } from './ToeicVocabularySaveDialog';
+import { ToeicAnnotatedText } from './ToeicAnnotatedText';
+import { ToeicLearningToolsPanel } from './ToeicLearningToolsPanel';
 
 const OPTION_KEYS: ReadonlyArray<ToeicOptionKey> = ['A', 'B', 'C', 'D'];
 const PARTS: ReadonlyArray<ToeicTestPart> = [1, 2, 3, 4, 5, 6, 7];
@@ -80,6 +85,8 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
   const [practiceFeedbackError, setPracticeFeedbackError] = useState<Error | null>(null);
   const [practiceFeedbackErrorQuestionId, setPracticeFeedbackErrorQuestionId] = useState<string | null>(null);
   const [vocabularyToSave, setVocabularyToSave] = useState<ToeicLearningVocabularyItem | null>(null);
+  const [annotations, setAnnotations] = useState<ReadonlyArray<ToeicTextAnnotation>>([]);
+  const [selection, setSelection] = useState<ToeicTextSelectionDraft | null>(null);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [submitBusy, setSubmitBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -119,6 +126,13 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
     void Promise.resolve().then(loadSession);
   }, [loadSession]);
 
+  useEffect(() => {
+    if (!session?.testId) return;
+    let active = true;
+    void listToeicAnnotations(session.testId).then((value) => { if (active) setAnnotations(value); }).catch(() => undefined);
+    return () => { active = false; };
+  }, [session?.testId]);
+
   const currentRef = session?.questions[currentIndex] ?? null;
   const currentPart = currentRef?.part ?? null;
 
@@ -142,6 +156,8 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
   const currentModel = useMemo(() => scopedSession && currentPayload ? buildToeicAttemptContentModel({ session: scopedSession, partPayloads: [currentPayload] }) : null, [currentPayload, scopedSession]);
   const currentContent = currentModel?.questions.find((item) => item.ref.questionId === currentRef?.questionId) ?? null;
   const currentAnswer = currentRef ? answers[currentRef.questionId] ?? emptyAnswer() : emptyAnswer();
+  const currentAnnotations = useMemo(() => annotations.filter((annotation) => annotation.questionId === currentRef?.questionId || annotation.passageId === currentContent?.passage?.id), [annotations, currentContent?.passage?.id, currentRef?.questionId]);
+  const currentSelection = selection && (selection.questionId === currentRef?.questionId || selection.passageId === currentContent?.passage?.id) ? selection : null;
   const activePracticeFeedback = practiceFeedback?.questionId === currentRef?.questionId ? practiceFeedback : null;
   const activePracticeFeedbackError = practiceFeedbackErrorQuestionId === currentRef?.questionId ? practiceFeedbackError : null;
   const canMutate = session?.status === 'in_progress' && (remaining === null || remaining > 0);
@@ -302,12 +318,12 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
       <div className="mx-auto grid max-w-[1400px] gap-4 px-4 py-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_280px]">
         <section className="min-w-0">
           <div className="mb-4 flex items-center gap-2 overflow-x-auto rounded-2xl border border-[#FCE7F3] bg-white p-2" aria-label="Điều hướng Part">{PARTS.filter((part) => session.selectedParts.includes(part)).map((part) => <button key={part} type="button" onClick={() => navigateToPart(part)} className={`min-h-10 shrink-0 rounded-xl px-4 text-sm font-extrabold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] ${currentPart === part ? 'bg-[#F472B6] text-white' : 'text-gray-500 hover:bg-[#FFF1F2] hover:text-[#9D174D]'}`} aria-current={currentPart === part ? 'page' : undefined}>Part {part}</button>)}</div>
-          <div className="rounded-3xl border border-[#FCE7F3] bg-white p-4 shadow-sm sm:p-6">
+          <div className="rounded-3xl border border-[#FCE7F3] bg-white p-4 shadow-sm sm:p-6" onMouseUp={() => setSelection(buildSelectionDraft(window.getSelection()))}>
             {contentLoading && <div className="flex min-h-[420px] items-center justify-center text-sm text-gray-500" aria-live="polite"><LoaderCircle className="mr-2 h-5 w-5 animate-spin text-[#F472B6]" aria-hidden="true" /> Đang tải nội dung Part…</div>}
             {!contentLoading && contentError && <div className="rounded-2xl bg-[#FFF1F2] p-5 text-[#9D174D]" role="alert"><p className="font-bold">Không thể tải nội dung câu hỏi.</p><button type="button" onClick={() => { if (currentPart) { cacheRef.current.clear(); setLoadedParts((current) => { const next = { ...current }; delete next[currentPart]; return next; }); } }} className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-xl bg-white px-3 font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6]"><RefreshCcw className="h-4 w-4" aria-hidden="true" /> Thử lại</button></div>}
             {!contentLoading && !contentError && currentContent && <>
-              {currentContent.passage && <div className="mb-5 space-y-3"><ToeicPassageRenderer passage={currentContent.passage} /><ToeicMediaView testId={session.testId} path={currentContent.passage.audioPath} kind="audio" mediaClient={mediaClient} /></div>}
-              <div className="space-y-5"><div className="flex flex-wrap items-center justify-between gap-2"><span className="rounded-full bg-[#FFF1F2] px-3 py-1 text-xs font-bold text-[#9D174D]">Part {currentContent.ref.part} · Câu {currentContent.question.questionNumber}</span><button type="button" onClick={toggleFlag} disabled={!canMutate} aria-pressed={currentAnswer.isFlagged} className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-3 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] ${currentAnswer.isFlagged ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-[#FCE7F3] text-gray-500'}`}><Flag className={`h-4 w-4 ${currentAnswer.isFlagged ? 'fill-amber-400' : ''}`} aria-hidden="true" /> {currentAnswer.isFlagged ? 'Đã đánh dấu' : 'Đánh dấu'}</button></div><ToeicMediaView testId={session.testId} path={currentContent.question.imagePath} kind="image" alt={`Hình ảnh câu ${currentContent.question.questionNumber}`} mediaClient={mediaClient} /><ToeicMediaView testId={session.testId} path={currentContent.question.audioPath} kind="audio" mediaClient={mediaClient} /><h2 className="text-xl font-extrabold leading-8 text-[#493B42] sm:text-2xl">{currentContent.question.questionText || 'Hãy chọn đáp án phù hợp.'}</h2><AnswerOptions question={currentContent} answer={currentAnswer} disabled={!canMutate || Boolean(activePracticeFeedback)} onSelect={updateAnswer} />{session.mode === 'practice' && <div className="rounded-2xl border border-[#FCE7F3] bg-[#FFF9FB] p-4"><button type="button" onClick={() => void checkPracticeAnswer()} disabled={!canCheckPracticeAnswer} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-[#F472B6] px-4 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] disabled:cursor-not-allowed disabled:opacity-50">{practiceFeedbackLoading ? 'Đang kiểm tra…' : activePracticeFeedback ? 'Đã kiểm tra' : 'Kiểm tra đáp án'}</button>{!activePracticeFeedback && <p className="mt-2 text-xs text-gray-500">Chọn đáp án và chờ trạng thái đã lưu rồi mới kiểm tra.</p>}<ToeicPracticeFeedbackPanel feedback={activePracticeFeedback} loading={practiceFeedbackLoading} error={activePracticeFeedbackError} onRetry={() => void checkPracticeAnswer()} onReset={() => { setPracticeFeedback(null); setPracticeFeedbackError(null); setPracticeFeedbackErrorQuestionId(null); }} onSaveVocabulary={setVocabularyToSave} /></div>}</div>
+              {currentContent.passage && <div className="mb-5 space-y-3"><ToeicPassageRenderer passage={currentContent.passage} annotations={currentAnnotations} /><ToeicMediaView testId={session.testId} path={currentContent.passage.audioPath} kind="audio" mediaClient={mediaClient} /></div>}
+              <div className="space-y-5"><div className="flex flex-wrap items-center justify-between gap-2"><span className="rounded-full bg-[#FFF1F2] px-3 py-1 text-xs font-bold text-[#9D174D]">Part {currentContent.ref.part} · Câu {currentContent.question.questionNumber}</span><button type="button" onClick={toggleFlag} disabled={!canMutate} aria-pressed={currentAnswer.isFlagged} className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-3 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] ${currentAnswer.isFlagged ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-[#FCE7F3] text-gray-500'}`}><Flag className={`h-4 w-4 ${currentAnswer.isFlagged ? 'fill-amber-400' : ''}`} aria-hidden="true" /> {currentAnswer.isFlagged ? 'Đã đánh dấu' : 'Đánh dấu'}</button></div><ToeicMediaView testId={session.testId} path={currentContent.question.imagePath} kind="image" alt={`Hình ảnh câu ${currentContent.question.questionNumber}`} mediaClient={mediaClient} /><ToeicMediaView testId={session.testId} path={currentContent.question.audioPath} kind="audio" mediaClient={mediaClient} /><h2 className="text-xl font-extrabold leading-8 text-[#493B42] sm:text-2xl" data-toeic-text-target="question" data-toeic-text-target-id={currentContent.question.id}><ToeicAnnotatedText text={currentContent.question.questionText || 'Hãy chọn đáp án phù hợp.'} annotations={currentAnnotations.filter((annotation) => annotation.questionId === currentContent.question.id)} /></h2><AnswerOptions question={currentContent} answer={currentAnswer} disabled={!canMutate || Boolean(activePracticeFeedback)} onSelect={updateAnswer} />{session.mode === 'practice' && <div className="rounded-2xl border border-[#FCE7F3] bg-[#FFF9FB] p-4"><button type="button" onClick={() => void checkPracticeAnswer()} disabled={!canCheckPracticeAnswer} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-[#F472B6] px-4 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] disabled:cursor-not-allowed disabled:opacity-50">{practiceFeedbackLoading ? 'Đang kiểm tra…' : activePracticeFeedback ? 'Đã kiểm tra' : 'Kiểm tra đáp án'}</button>{!activePracticeFeedback && <p className="mt-2 text-xs text-gray-500">Chọn đáp án và chờ trạng thái đã lưu rồi mới kiểm tra.</p>}<ToeicPracticeFeedbackPanel feedback={activePracticeFeedback} loading={practiceFeedbackLoading} error={activePracticeFeedbackError} onRetry={() => void checkPracticeAnswer()} onReset={() => { setPracticeFeedback(null); setPracticeFeedbackError(null); setPracticeFeedbackErrorQuestionId(null); }} onSaveVocabulary={setVocabularyToSave} /></div>}<ToeicLearningToolsPanel key={currentContent.question.id} testId={session.testId} questionId={currentContent.question.id} isPractice={session.mode === 'practice'} feedback={activePracticeFeedback} annotations={annotations} selection={currentSelection} onAnnotationCreated={(annotation) => setAnnotations((current) => [...current, annotation])} onAnnotationDeleted={(id) => setAnnotations((current) => current.filter((annotation) => annotation.id !== id))} onClearSelection={() => { window.getSelection()?.removeAllRanges(); setSelection(null); }} onSaveVocabulary={setVocabularyToSave} /></div>
             </>}
           </div>
           <div className="mt-4 flex items-center justify-between gap-3"><button type="button" onClick={() => setCurrentIndex((index) => Math.max(0, index - 1))} disabled={currentIndex === 0} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#FCE7F3] bg-white px-4 text-sm font-bold text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] disabled:opacity-40"><ChevronLeft className="h-4 w-4" aria-hidden="true" /> Câu trước</button><button type="button" onClick={() => setCurrentIndex((index) => Math.min(session.questions.length - 1, index + 1))} disabled={currentIndex === session.questions.length - 1} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#F472B6] px-4 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] disabled:opacity-40">Câu tiếp <ChevronRight className="h-4 w-4" aria-hidden="true" /></button></div>

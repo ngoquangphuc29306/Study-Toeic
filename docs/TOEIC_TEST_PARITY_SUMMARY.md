@@ -330,3 +330,25 @@ The four Phase 9 behavior changes are: history, server-derived progress,
 hide/restore progress visibility and wrong-question retry. Score calculator
 and official scaled score are rejected for now under DEC-10. The original
 Phase 7.5 counts remain above as historical traceability.
+
+## Phase 10 canonical update
+
+Phase 10 adds the learning-tools boundary without changing attempt answers,
+submission/scoring, SRS or vocabulary behavior. The current canonical count is
+maintained in the Phase 10 section of the parity matrix:
+
+| Status | Count |
+|---|---:|
+| COMPLETE | 32 |
+| PARTIAL | 11 |
+| MISSING | 9 |
+| REPLACED | 3 |
+| REJECTED | 4 |
+| NOT_APPLICABLE | 0 |
+| UNKNOWN | 2 |
+| **Total audited features** | **61** |
+
+Notes, dictation and flip meet the Phase 10 acceptance scope. Annotations are
+PARTIAL because edit/overlap UX and full device verification remain. Lookup is
+PARTIAL because the server adapter is secure and deterministic but no approved
+dictionary provider is configured.

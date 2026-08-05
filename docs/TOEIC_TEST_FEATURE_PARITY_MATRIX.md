@@ -184,18 +184,35 @@ historical audit context; these overrides are the canonical acceptance status.
 | TOEIC-SCORE-CALCULATOR | REJECTED | No production calculator by approved DEC-10 policy | No unapproved 10–990 approximation or misleading raw-only calculator. |
 | TOEIC-SCALED-SCORE | REJECTED | Result/history keep `scaledScore: null` | No official score is shown until source, version, test mapping and owner approval exist. |
 
-### Phase 9 canonical counts
+### Phase 10 canonical counts
 
 | Status | Count |
 |---|---:|
-| COMPLETE | 29 |
-| PARTIAL | 9 |
-| MISSING | 14 |
+| COMPLETE | 32 |
+| PARTIAL | 11 |
+| MISSING | 9 |
 | REPLACED | 3 |
 | REJECTED | 4 |
 | NOT_APPLICABLE | 0 |
 | UNKNOWN | 2 |
 | **Total audited features** | **61** |
+
+## Phase 10 status overrides
+
+The earlier Phase 7.5/Phase 9 rows for the five learning-tool gaps are kept as
+audit history. The following rows are the current acceptance status after the
+Phase 10 implementation and evidence review.
+
+| ID | Previous | New | Production evidence | Acceptance evidence |
+|---|---|---|---|---|
+| TOEIC-NOTES | MISSING | COMPLETE | `toeic_test_notes`, `get_toeic_notes`, `upsert_toeic_note`, `delete_toeic_note`, `toeicToolService`, `ToeicLearningToolsPanel` | Plain-text test/question notes, owner RPC boundary, explicit save/delete, reload service path, mapper/service tests, SQL privilege/RLS verification. |
+| TOEIC-ANNOTATIONS | MISSING | PARTIAL | `toeic_text_annotations`, annotation RPCs, `toeicAnnotationAnchoring`, `ToeicAnnotatedText`, `ToeicLearningToolsPanel` | Question/passage targets, highlight/underline, quote+offset anchoring, stale-safe rendering, owner boundary and mapper/anchoring tests. Edit UI, overlap policy and full mobile/manual verification remain. |
+| TOEIC-LOOKUP | MISSING | PARTIAL | `POST /api/toeic-tools/lookup`, `toeicDictionaryService`, `lookupToeicTerm`, `LookupTool` | Authenticated server route, bounded input, allowlisted DTO, no arbitrary URL/provider from browser, unavailable/retry UI and mapper/service tests. Provider integration is intentionally deferred. |
+| TOEIC-DICTATION | MISSING | COMPLETE | `toeicDictation`, Practice-gated `DictationTool` in `ToeicLearningToolsPanel` | Transcript only after Phase 8 Practice feedback, normalized comparison/reveal/retry/clear, no answer or score mutation, pure tests. |
+| TOEIC-FLIP | MISSING | COMPLETE | Practice-gated `FlipTool` in `ToeicLearningToolsPanel` and existing vocabulary save dialog | Front/back vocabulary card, keyboard/button semantics, ephemeral state reset per question, explicit vocabulary save, no SRS/answer writes. |
+
+The updated canonical count is 32 COMPLETE, 11 PARTIAL and 9 MISSING; the
+remaining 9 missing rows are Phase 11/12 controls or open product decisions.
 
 The total is 61 because the Phase 9 history route and explicit visibility
 control are tracked as separate acceptance behaviors in the addendum. The

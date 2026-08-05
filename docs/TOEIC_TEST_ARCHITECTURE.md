@@ -684,3 +684,30 @@ answers and results are immutable.
 Official scaled score remains deliberately rejected for now: raw counts are
 authoritative and `scaledScore` remains `null` until a versioned approved
 conversion source exists. See `docs/TOEIC_TEST_PHASE9_HISTORY_PROGRESS.md`.
+
+## 21. Phase 10 learning tools
+
+Phase 10 keeps three state domains separate:
+
+- attempt answers, flags and results remain server-authoritative in the
+  existing attempt tables and RPCs;
+- notes and text annotations are owner-private server data in
+  `toeic_test_notes` and `toeic_text_annotations`, accessed through explicit
+  RPCs;
+- dictation input/comparison/reveal and Practice flip state are ephemeral UI
+  state and never write `toeic_test_answers`, SRS or review logs.
+
+Notes are plain text with one test scope and one question scope per owner.
+Annotations target question text or one passage document and store stable
+character offsets plus a quote snapshot. Rendering verifies the quote and
+falls back only to a unique exact quote match; stale/ambiguous anchors are
+ignored safely instead of mutating imported content.
+
+Dictionary lookup is an authenticated Next.js route with bounded input and an
+allowlisted DTO. The browser cannot choose a provider, endpoint or secret. A
+deterministic unavailable response is returned until a provider is approved
+and configured. Practice dictation consumes transcript only from the existing
+Phase 8 learning boundary. Practice flip displays authorized vocabulary only
+and reuses the existing explicit Collection/Section save dialog.
+
+See `docs/TOEIC_TEST_PHASE10_LEARNING_TOOLS.md` for the full contract.
