@@ -1,4 +1,166 @@
 import * as XLSX from 'xlsx';
+import type { Collection, Topic, Vocabulary } from './types';
+import { getLocalDateKey } from './date/localDate';
+
+export type VocabularyExportScope =
+  | { type: 'all' }
+  | {
+      type: 'collection';
+      collectionId: string;
+      collectionTitle: string;
+    }
+  | {
+      type: 'section';
+      sectionId: string;
+      sectionTitle: string;
+      collectionTitle?: string;
+    };
+
+export interface VocabularyExportOptions {
+  vocabularies: readonly Vocabulary[];
+  topics: readonly Topic[];
+  collections: readonly Collection[];
+  scope: VocabularyExportScope;
+}
+
+export const VOCABULARY_EXPORT_HEADERS = [
+  'Từ vựng',
+  'IPA-UK',
+  'IPA-US',
+  'Loại từ',
+  'Meaning',
+  'Example',
+  'Example_vi',
+  'Từ đồng nghĩa',
+  'Cụm từ',
+  'Ghi chú',
+  'Học phần',
+  'Bộ sưu tập',
+] as const;
+
+export type VocabularyExportMatrix = string[][];
+
+function toExportCell(value: string | null | undefined): string {
+  return value ?? '';
+}
+
+/** Return the vocabulary IDs covered by a requested export scope. */
+export function filterVocabulariesByExportScope(
+  options: VocabularyExportOptions
+): Vocabulary[] {
+  const { vocabularies, topics, scope } = options;
+  const topicIds = new Set<string>();
+
+  if (scope.type === 'section') {
+    topicIds.add(scope.sectionId);
+  } else if (scope.type === 'collection') {
+    topics.forEach((topic) => {
+      if (topic.collection_id === scope.collectionId) {
+        topicIds.add(topic.id);
+      }
+    });
+  }
+
+  const seenVocabularyIds = new Set<string>();
+
+  return vocabularies.filter((vocabulary) => {
+    if (seenVocabularyIds.has(vocabulary.id)) return false;
+    if (scope.type !== 'all' && !topicIds.has(vocabulary.topic_id)) return false;
+
+    seenVocabularyIds.add(vocabulary.id);
+    return true;
+  });
+}
+
+/** Build the single shared row matrix used by all Excel export scopes. */
+export function buildVocabularyExportMatrix(
+  options: VocabularyExportOptions
+): VocabularyExportMatrix {
+  const { topics, collections } = options;
+  const topicsById = new Map(topics.map((topic) => [topic.id, topic]));
+  const collectionsById = new Map(collections.map((collection) => [collection.id, collection]));
+
+  const rows = filterVocabulariesByExportScope(options).map((vocabulary) => {
+    const topic = topicsById.get(vocabulary.topic_id);
+    const collection = topic?.collection_id
+      ? collectionsById.get(topic.collection_id)
+      : undefined;
+
+    return [
+      toExportCell(vocabulary.word),
+      toExportCell(vocabulary.phonetic_uk),
+      toExportCell(vocabulary.phonetic_us),
+      toExportCell(vocabulary.part_of_speech),
+      toExportCell(vocabulary.meaning),
+      toExportCell(vocabulary.example),
+      toExportCell(vocabulary.example_translation),
+      toExportCell(vocabulary.synonyms),
+      toExportCell(vocabulary.collocations),
+      toExportCell(vocabulary.note),
+      toExportCell(topic?.title),
+      toExportCell(collection?.title),
+    ];
+  });
+
+  return [Array.from(VOCABULARY_EXPORT_HEADERS), ...rows];
+}
+
+/** Sanitize a human title before putting it into a downloaded filename. */
+export function sanitizeExcelFilename(title: string): string {
+  const sanitized = title
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, ' ')
+    .replace(/\s+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/\.+$/g, '')
+    .slice(0, 80);
+
+  return sanitized || 'Untitled';
+}
+
+export function buildVocabularyExportFilename(
+  scope: VocabularyExportScope,
+  date: Date = new Date()
+): string {
+  const scopeTitle = scope.type === 'all'
+    ? 'All_Vocabulary'
+    : scope.type === 'collection'
+      ? `Collection_${scope.collectionTitle}`
+      : `Section_${scope.sectionTitle}`;
+
+  return `EasyTOEIC_${sanitizeExcelFilename(scopeTitle)}_${getLocalDateKey(date)}.xlsx`;
+}
+
+/**
+ * Export the already-loaded client snapshot to one XLSX workbook.
+ * Returns the number of vocabulary rows exported, excluding the header row.
+ */
+export function exportVocabulariesToExcel(options: VocabularyExportOptions): number {
+  const matrix = buildVocabularyExportMatrix(options);
+  if (matrix.length === 1) return 0;
+
+  const worksheet = XLSX.utils.aoa_to_sheet(matrix);
+  worksheet['!cols'] = [
+    { wch: 20 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 14 },
+    { wch: 35 },
+    { wch: 45 },
+    { wch: 45 },
+    { wch: 30 },
+    { wch: 35 },
+    { wch: 28 },
+    { wch: 24 },
+    { wch: 24 },
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Vocabulary');
+  XLSX.writeFile(workbook, buildVocabularyExportFilename(options.scope));
+
+  return matrix.length - 1;
+}
 
 export interface ParsedVocabRow {
   word: string;

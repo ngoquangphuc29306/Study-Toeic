@@ -72,6 +72,10 @@ import {
   exportVocabulariesAsCSV,
   exportBackupAsJSON
 } from '../../services/importExportService';
+import {
+  exportVocabulariesToExcel,
+  type VocabularyExportScope,
+} from '../../lib/excelUtils';
 import { createRequestCoordinator } from '../../lib/data/requestCoordinator';
 import { isCurrentRequest } from '../../lib/data/requestGeneration';
 import {
@@ -1069,6 +1073,7 @@ export default function AppPage() {
   });
 
   const [isExportingCSV, setIsExportingCSV] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
   const [isExportingJSON, setIsExportingJSON] = useState(false);
 
   const handleExportCSV = async () => {
@@ -1082,6 +1087,37 @@ export default function AppPage() {
       showToast('Không thể xuất file CSV. Vui lòng thử lại.', 'error');
     } finally {
       setIsExportingCSV(false);
+    }
+  };
+
+  const handleExportExcel = (scope: VocabularyExportScope) => {
+    if (isExportingExcel) return;
+
+    setIsExportingExcel(true);
+    try {
+      const exportedCount = exportVocabulariesToExcel({
+        vocabularies,
+        topics,
+        collections,
+        scope,
+      });
+
+      if (exportedCount === 0) {
+        const emptyMessage = scope.type === 'section'
+          ? 'Section này chưa có từ vựng để export.'
+          : scope.type === 'collection'
+            ? 'Collection này chưa có từ vựng để export.'
+            : 'Không có từ vựng nào để export.';
+        showToast(emptyMessage, 'info');
+        return;
+      }
+
+      showToast(`Xuất Excel thành công ${exportedCount} từ vựng! ✨`, 'success');
+    } catch (err) {
+      console.error('Export Excel error:', err);
+      showToast('Không thể xuất file Excel. Vui lòng thử lại.', 'error');
+    } finally {
+      setIsExportingExcel(false);
     }
   };
 
@@ -1259,8 +1295,10 @@ export default function AppPage() {
             }}
             onOpenSqlModal={() => setIsSqlModalOpen(true)}
             onExportCSV={handleExportCSV}
+            onExportExcel={handleExportExcel}
             onExportJSON={handleExportJSON}
             isExportingCSV={isExportingCSV}
+            isExportingExcel={isExportingExcel}
             isExportingJSON={isExportingJSON}
           />
         )}
