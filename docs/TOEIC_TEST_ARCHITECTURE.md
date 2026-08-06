@@ -711,3 +711,14 @@ Phase 8 learning boundary. Practice flip displays authorized vocabulary only
 and reuses the existing explicit Collection/Section save dialog.
 
 See `docs/TOEIC_TEST_PHASE10_LEARNING_TOOLS.md` for the full contract.
+
+## 22. Phase 10.5 UI reconstruction
+
+Phase 10.5 is a presentation-only reconstruction of the TOEIC catalog and CBT
+workspace against the prototype. It keeps the existing service/RPC boundaries
+and therefore does not change attempts, autosave, scoring, answer-key
+isolation, signed-media authorization or the vocabulary/SRS domain. The UI
+uses feature-scoped prototype tokens, a compact CBT header and Part bar,
+filtered palette, and signed media controls/lightbox. See
+`docs/TOEIC_TEST_PHASE10_5_UI_PARITY.md` for the parity evidence, intentional
+differences and responsive/accessibility checklist.

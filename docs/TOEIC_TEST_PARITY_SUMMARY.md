@@ -352,3 +352,13 @@ Notes, dictation and flip meet the Phase 10 acceptance scope. Annotations are
 PARTIAL because edit/overlap UX and full device verification remain. Lookup is
 PARTIAL because the server adapter is secure and deterministic but no approved
 dictionary provider is configured.
+
+## Phase 10.5 UI reconstruction update
+
+`docs/TOEIC_TEST_PHASE10_5_UI_PARITY.md` records the presentation-only
+prototype reconstruction. Catalog, workspace composition, signed media toolbar,
+image lightbox and filtered question palette were brought closer to the
+prototype without changing any attempt, answer, scoring or security contract.
+The media and palette rows above remain PARTIAL until product policy and
+browser/manual verification are completed; this update does not inflate the
+canonical feature counts.

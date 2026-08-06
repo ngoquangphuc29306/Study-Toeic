@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, ArrowRight, Check, Clock3, LoaderCircle, RotateCcw } from 'lucide-react';
 import { ToeicAttemptError, type GetActiveToeicAttemptInput } from '../attemptContracts';
 import type { ToeicTestCatalogItem, ToeicTestPartPayload } from '../readContracts';
@@ -17,11 +17,20 @@ function formatDuration(seconds: number) {
   return `${Math.round(seconds / 60)} phút`;
 }
 
+function parseRequestedParts(value: string | null): ReadonlyArray<ToeicTestPart> {
+  if (!value) return [...ALL_PARTS];
+  const parts = value.split(',').map((item) => Number(item)).filter((item): item is ToeicTestPart => ALL_PARTS.includes(item as ToeicTestPart));
+  return parts.length > 0 ? [...new Set(parts)].sort((left, right) => left - right) as ToeicTestPart[] : [...ALL_PARTS];
+}
+
 export function ToeicTestOverviewPage({ testId }: { testId: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedMode: ToeicTestMode = searchParams.get('mode') === 'exam' ? 'exam' : 'practice';
+  const requestedParts = parseRequestedParts(searchParams.get('parts'));
   const [test, setTest] = useState<ToeicTestCatalogItem | null>(null);
-  const [mode, setMode] = useState<ToeicTestMode>('practice');
-  const [selectedParts, setSelectedParts] = useState<ReadonlyArray<ToeicTestPart>>([...ALL_PARTS]);
+  const [mode, setMode] = useState<ToeicTestMode>(requestedMode);
+  const [selectedParts, setSelectedParts] = useState<ReadonlyArray<ToeicTestPart>>(requestedMode === 'exam' ? [...ALL_PARTS] : requestedParts);
   const [partCounts, setPartCounts] = useState<Partial<Record<ToeicTestPart, number>>>({});
   const [loading, setLoading] = useState(true);
   const [countsLoading, setCountsLoading] = useState(false);
@@ -92,6 +101,7 @@ export function ToeicTestOverviewPage({ testId }: { testId: string }) {
   const togglePart = (part: ToeicTestPart) => {
     setSelectedParts((current) => current.includes(part) ? current.filter((item) => item !== part) : [...current, part].sort((a, b) => a - b) as ToeicTestPart[]);
   };
+
 
   if (loading) return <main className="min-h-screen bg-[#FFF9FA] p-6"><div className="mx-auto max-w-4xl animate-pulse space-y-4"><div className="h-6 w-40 rounded bg-[#FCE7F3]" /><div className="h-48 rounded-3xl bg-white" /></div></main>;
   if (error || !test) return <main className="min-h-screen bg-[#FFF9FA] p-6"><div className="mx-auto max-w-xl rounded-3xl border border-[#FBCFE8] bg-white p-8 text-center" role="alert"><h1 className="text-xl font-extrabold text-[#493B42]">Không thể mở đề</h1><p className="mt-2 text-sm text-gray-600">{error?.message || 'Đề không tồn tại hoặc chưa được phát hành.'}</p><Link href="/app/tests" className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#F472B6] px-4 font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6]"><ArrowLeft className="h-4 w-4" aria-hidden="true" /> Về danh sách đề</Link></div></main>;
