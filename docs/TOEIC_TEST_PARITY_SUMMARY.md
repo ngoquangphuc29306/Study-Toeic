@@ -362,3 +362,16 @@ prototype without changing any attempt, answer, scoring or security contract.
 The media and palette rows above remain PARTIAL until product policy and
 browser/manual verification are completed; this update does not inflate the
 canonical feature counts.
+
+## Phase 11 implementation status
+
+Phase 11 now has the client policy implementation and automated pure tests for
+Listening navigation, media controls, shared passage identity, Part 1/2 Exam
+presentation and Reading transition. The implementation deliberately does not
+claim `COMPLETE` for the affected parity rows yet: Chromium, 390px viewport and
+Mobile Safari manual evidence is still required for autoplay rejection,
+seeking restoration, real media `ended` events and touch/palette behavior.
+
+No canonical counts are changed until that manual evidence is recorded. See
+`docs/TOEIC_TEST_PHASE11_LISTENING_CBT.md` and the Phase 11 addendum in the
+feature matrix.

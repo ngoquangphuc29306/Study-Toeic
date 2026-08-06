@@ -722,3 +722,22 @@ uses feature-scoped prototype tokens, a compact CBT header and Part bar,
 filtered palette, and signed media controls/lightbox. See
 `docs/TOEIC_TEST_PHASE10_5_UI_PARITY.md` for the parity evidence, intentional
 differences and responsive/accessibility checklist.
+
+## 23. Phase 11 media and Listening CBT policy
+
+Phase 11 adds a pure media playback policy, a pure navigation policy, stable
+passage media-group identity and an ephemeral media controller. The workspace
+routes Part tabs, Previous/Next, palette clicks, keyboard arrows, same-group
+question selection and media-ended transitions through one dispatcher. Exam
+Listening Parts 1–4 are sequential: seek, pause, replay and speed changes are
+blocked after playback starts, playback rate is forced to `1.0x`, mute remains
+available, and only the ended media lifecycle may advance to the next group.
+Exam Reading navigation cannot return to Listening. Practice keeps flexible
+media and navigation controls.
+
+Part 1/2 option text is hidden only at Exam presentation time; safe DTOs and
+server answer-key boundaries are unchanged. Parts 3/4 use passage identity and
+one shared audio element per group. Media status, playback position and
+autoplay attempts remain ephemeral and are not part of answer autosave. See
+`docs/TOEIC_TEST_PHASE11_LISTENING_CBT.md` for the complete contract and
+verification evidence.

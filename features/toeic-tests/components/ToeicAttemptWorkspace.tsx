@@ -32,7 +32,13 @@ import {
 import { submitToeicAttempt } from "../services/toeicSubmissionService";
 import { ToeicPartContentCache } from "../services/toeicPartContentCache";
 import { createBrowserToeicMediaClient } from "../services/toeicMediaClient";
+import { getToeicMediaGroupKey } from "../services/toeicMediaGroup";
+import {
+  decideToeicNavigation,
+  type ToeicNavigationAction,
+} from "../services/toeicNavigationPolicy";
 import { getRemainingToeicSeconds, getServerClockOffsetMs } from "../timer";
+import { useToeicExamMediaController } from "../hooks/useToeicExamMediaController";
 import { useToeicAutosaveController } from "../services/toeicAutosaveController";
 import {
   filterToeicPaletteQuestions,
@@ -164,23 +170,27 @@ function Palette({
   answers,
   currentIndex,
   onSelect,
+  isSelectable,
 }: {
   session: ToeicAttemptSession;
   answers: Record<string, LocalAnswer>;
   currentIndex: number;
   onSelect: (index: number) => void;
+  isSelectable?: (index: number) => boolean;
 }) {
   return (
     <div className="grid grid-cols-5 gap-2 sm:grid-cols-8 lg:grid-cols-5">
       {session.questions.map((question, index) => {
         const answer = answers[question.questionId] ?? emptyAnswer();
         const current = currentIndex === index;
+        const selectable = isSelectable?.(index) ?? true;
         return (
           <button
             key={question.questionId}
             type="button"
             onClick={() => onSelect(index)}
-            className={`relative min-h-10 rounded-xl border text-sm font-extrabold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] ${current ? "border-[#9D174D] ring-2 ring-[#FBCFE8]" : answer.isFlagged ? "border-amber-400 bg-amber-50 text-amber-700" : answer.selectedAnswer ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-[#FCE7F3] bg-white text-slate-700"}`}
+            disabled={!selectable}
+            className={`relative min-h-10 rounded-xl border text-sm font-extrabold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] disabled:cursor-not-allowed disabled:opacity-45 ${current ? "border-[#9D174D] ring-2 ring-[#FBCFE8]" : answer.isFlagged ? "border-amber-400 bg-amber-50 text-amber-700" : answer.selectedAnswer ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-[#FCE7F3] bg-white text-slate-700"}`}
             aria-label={`Câu ${index + 1}${answer.selectedAnswer ? ", đã trả lời" : ", chưa trả lời"}${answer.isFlagged ? ", đã đánh dấu" : ""}`}
             aria-current={current ? "step" : undefined}
           >
@@ -443,7 +453,6 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
     if (!session || !currentPart || loadedParts[currentPart]) return;
     let active = true;
     // The loading marker mirrors an external async request lifecycle.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setContentLoading(true);
     setContentError(null);
     void cacheRef.current
@@ -498,6 +507,26 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
     currentModel?.questions.find(
       (item) => item.ref.questionId === currentRef?.questionId,
     ) ?? null;
+  const currentMediaGroupKey = currentContent
+    ? getToeicMediaGroupKey(currentContent)
+    : null;
+  const mediaController = useToeicExamMediaController({
+    mode: session?.mode ?? "practice",
+    part: currentPart ?? 5,
+    mediaKey: currentMediaGroupKey,
+  });
+  const {
+    hasEnded: mediaHasEnded,
+    hasStarted: mediaHasStarted,
+    policy: mediaPolicy,
+    handleLoading: handleMediaLoading,
+    handleReady: handleMediaReady,
+    handlePlaybackStart: markMediaStarted,
+    handlePlaybackEnd: markMediaEnded,
+    handlePlaybackError: markMediaError,
+    handleTimeUpdate: trackMediaTime,
+  } = mediaController;
+  const autoPlayMediaKeyRef = useRef<string | null>(null);
   const groupedContents = useMemo(() => {
     if (
       !currentContent ||
@@ -601,7 +630,12 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target?.closest('input, textarea, select, [role="dialog"]')) return;
+      if (
+        target?.closest(
+          'input, textarea, select, button, [contenteditable="true"], [role="dialog"], [data-toeic-interactive-editor]',
+        )
+      )
+        return;
       if (event.key >= "1" && event.key <= "4") {
         const option = OPTION_KEYS[Number(event.key) - 1];
         if (option) {
@@ -613,12 +647,10 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
         updateAnswer(event.key.toUpperCase() as ToeicOptionKey);
       } else if (event.key === "ArrowRight") {
         event.preventDefault();
-        setCurrentIndex((index) =>
-          Math.min(index + 1, (session?.questions.length ?? 1) - 1),
-        );
+        requestToeicNavigation({ action: "next" });
       } else if (event.key === "ArrowLeft") {
         event.preventDefault();
-        setCurrentIndex((index) => Math.max(index - 1, 0));
+        requestToeicNavigation({ action: "previous" });
       } else if (event.key.toLowerCase() === "f") {
         event.preventDefault();
         toggleFlag();
@@ -854,6 +886,104 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
     currentPart !== null &&
     GROUPED_PASSAGE_PARTS.has(currentPart);
 
+  const getMediaGroupKeyAtIndex = useCallback(
+    (index: number) => {
+      const question = session?.questions[index];
+      if (!question) return null;
+      const content = currentModel?.questions.find(
+        (item) => item.ref.questionId === question.questionId,
+      );
+      return content ? getToeicMediaGroupKey(content) : `question:${question.questionId}`;
+    },
+    [currentModel, session?.questions],
+  );
+
+  const requestToeicNavigation = useCallback(
+    ({
+      action,
+      targetIndex,
+      targetPart,
+      mediaHasEnded: mediaHasEndedOverride = mediaHasEnded,
+    }: {
+      action: ToeicNavigationAction;
+      targetIndex?: number;
+      targetPart?: ToeicTestPart;
+      mediaHasEnded?: boolean;
+    }) => {
+      if (!session || !currentRef || currentPart === null) return false;
+      let nextIndex = targetIndex;
+      if (action === "previous") nextIndex = Math.max(0, currentIndex - 1);
+      if (action === "next")
+        nextIndex = Math.min(session.questions.length - 1, currentIndex + 1);
+      if (action === "part-jump") {
+        nextIndex = session.questions.findIndex(
+          (question) => question.part === targetPart,
+        );
+      }
+      if (action === "auto-advance" && nextIndex === undefined) {
+        for (let index = currentIndex + 1; index < session.questions.length; index += 1) {
+          if (getMediaGroupKeyAtIndex(index) !== currentMediaGroupKey) {
+            nextIndex = index;
+            break;
+          }
+        }
+      }
+      if (nextIndex === undefined || nextIndex < 0 || nextIndex >= session.questions.length)
+        return false;
+      const target = session.questions[nextIndex];
+      const decision = decideToeicNavigation({
+        mode: session.mode,
+        action,
+        currentPart,
+        targetPart: target.part,
+        currentPosition: currentIndex,
+        targetPosition: nextIndex,
+        currentMediaGroupKey,
+        targetMediaGroupKey: getMediaGroupKeyAtIndex(nextIndex),
+        mediaHasStarted,
+        mediaHasEnded: mediaHasEndedOverride,
+      });
+      if (!decision.allowed) {
+        setNotice(decision.reason);
+        return false;
+      }
+      if (action === "auto-advance")
+        autoPlayMediaKeyRef.current = getMediaGroupKeyAtIndex(nextIndex);
+      setCurrentIndex(nextIndex);
+      return true;
+    },
+    [
+      currentIndex,
+      currentMediaGroupKey,
+      currentPart,
+      currentRef,
+      getMediaGroupKeyAtIndex,
+      mediaHasEnded,
+      mediaHasStarted,
+      session,
+    ],
+  );
+
+  const handlePlaybackEnd = useCallback(() => {
+    markMediaEnded();
+    if (session?.mode !== "exam" || currentPart === null || currentPart > 4) return;
+    requestToeicNavigation({ action: "auto-advance", mediaHasEnded: true });
+  }, [currentPart, markMediaEnded, requestToeicNavigation, session?.mode]);
+
+  const handlePlaybackStart = useCallback(() => {
+    if (autoPlayMediaKeyRef.current === currentMediaGroupKey)
+      autoPlayMediaKeyRef.current = null;
+    markMediaStarted();
+  }, [currentMediaGroupKey, markMediaStarted]);
+
+  const handleMediaError = useCallback(
+    (mediaError: Error) => {
+      markMediaError();
+      setNotice(mediaError.message);
+    },
+    [markMediaError],
+  );
+
   function toggleFlag() {
     if (!currentRef || !canMutate) return;
     const next = { ...currentAnswer, isFlagged: !currentAnswer.isFlagged };
@@ -862,9 +992,7 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
   }
 
   const navigateToPart = (part: ToeicTestPart) => {
-    const index =
-      session?.questions.findIndex((question) => question.part === part) ?? -1;
-    if (index >= 0) setCurrentIndex(index);
+    requestToeicNavigation({ action: "part-jump", targetPart: part });
   };
   const exit = async () => {
     await autosave.flush();
@@ -1086,6 +1214,15 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
       </header>
       <div className="relative mx-auto max-w-[1920px] px-4 py-4 sm:px-6">
         <section className="min-w-0">
+          {notice && (
+            <p
+              className="mb-3 rounded-xl border border-[#FBCFE8] bg-[#FFF1F2] px-3 py-2 text-xs font-semibold text-[#9D174D]"
+              role="status"
+              aria-live="polite"
+            >
+              {notice}
+            </p>
+          )}
           <div
             className="mb-4 flex items-center gap-2 overflow-x-auto rounded-2xl border border-[#FCE7F3] bg-white p-2"
             aria-label="Điều hướng Part"
@@ -1096,7 +1233,12 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
                   key={part}
                   type="button"
                   onClick={() => navigateToPart(part)}
-                  className={`min-h-10 shrink-0 rounded-xl px-4 text-sm font-extrabold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] ${currentPart === part ? "bg-[#F472B6] text-white" : "text-gray-500 hover:bg-[#FFF1F2] hover:text-[#9D174D]"}`}
+                  disabled={
+                    session.mode === "exam" &&
+                    currentPart !== null &&
+                    (currentPart <= 4 || part < 5)
+                  }
+                  className={`min-h-10 shrink-0 rounded-xl px-4 text-sm font-extrabold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] disabled:cursor-not-allowed disabled:opacity-45 ${currentPart === part ? "bg-[#F472B6] text-white" : "text-gray-500 hover:bg-[#FFF1F2] hover:text-[#9D174D]"}`}
                   aria-current={currentPart === part ? "page" : undefined}
                 >
                   Part {part}
@@ -1170,12 +1312,6 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
                             alt="Hình minh họa của đoạn TOEIC"
                             mediaClient={mediaClient}
                           />
-                          <ToeicMediaView
-                            testId={session.testId}
-                            path={currentContent.passage.audioPath}
-                            kind="audio"
-                            mediaClient={mediaClient}
-                          />
                         </>
                       )}
                       <ToeicMediaView
@@ -1185,12 +1321,32 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
                         alt={`Hình ảnh câu ${currentContent.question.questionNumber}`}
                         mediaClient={mediaClient}
                       />
-                      <ToeicMediaView
-                        testId={session.testId}
-                        path={currentContent.question.audioPath}
-                        kind="audio"
-                        mediaClient={mediaClient}
-                      />
+                      {(currentContent.passage?.audioPath ||
+                        currentContent.question.audioPath) && (
+                        <ToeicMediaView
+                          key={`audio:${currentMediaGroupKey}`}
+                          testId={session.testId}
+                          path={
+                            currentContent.passage?.audioPath ??
+                            currentContent.question.audioPath
+                          }
+                          kind="audio"
+                          mediaClient={mediaClient}
+                          mode={session.mode}
+                          part={currentPart ?? 5}
+                          mediaKey={currentMediaGroupKey ?? undefined}
+                          autoPlay={
+                            autoPlayMediaKeyRef.current === currentMediaGroupKey
+                          }
+                          policy={mediaPolicy}
+                          onMediaLoading={handleMediaLoading}
+                          onMediaReady={handleMediaReady}
+                          onPlaybackStart={handlePlaybackStart}
+                          onPlaybackEnd={handlePlaybackEnd}
+                          onPlaybackError={handleMediaError}
+                          onTimeUpdate={trackMediaTime}
+                        />
+                      )}
                       {showLearningContentBesidePassage && (
                         <div
                           className="mt-5 space-y-3"
@@ -1372,7 +1528,10 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
                                       item.ref.questionId,
                                   );
                                   if (nextIndex >= 0)
-                                    setCurrentIndex(nextIndex);
+                                    requestToeicNavigation({
+                                      action: "group-question",
+                                      targetIndex: nextIndex,
+                                    });
                                   updateAnswerForQuestion(
                                     item.ref.questionId,
                                     option,
@@ -1512,10 +1671,11 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
             <div className="ml-auto flex items-center gap-2">
               <button
                 type="button"
-                onClick={() =>
-                  setCurrentIndex((index) => Math.max(0, index - 1))
+                onClick={() => requestToeicNavigation({ action: "previous" })}
+                disabled={
+                  currentIndex === 0 ||
+                  (session.mode === "exam" && currentPart !== null && currentPart <= 4)
                 }
-                disabled={currentIndex === 0}
                 className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-xl bg-blue-500 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] disabled:opacity-40"
                 aria-label="Câu trước"
               >
@@ -1537,12 +1697,11 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
               </button>
               <button
                 type="button"
-                onClick={() =>
-                  setCurrentIndex((index) =>
-                    Math.min(session.questions.length - 1, index + 1),
-                  )
+                onClick={() => requestToeicNavigation({ action: "next" })}
+                disabled={
+                  currentIndex === session.questions.length - 1 ||
+                  (session.mode === "exam" && currentPart !== null && currentPart <= 4)
                 }
-                disabled={currentIndex === session.questions.length - 1}
                 className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-xl bg-blue-500 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] disabled:opacity-40"
                 aria-label="Câu tiếp"
               >
@@ -1596,14 +1755,31 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
               session={paletteSession ?? session}
               answers={answers}
               currentIndex={paletteCurrentIndex}
+              isSelectable={(index) => {
+                const question = (paletteSession ?? session).questions[index];
+                const nextIndex = session.questions.findIndex(
+                  (item) => item.questionId === question?.questionId,
+                );
+                if (nextIndex < 0) return false;
+                if (session.mode === "practice") return true;
+                if (currentPart === null) return false;
+                return currentPart >= 5
+                  ? session.questions[nextIndex]?.part >= 5
+                  : nextIndex === currentIndex;
+              }}
               onSelect={(index) => {
                 const question = (paletteSession ?? session).questions[index];
                 const nextIndex = session.questions.findIndex(
                   (item) => item.questionId === question?.questionId,
                 );
                 if (nextIndex >= 0) {
-                  setCurrentIndex(nextIndex);
-                  setPaletteOpen(false);
+                  if (
+                    requestToeicNavigation({
+                      action: "palette-jump",
+                      targetIndex: nextIndex,
+                    })
+                  )
+                    setPaletteOpen(false);
                 }
               }}
             />

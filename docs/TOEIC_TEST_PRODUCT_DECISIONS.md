@@ -68,3 +68,23 @@ Phase 10 learning-tools scope:
 Phase 10 does not approve pause, audio speed, mute, seek/replay policy,
 offline sync, multi-tab coordination, auto-submit, entitlement or licensing
 release behavior. Those decisions remain open for their planned phases.
+
+## Phase 11 approved media/CBT addendum
+
+The Phase 11 task provides the following implementation policy for the current
+UI. It supersedes the earlier OPEN rows only for this narrow interaction scope;
+server deadline, submit, scoring and persistence contracts remain unchanged.
+
+| Decision ID | Approved policy | Evidence | Status |
+|---|---|---|---|
+| DEC-01/02 | Exam has no pause control; pausing does not stop the server deadline. | `toeicMediaPlaybackPolicy`, Workspace media controller | APPROVED_FOR_PHASE_11 |
+| DEC-03 | Listening Exam Parts 1–4 cannot seek; Practice can seek. | Media policy plus locked range/seeking restoration | APPROVED_FOR_PHASE_11 |
+| DEC-04 | Listening Exam media cannot replay after it ends; Practice can replay. | Ended lifecycle and policy tests | APPROVED_FOR_PHASE_11 |
+| DEC-07 | Practice supports `0.8x/1.0x/1.2x/1.5x`; Exam Listening is forced to `1.0x`. | Media toolbar and policy tests | APPROVED_FOR_PHASE_11 |
+| DEC-26 | Listening Exam Parts 1–4 advance only through media `ended`; Reading Parts 5–7 are navigable but cannot return to Listening. | `toeicNavigationPolicy`, dispatcher and group identity | APPROVED_FOR_PHASE_11 |
+| DEC-27 | Part 3/4 shared passage audio uses one stable passage-based media identity and does not remount between group questions. | `toeicMediaGroup`, Workspace audio key | APPROVED_FOR_PHASE_11 |
+
+Real-browser manual evidence is still required before the parity matrix can
+promote the affected rows from `PARTIAL` to `COMPLETE`. Custom Exam duration,
+auto-submit, offline, multi-tab, entitlement and licensing decisions remain
+OPEN and are not inferred by Phase 11.

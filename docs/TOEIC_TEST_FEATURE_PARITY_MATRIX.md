@@ -444,3 +444,26 @@ Observed route behavior:
 
 No gap is scheduled as implementation without first resolving the product
 decision rows in `docs/TOEIC_TEST_PRODUCT_DECISIONS.md`.
+
+## Phase 11 implementation evidence
+
+Phase 11 implements the previously missing policy boundary without changing
+the historical Phase 10.5 rows. The following rows have implementation and
+pure-test evidence in the current worktree, but remain `PARTIAL` until the
+required Chromium/mobile manual verification is recorded:
+
+| Feature | Implementation evidence | Automated evidence | Remaining evidence |
+|---|---|---|---|
+| TOEIC-AUDIO | `ToeicMediaView`, signed media client, media controller | `toeicMediaPlaybackPolicy.test.ts` | Real signed playback, browser seeking and autoplay checks |
+| TOEIC-PREV-NEXT | `requestToeicNavigation`, `toeicNavigationPolicy` | `toeicNavigationPolicy.test.ts` | Desktop/mobile manual navigation matrix |
+| TOEIC-KEYBOARD | Workspace key handler and dispatcher | Navigation policy tests; static target guard | Keyboard behavior in a running browser |
+| TOEIC-LISTENING-RESTRICTIONS | Media and navigation policies; locked media controls | Listening and Reading boundary tests | Full Exam Parts 1–4 device run |
+| TOEIC-AUDIO-SPEED | Practice speed cycle and Exam forced `1.0x` | Media policy tests | Browser control verification |
+| TOEIC-MUTE | Policy-gated existing mute control | Media policy tests | Browser/device audio verification |
+| TOEIC-PALETTE | Palette `isSelectable` plus dispatcher | Navigation policy tests | Palette/filter run on desktop and 390px |
+| TOEIC-AUTO-ADVANCE | Media `ended` callback and group-key dispatcher | Ended/next-group policy tests | Real audio group playback and duplicate-event run |
+
+Because the manual evidence is not claimed here, the canonical feature counts
+above are intentionally not inflated and no historical status is rewritten.
+The full Phase 11 contract and deferred items are in
+`docs/TOEIC_TEST_PHASE11_LISTENING_CBT.md`.
