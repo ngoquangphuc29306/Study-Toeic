@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpRight,
+  Bold,
   BookOpen,
+  CheckSquare,
   Check,
   Clipboard,
   Eraser,
@@ -12,6 +14,9 @@ import {
   Highlighter,
   Hand,
   LoaderCircle,
+  Italic,
+  List,
+  ListOrdered,
   Palette,
   Search,
   PenLine,
@@ -19,6 +24,7 @@ import {
   RotateCcw,
   Save,
   Square,
+  Strikethrough,
   StickyNote,
   Type,
   Trash2,
@@ -49,6 +55,15 @@ import {
   type ToeicDictationComparison,
 } from "../services/toeicDictation";
 import type { ToeicTextSelectionDraft } from "../services/toeicAnnotationAnchoring";
+import {
+  getToeicRichNotePlainText,
+  isToeicRichNoteEmpty,
+  parseStoredToeicNoteContent,
+  parseToeicNoteHtml,
+  richNoteDocumentToHtml,
+  serializeToeicRichNoteDocument,
+  toggleToeicChecklist,
+} from "../services/toeicRichNote";
 
 type Tool = "notes" | "annotation" | "lookup" | "dictation" | "flip";
 
@@ -76,6 +91,33 @@ function ToolButton({
   );
 }
 
+function NoteFormatButton({
+  label,
+  title,
+  active,
+  onMouseDown,
+  children,
+}: {
+  label: string;
+  title: string;
+  active: boolean;
+  onMouseDown: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={label}
+      aria-pressed={active}
+      onMouseDown={onMouseDown}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#493B42] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] disabled:cursor-not-allowed disabled:opacity-50 ${active ? "bg-[#FCE7F3] text-[#9D174D]" : "hover:bg-[#FFF1F2]"}`}
+    >
+      {children}
+    </button>
+  );
+}
+
 export function ToeicNotesPanel({
   testId,
   questionId,
@@ -85,6 +127,8 @@ export function ToeicNotesPanel({
 }) {
   const [notes, setNotes] = useState<ReadonlyArray<ToeicNote>>([]);
   const [content, setContent] = useState("");
+  const [activeFormats, setActiveFormats] = useState({ bold: false, italic: false, strike: false });
+  const editorRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +139,7 @@ export function ToeicNotesPanel({
       ) ?? null,
     [notes, questionId],
   );
+  const editorHtml = useMemo(() => richNoteDocumentToHtml(parseStoredToeicNoteContent(current?.content ?? "")), [current?.content]);
   useEffect(() => {
     let active = true;
     void listToeicNotes(testId)
@@ -122,6 +167,28 @@ export function ToeicNotesPanel({
       active = false;
     };
   }, [questionId, testId]);
+  useEffect(() => {
+    if (editorRef.current && editorRef.current.innerHTML !== editorHtml) editorRef.current.innerHTML = editorHtml;
+  }, [current?.content, editorHtml]);
+  const refreshFormats = () => {
+    if (typeof document === "undefined") return;
+    setActiveFormats({ bold: document.queryCommandState("bold"), italic: document.queryCommandState("italic"), strike: document.queryCommandState("strikeThrough") });
+  };
+  const runFormatCommand = (command: "bold" | "italic" | "strikeThrough" | "insertUnorderedList" | "insertOrderedList") => (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    const editor = document.getElementById("toeic-rich-note-editor");
+    editor?.focus();
+    document.execCommand(command);
+    setContent(editor?.textContent ?? "");
+    refreshFormats();
+  };
+  const toggleChecklistFormat = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    const editor = document.getElementById("toeic-rich-note-editor");
+    if (!editor) return;
+    toggleToeicChecklist(editor);
+    setContent(editor.textContent ?? "");
+  };
   const save = async () => {
     if (!content.trim()) {
       setError("Ghi chú không được để trống.");
@@ -130,7 +197,13 @@ export function ToeicNotesPanel({
     setBusy(true);
     setError(null);
     try {
-      const saved = await upsertToeicNote({ testId, questionId, content });
+      const richDocument = parseToeicNoteHtml(document.getElementById("toeic-rich-note-editor")?.innerHTML ?? editorHtml);
+      if (isToeicRichNoteEmpty(richDocument)) {
+        setError("Ghi chú không được để trống.");
+        return;
+      }
+      const richContent = serializeToeicRichNoteDocument(richDocument);
+      const saved = await upsertToeicNote({ testId, questionId, content: richContent });
       setNotes((currentNotes) => [
         ...currentNotes.filter((note) => note.id !== saved.id),
         saved,
@@ -196,20 +269,61 @@ export function ToeicNotesPanel({
         </div>
       ) : (
         <>
-          <label className="sr-only" htmlFor="toeic-note-editor">
+          <label className="sr-only" htmlFor="toeic-rich-note-editor">
             Nội dung ghi chú
           </label>
+          <div className="flex flex-wrap items-center gap-1 rounded-xl border border-[#FBCFE8] bg-[#FFF8FA] p-1" role="toolbar" aria-label="Định dạng ghi chú">
+            <NoteFormatButton label="In đậm" title="In đậm (Ctrl/Cmd+B)" active={activeFormats.bold} onMouseDown={runFormatCommand("bold")}><Bold className="h-4 w-4" aria-hidden="true" /></NoteFormatButton>
+            <NoteFormatButton label="In nghiêng" title="In nghiêng (Ctrl/Cmd+I)" active={activeFormats.italic} onMouseDown={runFormatCommand("italic")}><Italic className="h-4 w-4" aria-hidden="true" /></NoteFormatButton>
+            <NoteFormatButton label="Gạch ngang" title="Gạch ngang" active={activeFormats.strike} onMouseDown={runFormatCommand("strikeThrough")}><Strikethrough className="h-4 w-4" aria-hidden="true" /></NoteFormatButton>
+            <span className="mx-1 h-5 w-px bg-[#FBCFE8]" aria-hidden="true" />
+            <NoteFormatButton label="Danh sách dấu đầu dòng" title="Danh sách dấu đầu dòng" active={false} onMouseDown={runFormatCommand("insertUnorderedList")}><List className="h-4 w-4" aria-hidden="true" /></NoteFormatButton>
+            <NoteFormatButton label="Danh sách đánh số" title="Danh sách đánh số" active={false} onMouseDown={runFormatCommand("insertOrderedList")}><ListOrdered className="h-4 w-4" aria-hidden="true" /></NoteFormatButton>
+            <NoteFormatButton label="Danh sách checklist" title="Danh sách checklist" active={false} onMouseDown={toggleChecklistFormat}><CheckSquare className="h-4 w-4" aria-hidden="true" /></NoteFormatButton>
+          </div>
+          <div
+            id="toeic-rich-note-editor"
+            ref={editorRef}
+            contentEditable={!busy}
+            role="textbox"
+            aria-multiline="true"
+            aria-label="Nội dung ghi chú"
+            data-toeic-interactive-editor="true"
+            suppressContentEditableWarning
+            onInput={(event) => {
+              setContent(event.currentTarget.textContent ?? "");
+              refreshFormats();
+            }}
+            onClick={(event) => {
+              if (event.target instanceof HTMLInputElement && event.target.matches('input[data-toeic-checklist-box="true"]')) {
+                setContent(event.currentTarget.textContent ?? "");
+              }
+            }}
+            onKeyDown={(event) => {
+              if ((event.ctrlKey || event.metaKey) && (event.key.toLowerCase() === "b" || event.key.toLowerCase() === "i")) {
+                event.preventDefault();
+                document.execCommand(event.key.toLowerCase() === "b" ? "bold" : "italic");
+                refreshFormats();
+              }
+            }}
+            onKeyUp={refreshFormats}
+            onMouseUp={refreshFormats}
+            className="min-h-36 w-full rounded-2xl border border-[#FBCFE8] bg-white p-3 text-sm leading-6 text-[#493B42] focus:border-[#F472B6] focus:outline-none focus:ring-2 focus:ring-[#FBCFE8] [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-1 [&_ul[data-toeic-list='checklist']]:list-none [&_ul[data-toeic-list='checklist']]:pl-0"
+          />
           <textarea
-            id="toeic-note-editor"
+            id="toeic-note-legacy-editor"
             value={content}
             onChange={(event) => setContent(event.target.value)}
             maxLength={5000}
             rows={6}
             placeholder="Ghi lại mẹo, từ khóa hoặc điều cần ôn…"
-            className="w-full resize-y rounded-2xl border border-[#FBCFE8] bg-white p-3 text-sm leading-6 text-[#493B42] focus:border-[#F472B6] focus:outline-none focus:ring-2 focus:ring-[#FBCFE8]"
+            className="hidden"
           />
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs text-gray-500" aria-live="polite">
+            <span className="text-xs text-gray-500 note-text-counter" aria-live="polite">
+              {getToeicRichNotePlainText(parseStoredToeicNoteContent(content)).length}/5000 ký tự
+            </span>
+            <span className="hidden" aria-live="polite">
               {content.length}/5000 ký tự
             </span>
             <button

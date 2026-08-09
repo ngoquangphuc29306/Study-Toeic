@@ -5,6 +5,7 @@ import {
   type ToeicNote,
   type ToeicTextAnnotation,
 } from '../toolContracts';
+import { parseStoredToeicNoteContent } from '../services/toeicRichNote';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -35,7 +36,8 @@ function text(value: unknown, field: string, allowNull = false): string | null {
 
 function mapNote(value: unknown): ToeicNote {
   const row = object(value, 'Invalid TOEIC note response');
-  return { id: uuid(row.id, 'note id'), testId: uuid(row.testId, 'test id'), questionId: nullableUuid(row.questionId, 'question id'), content: text(row.content, 'note content') as string, createdAt: iso(row.createdAt, 'created time'), updatedAt: iso(row.updatedAt, 'updated time') };
+  const content = text(row.content, 'note content') as string;
+  return { id: uuid(row.id, 'note id'), testId: uuid(row.testId, 'test id'), questionId: nullableUuid(row.questionId, 'question id'), content, document: parseStoredToeicNoteContent(content), createdAt: iso(row.createdAt, 'created time'), updatedAt: iso(row.updatedAt, 'updated time') };
 }
 
 export function mapToeicNotesResponse(value: unknown): ReadonlyArray<ToeicNote> {

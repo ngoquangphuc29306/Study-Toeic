@@ -1,3 +1,5 @@
+import type { ToeicRichNoteDocument } from './services/toeicRichNote';
+
 export type ToeicAnnotationStyle = 'highlight' | 'underline';
 
 export interface ToeicNote {
@@ -5,6 +7,7 @@ export interface ToeicNote {
   testId: string;
   questionId: string | null;
   content: string;
+  document: ToeicRichNoteDocument;
   createdAt: string;
   updatedAt: string;
 }
