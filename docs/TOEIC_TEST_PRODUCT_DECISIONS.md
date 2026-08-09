@@ -88,3 +88,26 @@ Real-browser manual evidence is still required before the parity matrix can
 promote the affected rows from `PARTIAL` to `COMPLETE`. Custom Exam duration,
 auto-submit, offline, multi-tab, entitlement and licensing decisions remain
 OPEN and are not inferred by Phase 11.
+
+## Phase 11.5 external media addendum
+
+The requested `DEC-26` identifier is already occupied by the Phase 11
+Listening/Reading transition decision. To avoid duplicate IDs and ambiguous
+traceability, the Phase 11.5 decision is recorded as `DEC-28` while preserving
+the requested policy.
+
+| Decision ID | Question | Options | Recommendation | Reason | Status | Blocking phase |
+|---|---|---|---|---|---|---|
+| DEC-28 | May imported JSON HTTPS media URLs be used directly? | Upload all media to Supabase Storage; allow approved HTTPS URLs; arbitrary browser URLs | Allow JSON-provided HTTPS audio/image URLs through a server exact-host allowlist, while retaining bucket-relative signed storage paths | Avoids unnecessary media re-upload and preserves a single resolver without creating a public proxy or SSRF surface | APPROVED | Phase 11.5 |
+
+Approved policy:
+
+- JSON-provided HTTPS audio/image URLs may be used directly by the browser only
+  after server-side exact-host allowlist and referenced-test checks.
+- Existing Supabase bucket-relative paths continue through the private signed
+  media route.
+- External URLs never reach Supabase `createSignedUrls` and are not proxied.
+- UI, Phase 11 playback/navigation policy, stable group identity, attempts,
+  autosave, submit and scoring remain unchanged.
+- Arbitrary user-provided URLs and Google Drive share links are not accepted as
+  a direct-media guarantee.

@@ -467,3 +467,16 @@ Because the manual evidence is not claimed here, the canonical feature counts
 above are intentionally not inflated and no historical status is rewritten.
 The full Phase 11 contract and deferred items are in
 `docs/TOEIC_TEST_PHASE11_LISTENING_CBT.md`.
+
+## Phase 11.5 external media addendum
+
+Phase 11.5 adds source migration without changing the UI or Phase 11
+interaction policy. The new row remains `PARTIAL` until the required real
+browser/manual Network verification is recorded.
+
+| ID | Category | Feature/Button | Prototype evidence | Production evidence | Status | Missing layers | Security class | Priority | Planned phase | Acceptance criteria |
+|---|---|---|---|---|---|---|---|---|---|---|
+| TOEIC-EXTERNAL-MEDIA-SOURCE | Media/Security | JSON-provided HTTPS audio/image sources | Sample `2026-test-1-id_ad780150.json` uses `questions[].audio_url` and `questions[].image_url` | `mediaSource.ts`, importer validation/normalization, media route/service, `20260805190000_allow_toeic_external_media_urls.sql`, media client tests | PARTIAL | TEST, OPERATIONS | USER_PRIVATE | P0 | 11.5 | Approved host loads directly in browser; disallowed/unsafe URL fails; storage-relative path still signs; no external URL reaches `createSignedUrls`; query is redacted from logs; Practice/Exam/Review retain Phase 11 behavior. |
+
+Phase 11.5 does not change the canonical historical counts above. The new row
+is tracked separately until manual evidence is added.

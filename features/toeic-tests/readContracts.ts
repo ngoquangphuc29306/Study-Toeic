@@ -75,6 +75,7 @@ export interface ToeicSignedMediaResult {
   path: string;
   signedUrl: string;
   expiresAt: string;
+  sourceType?: 'storage_path' | 'external_url';
 }
 
 export type ToeicReadErrorCode =
@@ -83,6 +84,7 @@ export type ToeicReadErrorCode =
   | 'TEST_NOT_FOUND'
   | 'TEST_NOT_PUBLISHED'
   | 'MEDIA_NOT_FOUND'
+  | 'MEDIA_HOST_NOT_ALLOWED'
   | 'MEDIA_SIGNING_FAILED'
   | 'INVALID_RESPONSE'
   | 'READ_FAILED';

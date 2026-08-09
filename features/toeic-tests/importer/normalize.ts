@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { buildToeicMediaPath } from '../mediaPath.ts';
+import { normalizeToeicMediaSource } from '../mediaPath.ts';
+import { getConfiguredToeicExternalMediaHosts, ToeicMediaSourceError } from '../mediaSource.ts';
 import { toVocabularyContent, parseVocabularyContent } from './vocabulary.ts';
 import type {
   ImportValidationIssue,
@@ -60,18 +61,54 @@ function mediaConsensus(
   field: 'audio_url' | 'image_url',
   mediaFolder: string,
   path: string,
-  errors: ImportValidationIssue[]
+  errors: ImportValidationIssue[],
+  allowedExternalMediaHosts: ReadonlySet<string>,
 ): string | null {
   const paths = questions
     .map((question) => question[field])
     .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
-    .map((value) => buildToeicMediaPath(mediaFolder, value))
+    .map((value) => {
+      try {
+        return normalizeToeicMediaSource(mediaFolder, value, allowedExternalMediaHosts)?.value ?? null;
+      } catch (error) {
+        addIssue(
+          errors,
+          'error',
+          'invalid_media_source',
+          `${path}.${field}`,
+          error instanceof ToeicMediaSourceError ? error.message : 'Media source is invalid.',
+        );
+        return null;
+      }
+    })
     .filter((value): value is string => Boolean(value));
   const unique = [...new Set(paths)];
   if (unique.length > 1) {
     addIssue(errors, 'error', 'passage_media_conflict', path, `Questions in one passage have conflicting ${field} paths.`);
   }
   return unique[0] ?? null;
+}
+
+function normalizeQuestionMedia(
+  mediaFolder: string,
+  source: string | null | undefined,
+  path: string,
+  errors: ImportValidationIssue[],
+  allowedExternalMediaHosts: ReadonlySet<string>,
+): string | null {
+  if (!source?.trim()) return null;
+  try {
+    return normalizeToeicMediaSource(mediaFolder, source, allowedExternalMediaHosts)?.value ?? null;
+  } catch (error) {
+    addIssue(
+      errors,
+      'error',
+      'invalid_media_source',
+      path,
+      error instanceof ToeicMediaSourceError ? error.message : 'Media source is invalid.',
+    );
+    return null;
+  }
 }
 
 function passageDocuments(group: RawToeicQuestion[], errors: ImportValidationIssue[], path: string) {
@@ -95,7 +132,7 @@ function manifestEntry(
   warnings: ImportValidationIssue[],
   errors: ImportValidationIssue[]
 ): void {
-  const extensionMatch = path.match(/\.([^.\/]+)$/);
+  const extensionMatch = path.split(/[?#]/, 1)[0].match(/\.([^.\/]+)$/);
   const extension = extensionMatch ? `.${extensionMatch[1].toLowerCase()}` : '';
   if (!['.mp3', '.webp'].includes(extension)) {
     addIssue(warnings, 'warning', 'unsupported_media_extension', path, `Media extension ${extension || '(none)'} is outside the source allowlist.`);
@@ -125,10 +162,12 @@ export function normalizeToeicImport(
   raw: RawToeicTestFile,
   initialWarnings: ImportValidationIssue[] = [],
   initialErrors: ImportValidationIssue[] = [],
-  sourceHash = sha256CanonicalJson(raw)
+  sourceHash = sha256CanonicalJson(raw),
+  options: { allowedExternalMediaHosts?: ReadonlySet<string> } = {},
 ): NormalizedToeicImport {
   const warnings = [...initialWarnings];
   const errors = [...initialErrors];
+  const allowedExternalMediaHosts = options.allowedExternalMediaHosts ?? getConfiguredToeicExternalMediaHosts();
   addIssue(warnings, 'warning', 'duration_defaulted', 'test.duration_seconds', 'Source JSON has no duration; importer default 7200 seconds was used.');
   const sortedQuestions = [...raw.questions].sort((a, b) => a.question_number - b.question_number);
   const groups = new Map<string, RawToeicQuestion[]>();
@@ -149,8 +188,8 @@ export function normalizeToeicImport(
       addIssue(errors, 'error', 'passage_crosses_parts', `passages.${passageId}`, 'A passage group cannot cross Parts.');
     }
     const part = sortedGroup[0].part;
-    const audio = mediaConsensus(sortedGroup, 'audio_url', raw.test.media_folder, `passages.${passageId}.audio`, errors);
-    const image = mediaConsensus(sortedGroup, 'image_url', raw.test.media_folder, `passages.${passageId}.image`, errors);
+    const audio = mediaConsensus(sortedGroup, 'audio_url', raw.test.media_folder, `passages.${passageId}.audio`, errors, allowedExternalMediaHosts);
+    const image = mediaConsensus(sortedGroup, 'image_url', raw.test.media_folder, `passages.${passageId}.image`, errors, allowedExternalMediaHosts);
     passageMedia.set(passageId, { audio, image });
     passages.push({
       id: passageId,
@@ -173,8 +212,20 @@ export function normalizeToeicImport(
   }));
   const questions: NormalizedToeicQuestionRow[] = sortedQuestions.map((question, index) => {
     const sharedMedia = question.passage_id ? passageMedia.get(question.passage_id) : null;
-    const audioPath = buildToeicMediaPath(raw.test.media_folder, question.audio_url);
-    const imagePath = buildToeicMediaPath(raw.test.media_folder, question.image_url);
+    const audioPath = normalizeQuestionMedia(
+      raw.test.media_folder,
+      question.audio_url,
+      `questions.${question.question_number}.audio_url`,
+      errors,
+      allowedExternalMediaHosts,
+    );
+    const imagePath = normalizeQuestionMedia(
+      raw.test.media_folder,
+      question.image_url,
+      `questions.${question.question_number}.image_url`,
+      errors,
+      allowedExternalMediaHosts,
+    );
     const parsedVocabulary = parseVocabularyContent(question.tu_vung);
     if (parsedVocabulary && parsedVocabulary.unparsedLineCount > 0) {
       addIssue(warnings, 'warning', 'vocabulary_partial_parse', `questions.${question.question_number}.tu_vung`, `${parsedVocabulary.unparsedLineCount} vocabulary line(s) were preserved in raw only.`);

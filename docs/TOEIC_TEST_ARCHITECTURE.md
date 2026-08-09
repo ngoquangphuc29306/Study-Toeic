@@ -741,3 +741,20 @@ one shared audio element per group. Media status, playback position and
 autoplay attempts remain ephemeral and are not part of answer autosave. See
 `docs/TOEIC_TEST_PHASE11_LISTENING_CBT.md` for the complete contract and
 verification evidence.
+
+## 24. Phase 11.5 external media source boundary
+
+Phase 11.5 adds explicit source classification for imported media. A media
+field may contain either a bucket-relative storage path or an approved HTTPS
+URL. Storage paths continue through the authenticated private-bucket signing
+route. External URLs are checked against the server-only
+`TOEIC_EXTERNAL_MEDIA_HOSTS` exact-host allowlist and returned for direct
+browser playback; they are never passed to Supabase `createSignedUrls` and are
+never proxied by the application.
+
+The importer preserves approved URL paths/query strings without downloading or
+uploading files. The safe read DTO and `ToeicMediaView` contract remain
+unchanged, so Phase 11 playback restrictions, auto-advance, navigation
+dispatching and passage-first media identity are unaffected. See
+`docs/TOEIC_TEST_PHASE11_5_EXTERNAL_MEDIA.md` for validation, migration,
+security and host-migration details.

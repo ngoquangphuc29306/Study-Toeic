@@ -3,6 +3,13 @@ import 'server-only';
 import { createClient as createSupabaseClient, type SupabaseClient } from '@supabase/supabase-js';
 import { buildToeicMediaPath } from '../mediaPath';
 import {
+  getConfiguredToeicExternalMediaHosts,
+  mediaSourceKey,
+  validateCanonicalToeicMediaSource,
+  ToeicMediaSourceError,
+  type ToeicMediaSource,
+} from '../mediaSource';
+import {
   ToeicReadError,
   type ToeicSignedMediaResult,
 } from '../readContracts';
@@ -47,27 +54,37 @@ function validateUuid(value: string, field: string): void {
 
 function normalizeRequestedPaths(
   paths: ReadonlyArray<string>,
-  mediaFolder: string
-): ReadonlyArray<string> {
+  mediaFolder: string,
+  allowedExternalMediaHosts: ReadonlySet<string>,
+): ReadonlyArray<{ source: ToeicMediaSource; referenceKey: string }> {
   if (!Array.isArray(paths) || paths.length === 0 || paths.length > MAX_PATHS) {
     throw new ToeicReadError('INVALID_INPUT', 'Invalid TOEIC media path count');
   }
   if (paths.some((path) => typeof path !== 'string' || path.trim() === '')) {
     throw new ToeicReadError('INVALID_INPUT', 'Invalid TOEIC media path');
   }
-  if (paths.some((path) => path.includes('://') || path.includes('\\') || path.includes('..'))) {
-    throw new ToeicReadError('INVALID_INPUT', 'Invalid TOEIC media path');
-  }
   if (paths.join('').length > MAX_TOTAL_PATH_LENGTH) {
     throw new ToeicReadError('INVALID_INPUT', 'TOEIC media request is too large');
   }
 
-  const normalized = paths.map((path) => buildToeicMediaPath(mediaFolder, path));
-  if (normalized.some((path): path is null => path === null)) {
-    throw new ToeicReadError('INVALID_INPUT', 'Invalid TOEIC media path');
-  }
+  const normalized = paths.map((path) => {
+    try {
+      const source = validateCanonicalToeicMediaSource(path, allowedExternalMediaHosts);
+      if (source.type === 'external_url') return { source, referenceKey: mediaSourceKey(source) };
+      const storagePath = buildToeicMediaPath(mediaFolder, source.value);
+      if (!storagePath) throw new ToeicMediaSourceError('INVALID_URL', 'Invalid TOEIC media path');
+      const storageSource: ToeicMediaSource = { type: 'storage_path', value: storagePath };
+      return { source: storageSource, referenceKey: storageSource.value };
+    } catch (error) {
+      if (error instanceof ToeicMediaSourceError && error.code === 'HOST_NOT_ALLOWED') {
+        throw new ToeicReadError('MEDIA_HOST_NOT_ALLOWED', 'TOEIC external media host is not allowlisted');
+      }
+      throw new ToeicReadError('INVALID_INPUT', 'Invalid TOEIC media source');
+    }
+  });
 
-  return [...new Set(normalized as string[])];
+  const unique = new Map(normalized.map((item) => [item.referenceKey, item]));
+  return [...unique.values()];
 }
 
 function getExpirySeconds(value: number | undefined): number {
@@ -78,7 +95,12 @@ function getExpirySeconds(value: number | undefined): number {
   return seconds;
 }
 
-export function createToeicMediaSigningService(dependencies: ToeicMediaSigningDependencies) {
+export function createToeicMediaSigningService(
+  dependencies: ToeicMediaSigningDependencies,
+  options: { allowedExternalMediaHosts?: ReadonlySet<string>; now?: () => number } = {},
+) {
+  const allowedExternalMediaHosts = options.allowedExternalMediaHosts ?? new Set<string>();
+  const now = options.now ?? Date.now;
   return {
     async sign(input: SignToeicMediaInput): Promise<ReadonlyArray<ToeicSignedMediaResult>> {
       if (!input.userId.trim()) {
@@ -91,25 +113,41 @@ export function createToeicMediaSigningService(dependencies: ToeicMediaSigningDe
         throw new ToeicReadError('TEST_NOT_PUBLISHED', 'TOEIC test is not published');
       }
 
-      const paths = normalizeRequestedPaths(input.paths, test.media_folder);
+      const requested = normalizeRequestedPaths(input.paths, test.media_folder, allowedExternalMediaHosts);
       const referencedPaths = await dependencies.getReferencedPaths(input.testId, test.media_folder);
-      if (paths.some((path) => !referencedPaths.has(path))) {
+      if (requested.some((item) => !referencedPaths.has(item.referenceKey))) {
         throw new ToeicReadError('MEDIA_NOT_FOUND', 'TOEIC media was not found');
       }
 
-      const expiresInSeconds = getExpirySeconds(input.expiresInSeconds);
-      const rows = await dependencies.createSignedUrls(paths, expiresInSeconds);
-      if (rows.length !== paths.length || rows.some((row) => row.error || !row.signedUrl)) {
+      const storagePaths = requested
+        .map((item) => item.source)
+        .filter((source): source is { type: 'storage_path'; value: string } => source.type === 'storage_path')
+        .map((source) => source.value);
+      const expiresInSeconds = storagePaths.length > 0 ? getExpirySeconds(input.expiresInSeconds) : DEFAULT_EXPIRY_SECONDS;
+      const rows = storagePaths.length > 0
+        ? await dependencies.createSignedUrls(storagePaths, expiresInSeconds)
+        : [];
+      if (rows.length !== storagePaths.length || rows.some((row) => row.error || !row.signedUrl)) {
         throw new ToeicReadError('MEDIA_SIGNING_FAILED', 'Unable to sign TOEIC media URLs');
       }
 
-      const expiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString();
       const rowsByPath = new Map(rows.map((row) => [row.path, row]));
-      return paths.map((path) => ({
-        path,
-        signedUrl: rowsByPath.get(path)?.signedUrl as string,
-        expiresAt,
-      }));
+      return requested.map(({ source }) => {
+        if (source.type === 'external_url') {
+          return {
+            path: source.value,
+            signedUrl: source.value,
+            expiresAt: new Date(now() + DEFAULT_EXPIRY_SECONDS * 1000).toISOString(),
+            sourceType: 'external_url' as const,
+          };
+        }
+        return {
+          path: source.value,
+          signedUrl: rowsByPath.get(source.value)?.signedUrl as string,
+          expiresAt: new Date(now() + expiresInSeconds * 1000).toISOString(),
+          sourceType: 'storage_path' as const,
+        };
+      });
     },
   };
 }
@@ -152,8 +190,17 @@ function createDefaultDependencies(client: SupabaseClient): ToeicMediaSigningDep
       for (const row of [...(passagesResult.data ?? []), ...(questionsResult.data ?? [])]) {
         const record = row as { audio_path?: string | null; image_path?: string | null };
         for (const source of [record.audio_path, record.image_path]) {
-          const path = buildToeicMediaPath(mediaFolder, source);
-          if (path) referenced.add(path);
+          if (!source?.trim()) continue;
+          try {
+            const parsed = validateCanonicalToeicMediaSource(source);
+            if (parsed.type === 'external_url') referenced.add(mediaSourceKey(parsed));
+            else {
+              const path = buildToeicMediaPath(mediaFolder, parsed.value);
+              if (path) referenced.add(path);
+            }
+          } catch {
+            // Invalid or disallowed stored references are never playable.
+          }
         }
       }
       return referenced;
@@ -183,7 +230,10 @@ let defaultService: ReturnType<typeof createToeicMediaSigningService> | null = n
 /** Server-only entry point. Never import this module from a Client Component. */
 export async function signToeicMediaUrls(input: SignToeicMediaInput): Promise<ReadonlyArray<ToeicSignedMediaResult>> {
   if (!defaultService) {
-    defaultService = createToeicMediaSigningService(createDefaultDependencies(getAdminClient()));
+    defaultService = createToeicMediaSigningService(
+      createDefaultDependencies(getAdminClient()),
+      { allowedExternalMediaHosts: getConfiguredToeicExternalMediaHosts() },
+    );
   }
   return defaultService.sign(input);
 }

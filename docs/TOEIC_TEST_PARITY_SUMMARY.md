@@ -375,3 +375,16 @@ seeking restoration, real media `ended` events and touch/palette behavior.
 No canonical counts are changed until that manual evidence is recorded. See
 `docs/TOEIC_TEST_PHASE11_LISTENING_CBT.md` and the Phase 11 addendum in the
 feature matrix.
+
+## Phase 11.5 external media status
+
+Phase 11.5 adds a separately tracked `TOEIC-EXTERNAL-MEDIA-SOURCE` row. The
+implementation supports both JSON-provided HTTPS media and existing
+bucket-relative storage paths. External sources are validated at import and
+again at the authenticated runtime route using the server-only exact-host
+allowlist; storage sources retain short-lived Supabase signing. The external
+source row remains `PARTIAL` until a real browser confirms direct approved-host
+Network requests, redirect/content-type behavior and Review playback.
+
+This phase does not change the historical status counts, Phase 11 playback
+policy, UI, answer-key boundary, attempts, autosave, submit or scoring.

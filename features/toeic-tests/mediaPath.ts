@@ -1,3 +1,8 @@
+import {
+  validateToeicMediaSource,
+  type ToeicMediaSource,
+} from "./mediaSource.ts";
+
 /**
  * Pure helpers for resolving TOEIC media paths.
  *
@@ -58,6 +63,16 @@ function extractRelativeSource(value: string): string | null {
   }
 }
 
+function extractStorageSource(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const supabaseObjectPath = extractSupabaseObjectPath(trimmed);
+  if (supabaseObjectPath) return supabaseObjectPath;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return null;
+  return normalizePath(decodePathPart(trimmed));
+}
+
 /** Returns only the filename from a URL or relative media path. */
 export function extractStorageFilename(value: string | null | undefined): string | null {
   if (!value?.trim()) return null;
@@ -89,7 +104,7 @@ export function buildToeicMediaPath(
   if (!source?.trim()) return null;
 
   const folder = mediaFolder ? normalizePath(mediaFolder) : '';
-  const relativeSource = extractRelativeSource(source);
+  const relativeSource = extractStorageSource(source);
   if (!relativeSource || hasParentTraversal(relativeSource)) return null;
 
   if (!folder) return relativeSource;
@@ -98,6 +113,25 @@ export function buildToeicMediaPath(
   }
 
   return joinStoragePath(folder, relativeSource) || null;
+}
+
+/**
+ * Normalizes an imported media value while preserving an approved external
+ * URL exactly as a URL. Legacy storage paths and Supabase object URLs keep
+ * the existing bucket-relative normalization behavior.
+ */
+export function normalizeToeicMediaSource(
+  mediaFolder: string | null | undefined,
+  source: string | null | undefined,
+  allowedExternalHosts?: ReadonlySet<string>,
+): ToeicMediaSource | null {
+  if (!source?.trim()) return null;
+
+  const parsed = validateToeicMediaSource(source, allowedExternalHosts);
+  if (parsed.type === 'external_url') return parsed;
+
+  const path = buildToeicMediaPath(mediaFolder, parsed.value);
+  return path ? { type: 'storage_path', value: path } : null;
 }
 
 function encodeStoragePath(path: string): string {

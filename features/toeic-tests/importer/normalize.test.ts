@@ -8,7 +8,7 @@ function makeRaw(): RawToeicTestFile {
     section: 'listening',
     question_number: number,
     passage_id: '10000000-0000-4000-8000-000000000001',
-    audio_url: 'https://project.supabase.co/storage/v1/object/public/mock-test-media/2026/t1/32-34.mp3',
+    audio_url: '2026/t1/32-34.mp3',
     options: { A: 'A', B: 'B', C: 'C', D: 'D' },
     correct_answer: 'A',
     transcript: 'Shared transcript',
@@ -77,5 +77,36 @@ describe('TOEIC normalization', () => {
     expect(result.questions.map((question) => question.question_number)).toEqual([32, 33, 34]);
     expect(result.questions.map((question) => question.position)).toEqual([0, 1, 2]);
     expect(result.sourceHash).toHaveLength(64);
+  });
+
+  it('preserves an approved external media URL instead of converting it to a path', () => {
+    const raw = makeRaw();
+    raw.questions[0].audio_url = 'https://media.example.com/test-1/part-3/audio.mp3?token=secret';
+    raw.questions[1].audio_url = raw.questions[0].audio_url;
+    raw.questions[2].audio_url = raw.questions[0].audio_url;
+    const result = normalizeToeicImport(raw, [], [], undefined, {
+      allowedExternalMediaHosts: new Set(['media.example.com']),
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.passages[0].audio_path).toBe('https://media.example.com/test-1/part-3/audio.mp3?token=secret');
+    expect(result.mediaManifest[0].path).toBe('https://media.example.com/test-1/part-3/audio.mp3?token=secret');
+  });
+
+  it('normalizes exact legacy Markdown media before persistence and manifest generation', () => {
+    const raw = makeRaw();
+    const value = 'https://media.example.com/test-1/part-3/audio.mp3?token=secret';
+    for (const question of raw.questions) question.audio_url = `[${value}](${value})`;
+
+    const result = normalizeToeicImport(raw, [], [], undefined, {
+      allowedExternalMediaHosts: new Set(['media.example.com']),
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.passages[0].audio_path).toBe(value);
+    expect(result.questions.every((question) => question.audio_path === null)).toBe(true);
+    expect(result.mediaManifest).toHaveLength(1);
+    expect(result.mediaManifest[0].path).toBe(value);
+    expect(result.mediaManifest.every((entry) => !entry.path.startsWith('['))).toBe(true);
   });
 });

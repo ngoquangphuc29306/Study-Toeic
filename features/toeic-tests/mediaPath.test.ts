@@ -53,6 +53,7 @@ describe('TOEIC media path helpers', () => {
     expect(extractStorageFilename(null)).toBeNull();
     expect(extractStorageFilename('')).toBeNull();
     expect(buildToeicMediaPath('2026/t1', '../secret.mp3')).toBeNull();
+    expect(buildToeicMediaPath('2026/t1', 'https://cdn.example.com/secret.mp3')).toBeNull();
     expect(
       resolveToeicPublicMediaUrl({
         supabaseUrl: 'https://project.supabase.co',

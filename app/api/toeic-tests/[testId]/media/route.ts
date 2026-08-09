@@ -23,6 +23,7 @@ function statusForError(error: ToeicReadError): number {
     case 'TEST_NOT_FOUND':
     case 'MEDIA_NOT_FOUND': return 404;
     case 'TEST_NOT_PUBLISHED': return 403;
+    case 'MEDIA_HOST_NOT_ALLOWED': return 403;
     default: return 500;
   }
 }

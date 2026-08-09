@@ -77,4 +77,53 @@ describe('raw TOEIC validation', () => {
     expect(result.value?.test.year).toBe(2023);
     expect(result.warnings.map((issue) => issue.code)).toContain('metadata_year_mismatch');
   });
+
+  it('accepts allowlisted HTTPS audio and image URLs without rewriting them', () => {
+    const result = validateRawToeicTestFile(file({
+      mediaCheck: { total: 2, ok: 2, fixed: [], broken: [] },
+      questions: [question({
+        audio_url: 'https://media.example.com/test-1/audio.mp3?token=secret',
+        image_url: 'https://media.example.com/test-1/image.webp',
+      })],
+    }), { allowedExternalMediaHosts: new Set(['media.example.com']) });
+
+    expect(result.errors).toEqual([]);
+    expect(result.value?.questions[0].audio_url).toContain('https://media.example.com/');
+  });
+
+  it('normalizes exact legacy Markdown media while preserving the canonical value', () => {
+    const value = 'https://media.example.com/test-1/audio.mp3?token=secret';
+    const result = validateRawToeicTestFile(file({
+      mediaCheck: { total: 1, ok: 1, fixed: [], broken: [] },
+      questions: [question({ audio_url: `[${value}](${value})` })],
+    }), { allowedExternalMediaHosts: new Set(['media.example.com']) });
+
+    expect(result.errors).toEqual([]);
+    expect(result.value?.questions[0].audio_url).toBe(`[${value}](${value})`);
+  });
+
+  it.each([
+    '[Audio](https://media.example.com/test-1/audio.mp3)',
+    '[https://media.example.com/a.mp3](https://media.example.com/b.mp3)',
+  ])('rejects ambiguous Markdown media %s', (audioUrl) => {
+    const result = validateRawToeicTestFile(file({
+      mediaCheck: { total: 1, ok: 1, fixed: [], broken: [] },
+      questions: [question({ audio_url: audioUrl })],
+    }), { allowedExternalMediaHosts: new Set(['media.example.com']) });
+
+    expect(result.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'invalid_media_source', path: 'questions[0].audio_url' }),
+    ]));
+  });
+
+  it('reports a disallowed external host with field context', () => {
+    const result = validateRawToeicTestFile(file({
+      mediaCheck: { total: 1, ok: 1, fixed: [], broken: [] },
+      questions: [question({ audio_url: 'https://not-approved.example/audio.mp3' })],
+    }), { allowedExternalMediaHosts: new Set(['media.example.com']) });
+
+    expect(result.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'invalid_media_source', path: 'questions[0].audio_url' }),
+    ]));
+  });
 });

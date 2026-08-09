@@ -1,4 +1,10 @@
 import { buildToeicMediaPath } from '../mediaPath.ts';
+import {
+  getConfiguredToeicExternalMediaHosts,
+  redactToeicMediaUrl,
+  validateToeicMediaSource,
+  ToeicMediaSourceError,
+} from '../mediaSource.ts';
 import type {
   ImportValidationIssue,
   RawMediaCheck,
@@ -11,6 +17,10 @@ export interface RawValidationResult {
   value: RawToeicTestFile | null;
   warnings: ImportValidationIssue[];
   errors: ImportValidationIssue[];
+}
+
+export interface RawValidationOptions {
+  allowedExternalMediaHosts?: ReadonlySet<string>;
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -93,11 +103,18 @@ function validateMediaValue(
   value: string | null,
   path: string,
   mediaFolder: string,
-  errors: ImportValidationIssue[]
+  errors: ImportValidationIssue[],
+  allowedExternalMediaHosts: ReadonlySet<string>,
 ): void {
   if (value === null) return;
-  if (!buildToeicMediaPath(mediaFolder, value)) {
-    addIssue(errors, 'error', 'unsafe_media_path', path, 'Media path is missing or contains unsafe traversal.');
+  try {
+    const source = validateToeicMediaSource(value, allowedExternalMediaHosts);
+    if (source.type === 'storage_path' && !buildToeicMediaPath(mediaFolder, source.value)) {
+      addIssue(errors, 'error', 'unsafe_media_path', path, 'Media path is missing or contains unsafe traversal.');
+    }
+  } catch (error) {
+    const reason = error instanceof ToeicMediaSourceError ? error.message : 'Media value is invalid.';
+    addIssue(errors, 'error', 'invalid_media_source', path, `${reason} Value: ${redactToeicMediaUrl(value)}`);
   }
 }
 
@@ -134,7 +151,8 @@ function validateQuestion(
   value: unknown,
   index: number,
   mediaFolder: string,
-  errors: ImportValidationIssue[]
+  errors: ImportValidationIssue[],
+  allowedExternalMediaHosts: ReadonlySet<string>,
 ): RawToeicQuestion | null {
   const path = `questions[${index}]`;
   if (!isRecord(value)) {
@@ -172,8 +190,8 @@ function validateQuestion(
     addIssue(errors, 'error', 'correct_answer_is_null', `${path}.correct_answer`, 'Correct answer cannot point to a null option.');
   }
 
-  validateMediaValue(audioUrl, `${path}.audio_url`, mediaFolder, errors);
-  validateMediaValue(imageUrl, `${path}.image_url`, mediaFolder, errors);
+  validateMediaValue(audioUrl, `${path}.audio_url`, mediaFolder, errors, allowedExternalMediaHosts);
+  validateMediaValue(imageUrl, `${path}.image_url`, mediaFolder, errors, allowedExternalMediaHosts);
 
   const optionalFields = [
     'transcript',
@@ -242,7 +260,10 @@ function validateMediaCheck(value: unknown, errors: ImportValidationIssue[]): Ra
   return { total, ok, fixed, broken };
 }
 
-export function validateRawToeicTestFile(input: unknown): RawValidationResult {
+export function validateRawToeicTestFile(
+  input: unknown,
+  options: RawValidationOptions = {},
+): RawValidationResult {
   const warnings: ImportValidationIssue[] = [];
   const errors: ImportValidationIssue[] = [];
 
@@ -297,9 +318,10 @@ export function validateRawToeicTestFile(input: unknown): RawValidationResult {
     return { value: null, warnings, errors };
   }
 
+  const allowedExternalMediaHosts = options.allowedExternalMediaHosts ?? getConfiguredToeicExternalMediaHosts();
   const questions: RawToeicQuestion[] = [];
   for (const [index, question] of questionsInput.entries()) {
-    const validated = validateQuestion(question, index, mediaFolder, errors);
+    const validated = validateQuestion(question, index, mediaFolder, errors, allowedExternalMediaHosts);
     if (validated) questions.push(validated);
   }
 

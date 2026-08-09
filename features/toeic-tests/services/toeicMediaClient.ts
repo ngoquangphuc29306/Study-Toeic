@@ -14,7 +14,8 @@ const REFRESH_BUFFER_MS = 45_000;
 function isSignedMediaResult(value: unknown): value is ToeicSignedMediaResult {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const item = value as Record<string, unknown>;
-  return typeof item.path === 'string' && typeof item.signedUrl === 'string' && typeof item.expiresAt === 'string' && !Number.isNaN(Date.parse(item.expiresAt));
+  return typeof item.path === 'string' && typeof item.signedUrl === 'string' && typeof item.expiresAt === 'string' && !Number.isNaN(Date.parse(item.expiresAt)) &&
+    (item.sourceType === undefined || item.sourceType === 'storage_path' || item.sourceType === 'external_url');
 }
 
 export function createToeicMediaClient(
@@ -29,7 +30,7 @@ export function createToeicMediaClient(
       const cached = cache.get(key);
       if (cached && Date.parse(cached.expiresAt) - now() > REFRESH_BUFFER_MS) return cached;
       const result = await fetcher(testId, [path]);
-      const signed = result.find((item) => item.path === path);
+      const signed = result.find((item) => item.path === path) ?? (result.length === 1 ? result[0] : undefined);
       if (!signed) throw new ToeicReadError('MEDIA_NOT_FOUND', 'TOEIC media is unavailable');
       cache.set(key, signed);
       return signed;

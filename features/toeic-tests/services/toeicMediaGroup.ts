@@ -1,11 +1,21 @@
 import type { ToeicAttemptContentQuestion } from '../contentModel';
+import { parseToeicMediaSource } from '../mediaSource';
 
 function canonicalMediaPath(path: string): string {
+  const source = parseToeicMediaSource(path);
+  if (source?.type === 'external_url') {
+    const url = new URL(source.value);
+    return `${url.protocol}//${url.hostname}${url.pathname}`;
+  }
   return path
     .trim()
     .replace(/\\/g, '/')
     .replace(/^\/+/, '')
     .split(/[?#]/, 1)[0];
+}
+
+export function canonicalToeicMediaIdentity(path: string): string {
+  return canonicalMediaPath(path);
 }
 
 export function getToeicMediaGroupKey(
@@ -19,4 +29,3 @@ export function getToeicMediaGroupKey(
 
   return `question:${item.question.id}`;
 }
-

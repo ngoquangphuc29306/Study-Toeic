@@ -10,7 +10,8 @@
     "clean": "next clean",
     "test": "vitest run",
     "test:watch": "vitest",
-    "toeic:import": "node --experimental-default-type=module --experimental-strip-types scripts/import-toeic-test.ts"
+    "toeic:import": "node --experimental-default-type=module --experimental-strip-types scripts/import-toeic-test.ts",
+    "toeic:audit-media": "node --experimental-default-type=module --experimental-strip-types scripts/audit-toeic-media-urls.ts"
   },
   "dependencies": {
     "@google/design.md": "^0.4.0",
