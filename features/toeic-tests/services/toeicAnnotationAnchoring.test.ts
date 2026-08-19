@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { resolveAnnotationRange, splitAnnotatedText } from './toeicAnnotationAnchoring';
 import type { ToeicTextAnnotation } from '../toolContracts';
 
-const annotation = (overrides: Partial<ToeicTextAnnotation> = {}): ToeicTextAnnotation => ({ id: '11111111-1111-4111-8111-111111111111', testId: '22222222-2222-4222-8222-222222222222', questionId: '33333333-3333-4333-8333-333333333333', passageId: null, documentIndex: null, startOffset: 0, endOffset: 4, quote: 'This', style: 'highlight', comment: null, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', ...overrides });
+const annotation = (overrides: Partial<ToeicTextAnnotation> = {}): ToeicTextAnnotation => ({ id: '11111111-1111-4111-8111-111111111111', testId: '22222222-2222-4222-8222-222222222222', questionId: '33333333-3333-4333-8333-333333333333', passageId: null, documentIndex: null, startOffset: 0, endOffset: 4, quote: 'This', style: 'highlight', annotationType: 'highlight', color: '#FDE68A', strokeWidth: 2, geometry: null, textContent: null, comment: null, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', ...overrides });
 
 describe('toeic annotation anchoring', () => {
   it('uses exact offsets when the quote still matches', () => expect(resolveAnnotationRange('This is text', annotation())).toEqual({ start: 0, end: 4 }));

@@ -41,15 +41,17 @@ import type {
   ToeicNote,
   ToeicTextAnnotation,
   ToeicAnnotationStyle,
+  ToeicAnnotationTool,
 } from "../toolContracts";
 import {
-  createToeicAnnotation,
+  createToeicAnnotatorAnnotation,
   deleteToeicAnnotation,
   deleteToeicNote,
   listToeicNotes,
   upsertToeicNote,
   lookupToeicTerm,
 } from "../services/toeicToolService";
+import { TOEIC_ANNOTATION_COLORS } from "../services/toeicAnnotator";
 import {
   evaluateDictation,
   type ToeicDictationComparison,
@@ -64,6 +66,7 @@ import {
   serializeToeicRichNoteDocument,
   toggleToeicChecklist,
 } from "../services/toeicRichNote";
+import { ToeicAnnotatorToolbar } from "./ToeicAnnotatorToolbar";
 
 type Tool = "notes" | "annotation" | "lookup" | "dictation" | "flip";
 
@@ -498,6 +501,8 @@ function AnnotationTool({
   onDeleted,
   onClearSelection,
   initialStyle = "highlight",
+  color = "#FDE68A",
+  strokeWidth = 2,
 }: {
   testId: string;
   annotations: ReadonlyArray<ToeicTextAnnotation>;
@@ -506,6 +511,8 @@ function AnnotationTool({
   onDeleted: (id: string) => void;
   onClearSelection: () => void;
   initialStyle?: ToeicAnnotationStyle;
+  color?: string;
+  strokeWidth?: number;
 }) {
   const [style, setStyle] = useState<ToeicAnnotationStyle>(initialStyle);
   const [comment, setComment] = useState("");
@@ -524,10 +531,14 @@ function AnnotationTool({
     setBusy(true);
     setError(null);
     try {
-      const saved = await createToeicAnnotation({
+      const saved = await createToeicAnnotatorAnnotation({
         testId,
         ...selection,
-        style,
+        annotationType: style,
+        color,
+        strokeWidth,
+        geometry: null,
+        textContent: null,
         comment: comment.trim() || null,
       });
       onCreated(saved);
@@ -678,8 +689,6 @@ function AnnotationTool({
   );
 }
 
-type FloatingAnnotationMode = "select" | "highlight" | "underline";
-
 function FloatingAnnotationButton({
   label,
   active = false,
@@ -719,6 +728,14 @@ function FloatingAnnotationToolbar({
   onDeleted,
   onClearSelection,
   onClose,
+  onModeChange,
+  color,
+  strokeWidth,
+  onColorChange,
+  onStrokeWidthChange,
+  annotationsVisible,
+  onToggleVisibility,
+  onDeleteCurrentQuestion,
 }: {
   testId: string;
   annotations: ReadonlyArray<ToeicTextAnnotation>;
@@ -727,6 +744,14 @@ function FloatingAnnotationToolbar({
   onDeleted: (id: string) => void;
   onClearSelection: () => void;
   onClose: () => void;
+  onModeChange: (mode: ToeicAnnotationTool) => void;
+  color: string;
+  strokeWidth: number;
+  onColorChange: (color: string) => void;
+  onStrokeWidthChange: (width: number) => void;
+  annotationsVisible: boolean;
+  onToggleVisibility: () => void;
+  onDeleteCurrentQuestion: () => Promise<void>;
 }) {
   const toolbarRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
@@ -735,9 +760,12 @@ function FloatingAnnotationToolbar({
     offsetY: number;
   } | null>(null);
   const [position, setPosition] = useState({ x: 16, y: 120 });
-  const [mode, setMode] = useState<FloatingAnnotationMode>("select");
+  const [mode, setMode] = useState<ToeicAnnotationTool>("select");
   const [style, setStyle] = useState<ToeicAnnotationStyle>("highlight");
   const [detailsOpen, setDetailsOpen] = useState(Boolean(selection));
+  const [undoStack, setUndoStack] = useState<ReadonlyArray<ToeicTextAnnotation>>([]);
+  const [redoStack, setRedoStack] = useState<ReadonlyArray<ToeicTextAnnotation>>([]);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const clampPosition = (x: number, y: number) => {
     const rect = toolbarRef.current?.getBoundingClientRect();
@@ -787,7 +815,41 @@ function FloatingAnnotationToolbar({
   const chooseStyle = (nextStyle: ToeicAnnotationStyle) => {
     setStyle(nextStyle);
     setMode(nextStyle);
+    onModeChange(nextStyle);
     setDetailsOpen(true);
+  };
+
+  const handleCreated = (annotation: ToeicTextAnnotation) => {
+    onCreated(annotation);
+    setUndoStack((current) => [...current, annotation]);
+    setRedoStack([]);
+  };
+
+  const undo = async () => {
+    const annotation = undoStack[undoStack.length - 1];
+    if (!annotation) return;
+    try {
+      await deleteToeicAnnotation(annotation.id);
+      onDeleted(annotation.id);
+      setUndoStack((current) => current.slice(0, -1));
+      setRedoStack((current) => [...current, annotation]);
+    } catch (cause) { setActionError(cause instanceof Error ? cause.message : "Không thể hoàn tác."); }
+  };
+
+  const redo = async () => {
+    const annotation = redoStack[redoStack.length - 1];
+    if (!annotation) return;
+    try {
+      const restored = await createToeicAnnotatorAnnotation({
+        testId: annotation.testId, questionId: annotation.questionId, passageId: annotation.passageId,
+        documentIndex: annotation.documentIndex, startOffset: annotation.startOffset, endOffset: annotation.endOffset,
+        quote: annotation.quote, annotationType: annotation.annotationType, color: annotation.color,
+        strokeWidth: annotation.strokeWidth, geometry: annotation.geometry, textContent: annotation.textContent, comment: annotation.comment,
+      });
+      onCreated(restored);
+      setRedoStack((current) => current.slice(0, -1));
+      setUndoStack((current) => [...current, restored]);
+    } catch (cause) { setActionError(cause instanceof Error ? cause.message : "Không thể làm lại."); }
   };
 
   return (
@@ -1129,6 +1191,19 @@ export function ToeicLearningToolsPanel({
   onClearSelection,
   onSaveVocabulary,
   onOpenNotes,
+  annotationMode = "select",
+  annotationColor = "#FDE68A",
+  annotationStrokeWidth = 2,
+  annotationsVisible = true,
+  onAnnotationModeChange,
+  onAnnotationColorChange,
+  onAnnotationStrokeWidthChange,
+  onAnnotationsVisibilityChange,
+  onDeleteCurrentQuestionAnnotations,
+  onUndoAnnotation,
+  onRedoAnnotation,
+  canUndoAnnotation = false,
+  canRedoAnnotation = false,
   showLabel = true,
 }: {
   testId: string;
@@ -1142,6 +1217,19 @@ export function ToeicLearningToolsPanel({
   onClearSelection: () => void;
   onSaveVocabulary?: (item: ToeicLearningVocabularyItem) => void;
   onOpenNotes?: () => void;
+  annotationMode?: ToeicAnnotationTool;
+  annotationColor?: string;
+  annotationStrokeWidth?: number;
+  annotationsVisible?: boolean;
+  onAnnotationModeChange?: (mode: ToeicAnnotationTool) => void;
+  onAnnotationColorChange?: (color: string) => void;
+  onAnnotationStrokeWidthChange?: (width: number) => void;
+  onAnnotationsVisibilityChange?: () => void;
+  onDeleteCurrentQuestionAnnotations?: () => Promise<void>;
+  onUndoAnnotation?: () => Promise<void>;
+  onRedoAnnotation?: () => Promise<void>;
+  canUndoAnnotation?: boolean;
+  canRedoAnnotation?: boolean;
   showLabel?: boolean;
 }) {
   const [tool, setTool] = useState<Tool | null>(null);
@@ -1209,14 +1297,27 @@ export function ToeicLearningToolsPanel({
             />
           )}
           {tool === "annotation" && (
-            <FloatingAnnotationToolbar
+            <ToeicAnnotatorToolbar
               testId={testId}
               annotations={annotations}
               selection={selection}
+              mode={annotationMode}
+              color={annotationColor}
+              strokeWidth={annotationStrokeWidth}
+              annotationsVisible={annotationsVisible}
               onCreated={onAnnotationCreated}
               onDeleted={onAnnotationDeleted}
               onClearSelection={onClearSelection}
-              onClose={() => setTool(null)}
+              onClose={() => { setTool(null); onAnnotationModeChange?.("select"); }}
+              onModeChange={(mode) => onAnnotationModeChange?.(mode)}
+              onColorChange={(color) => onAnnotationColorChange?.(color)}
+              onStrokeWidthChange={(width) => onAnnotationStrokeWidthChange?.(width)}
+              onToggleVisibility={() => onAnnotationsVisibilityChange?.()}
+              onDeleteCurrentQuestion={() => onDeleteCurrentQuestionAnnotations?.() ?? Promise.resolve()}
+              onUndo={onUndoAnnotation}
+              onRedo={onRedoAnnotation}
+              canUndo={canUndoAnnotation}
+              canRedo={canRedoAnnotation}
             />
           )}
           {tool === "lookup" && (

@@ -50,8 +50,8 @@ import {
   buildSelectionDraft,
   type ToeicTextSelectionDraft,
 } from "../services/toeicAnnotationAnchoring";
-import { listToeicAnnotations } from "../services/toeicToolService";
-import type { ToeicTextAnnotation } from "../toolContracts";
+import { createToeicAnnotatorAnnotation, deleteToeicAnnotation, listToeicAnnotations } from "../services/toeicToolService";
+import type { ToeicAnnotationTool, ToeicTextAnnotation } from "../toolContracts";
 import type {
   ToeicLearningVocabularyContent,
   ToeicLearningVocabularyItem,
@@ -65,6 +65,7 @@ import { ToeicPracticeFeedbackPanel } from "./ToeicPracticeFeedbackPanel";
 import { ToeicLearningContentPanel } from "./ToeicLearningContentPanel";
 import { ToeicVocabularySaveDialog } from "./ToeicVocabularySaveDialog";
 import { ToeicAnnotatedText } from "./ToeicAnnotatedText";
+import { ToeicAnnotatorOverlay } from "./ToeicAnnotatorOverlay";
 import {
   ToeicLearningToolsPanel,
   ToeicNotesPanel,
@@ -369,6 +370,13 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
   const [annotations, setAnnotations] = useState<
     ReadonlyArray<ToeicTextAnnotation>
   >([]);
+  const [annotationMode, setAnnotationMode] = useState<ToeicAnnotationTool>("select");
+  const [annotationColor, setAnnotationColor] = useState("#FDE68A");
+  const [annotationStrokeWidth, setAnnotationStrokeWidth] = useState(2);
+  const [annotationsVisible, setAnnotationsVisible] = useState(true);
+  const [annotationUndoStack, setAnnotationUndoStack] = useState<ReadonlyArray<ToeicTextAnnotation>>([]);
+  const [annotationRedoStack, setAnnotationRedoStack] = useState<ReadonlyArray<ToeicTextAnnotation>>([]);
+  const [annotationError, setAnnotationError] = useState<string | null>(null);
   const [selection, setSelection] = useState<ToeicTextSelectionDraft | null>(
     null,
   );
@@ -567,13 +575,58 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
   );
   const currentAnnotations = useMemo(
     () =>
-      annotations.filter(
+      annotationsVisible ? annotations.filter(
         (annotation) =>
           annotation.questionId === currentRef?.questionId ||
           annotation.passageId === currentContent?.passage?.id,
-      ),
-    [annotations, currentContent?.passage?.id, currentRef?.questionId],
+      ) : [],
+    [annotations, annotationsVisible, currentContent?.passage?.id, currentRef?.questionId],
   );
+  const handleAnnotationCreated = useCallback((annotation: ToeicTextAnnotation) => {
+    setAnnotations((current) => [...current, annotation]);
+    setAnnotationUndoStack((current) => [...current, annotation]);
+    setAnnotationRedoStack([]);
+  }, []);
+  const handleAnnotationDeleted = useCallback((id: string) => {
+    setAnnotations((current) => current.filter((annotation) => annotation.id !== id));
+  }, []);
+  const undoAnnotation = useCallback(async () => {
+    const annotation = annotationUndoStack.at(-1);
+    if (!annotation) return;
+    try {
+      await deleteToeicAnnotation(annotation.id);
+      handleAnnotationDeleted(annotation.id);
+      setAnnotationUndoStack((current) => current.slice(0, -1));
+      setAnnotationRedoStack((current) => [...current, annotation]);
+    } catch (cause) { setAnnotationError(cause instanceof Error ? cause.message : "Không thể hoàn tác annotation."); }
+  }, [annotationUndoStack, handleAnnotationDeleted]);
+  const redoAnnotation = useCallback(async () => {
+    const annotation = annotationRedoStack.at(-1);
+    if (!annotation) return;
+    try {
+      const restored = await createToeicAnnotatorAnnotation({
+        testId: annotation.testId, questionId: annotation.questionId, passageId: annotation.passageId,
+        documentIndex: annotation.documentIndex, startOffset: annotation.startOffset, endOffset: annotation.endOffset,
+        quote: annotation.quote, annotationType: annotation.annotationType, color: annotation.color,
+        strokeWidth: annotation.strokeWidth, geometry: annotation.geometry, textContent: annotation.textContent, comment: annotation.comment,
+      });
+      handleAnnotationCreated(restored);
+      setAnnotationRedoStack((current) => current.slice(0, -1));
+    } catch (cause) { setAnnotationError(cause instanceof Error ? cause.message : "Không thể làm lại annotation."); }
+  }, [annotationRedoStack, handleAnnotationCreated]);
+  const deleteCurrentQuestionAnnotations = useCallback(async () => {
+    const targets = annotations.filter(
+      (annotation) =>
+        annotation.questionId === currentRef?.questionId ||
+        annotation.passageId === currentContent?.passage?.id,
+    );
+    try {
+      await Promise.all(targets.map((annotation) => deleteToeicAnnotation(annotation.id)));
+      const ids = new Set(targets.map((annotation) => annotation.id));
+      setAnnotations((current) => current.filter((annotation) => !ids.has(annotation.id)));
+      setAnnotationUndoStack((current) => current.filter((annotation) => !ids.has(annotation.id)));
+    } catch (cause) { setAnnotationError(cause instanceof Error ? cause.message : "Không thể xóa annotation của câu."); }
+  }, [annotations, currentContent?.passage?.id, currentRef?.questionId]);
   const currentSelection =
     selection &&
     (selection.questionId === currentRef?.questionId ||
@@ -636,6 +689,33 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
         )
       )
         return;
+      if (session?.mode === "practice" && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        void (event.shiftKey ? redoAnnotation() : undoAnnotation());
+        return;
+      }
+      if (session?.mode === "practice") {
+        const annotatorModes: Record<string, ToeicAnnotationTool> = {
+          m: "select", h: "highlight", u: "underline", b: "pen", e: "eraser",
+          t: "text", s: "sticky", r: "rectangle", w: "arrow",
+        };
+        const nextMode = annotatorModes[event.key.toLowerCase()];
+        if (nextMode) {
+          event.preventDefault();
+          setAnnotationMode(nextMode);
+          return;
+        }
+        if (event.key.toLowerCase() === "v") {
+          event.preventDefault();
+          setAnnotationsVisible((value) => !value);
+          return;
+        }
+        if (event.key.toLowerCase() === "x") {
+          event.preventDefault();
+          void deleteCurrentQuestionAnnotations();
+          return;
+        }
+      }
       if (event.key >= "1" && event.key <= "4") {
         const option = OPTION_KEYS[Number(event.key) - 1];
         if (option) {
@@ -1153,16 +1233,23 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
                 feedback={activePracticeFeedback}
                 annotations={annotations}
                 selection={currentSelection}
+                annotationMode={annotationMode}
+                annotationColor={annotationColor}
+                annotationStrokeWidth={annotationStrokeWidth}
+                annotationsVisible={annotationsVisible}
                 showLabel={false}
                 onOpenNotes={() => setNotesPanelOpen(true)}
-                onAnnotationCreated={(annotation) =>
-                  setAnnotations((current) => [...current, annotation])
-                }
-                onAnnotationDeleted={(id) =>
-                  setAnnotations((current) =>
-                    current.filter((annotation) => annotation.id !== id),
-                  )
-                }
+                onAnnotationModeChange={setAnnotationMode}
+                onAnnotationColorChange={setAnnotationColor}
+                onAnnotationStrokeWidthChange={setAnnotationStrokeWidth}
+                onAnnotationsVisibilityChange={() => setAnnotationsVisible((value) => !value)}
+                onDeleteCurrentQuestionAnnotations={deleteCurrentQuestionAnnotations}
+                onUndoAnnotation={undoAnnotation}
+                onRedoAnnotation={redoAnnotation}
+                canUndoAnnotation={annotationUndoStack.length > 0}
+                canRedoAnnotation={annotationRedoStack.length > 0}
+                onAnnotationCreated={handleAnnotationCreated}
+                onAnnotationDeleted={handleAnnotationDeleted}
                 onClearSelection={() => {
                   window.getSelection()?.removeAllRanges();
                   setSelection(null);
@@ -1247,11 +1334,30 @@ export function ToeicAttemptWorkspace({ attemptId }: { attemptId: string }) {
             )}
           </div>
           <div
-            className="rounded-3xl border border-[#FCE7F3] bg-white p-4 shadow-sm sm:p-6"
+            className="relative rounded-3xl border border-[#FCE7F3] bg-white p-4 shadow-sm sm:p-6"
             onMouseUp={() =>
               setSelection(buildSelectionDraft(window.getSelection()))
             }
           >
+            {currentContent && currentRef && (
+              <ToeicAnnotatorOverlay
+                testId={session.testId}
+                questionId={currentRef.questionId}
+                annotations={currentAnnotations}
+                visible={annotationsVisible}
+                tool={annotationMode}
+                color={annotationColor}
+                strokeWidth={annotationStrokeWidth}
+                onCreated={handleAnnotationCreated}
+                onDeleted={handleAnnotationDeleted}
+                onError={setAnnotationError}
+              />
+            )}
+            {annotationError && (
+              <p className="relative z-40 mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700" role="alert">
+                {annotationError}
+              </p>
+            )}
             {contentLoading && (
               <div
                 className="flex min-h-[420px] items-center justify-center text-sm text-gray-500"

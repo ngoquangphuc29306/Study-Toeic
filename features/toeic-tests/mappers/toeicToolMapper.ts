@@ -2,6 +2,8 @@ import {
   ToeicToolError,
   type DictionaryLookupResult,
   type ToeicAnnotationStyle,
+  type ToeicAnnotationGeometry,
+  type ToeicAnnotationType,
   type ToeicNote,
   type ToeicTextAnnotation,
 } from '../toolContracts';
@@ -55,7 +57,35 @@ function mapAnnotation(value: unknown): ToeicTextAnnotation {
   const questionId = nullableUuid(row.questionId, 'question id');
   const passageId = nullableUuid(row.passageId, 'passage id');
   if ((questionId === null) === (passageId === null)) throw new ToeicToolError('INVALID_RESPONSE', 'Invalid TOEIC annotation target');
-  return { id: uuid(row.id, 'annotation id'), testId: uuid(row.testId, 'test id'), questionId, passageId, documentIndex: row.documentIndex === null ? null : Number.isInteger(row.documentIndex) ? row.documentIndex as number : (() => { throw new ToeicToolError('INVALID_RESPONSE', 'Invalid annotation document index'); })(), startOffset: startOffset as number, endOffset: endOffset as number, quote: text(row.quote, 'annotation quote') as string, style: style as ToeicAnnotationStyle, comment: text(row.comment, 'annotation comment', true), createdAt: iso(row.createdAt, 'created time'), updatedAt: iso(row.updatedAt, 'updated time') };
+  const annotationType = row.annotationType ?? style;
+  const allowedTypes: ReadonlyArray<ToeicAnnotationType> = ['highlight', 'underline', 'pen', 'text', 'sticky', 'rectangle', 'arrow'];
+  if (!allowedTypes.includes(annotationType as ToeicAnnotationType)) throw new ToeicToolError('INVALID_RESPONSE', 'Invalid TOEIC annotation type');
+  const color = row.color ?? (annotationType === 'highlight' ? '#FDE68A' : '#F472B6');
+  if (typeof color !== 'string' || !/^#[0-9A-Fa-f]{6}$/.test(color)) throw new ToeicToolError('INVALID_RESPONSE', 'Invalid TOEIC annotation color');
+  const strokeWidth = row.strokeWidth ?? 2;
+  if (!Number.isInteger(strokeWidth) || (strokeWidth as number) < 1 || (strokeWidth as number) > 12) throw new ToeicToolError('INVALID_RESPONSE', 'Invalid TOEIC annotation stroke width');
+  const geometry = row.geometry === null || row.geometry === undefined ? null : mapGeometry(row.geometry);
+  return { id: uuid(row.id, 'annotation id'), testId: uuid(row.testId, 'test id'), questionId, passageId, documentIndex: row.documentIndex === null ? null : Number.isInteger(row.documentIndex) ? row.documentIndex as number : (() => { throw new ToeicToolError('INVALID_RESPONSE', 'Invalid annotation document index'); })(), startOffset: startOffset as number, endOffset: endOffset as number, quote: text(row.quote, 'annotation quote') as string, style: style as ToeicAnnotationStyle, annotationType: annotationType as ToeicAnnotationType, color, strokeWidth: strokeWidth as number, geometry, textContent: row.textContent === undefined ? null : text(row.textContent, 'annotation text', true), comment: text(row.comment, 'annotation comment', true), createdAt: iso(row.createdAt, 'created time'), updatedAt: iso(row.updatedAt, 'updated time') };
+}
+
+function mapGeometry(value: unknown): ToeicAnnotationGeometry {
+  const row = object(value, 'Invalid TOEIC annotation geometry');
+  const number = (field: string): number => {
+    const item = row[field];
+    if (typeof item !== 'number' || !Number.isFinite(item) || item < 0 || item > 1) throw new ToeicToolError('INVALID_RESPONSE', 'Invalid TOEIC annotation geometry');
+    return item;
+  };
+  if (row.kind === 'freehand' && Array.isArray(row.points) && row.points.length >= 2 && row.points.length <= 500) {
+    return { kind: 'freehand', points: row.points.map((point) => { const item = object(point, 'Invalid TOEIC annotation point'); return { x: numberFrom(item.x), y: numberFrom(item.y) }; }) };
+  }
+  if (row.kind === 'box') return { kind: 'box', x: number('x'), y: number('y'), width: number('width'), height: number('height') };
+  if (row.kind === 'arrow') return { kind: 'arrow', x1: number('x1'), y1: number('y1'), x2: number('x2'), y2: number('y2') };
+  throw new ToeicToolError('INVALID_RESPONSE', 'Invalid TOEIC annotation geometry');
+}
+
+function numberFrom(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) throw new ToeicToolError('INVALID_RESPONSE', 'Invalid TOEIC annotation geometry');
+  return value;
 }
 
 export function mapToeicAnnotationsResponse(value: unknown): ReadonlyArray<ToeicTextAnnotation> {
