@@ -73,7 +73,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#F472B6] to-[#FFB6C1] p-0.5 shadow-md shadow-pink-100 group-hover:scale-105 transition-transform">
             <div className="w-full h-full bg-white rounded-[10px] flex items-center justify-center">
-              <Image src="/logo.svg" alt="EasyTOEIC" width={20} height={20} className="object-contain"/>
+              <Image src="/logo.svg" alt="EasyTOEIC" width={20} height={20} className="object-contain" />
             </div>
           </div>
           <div className="hidden min-[375px]:block sm:block">
@@ -93,11 +93,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         <nav className="hidden md:flex items-center gap-1.5 bg-[#FFF1F2] p-1.5 rounded-2xl border border-[#FCE7F3]">
           <button
             onClick={() => setActiveTab('dashboard')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
-              activeTab === 'dashboard'
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${activeTab === 'dashboard'
                 ? 'bg-white text-[#F472B6] shadow-2xs'
                 : 'text-gray-500 hover:text-[#F472B6] hover:bg-white/60'
-            }`}
+              }`}
           >
             <Home className="w-4 h-4" />
             Tổng Quan
@@ -105,17 +104,16 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <button
             onClick={() => setActiveTab('flashcard')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
-              activeTab === 'flashcard'
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${activeTab === 'flashcard'
                 ? 'bg-white text-[#F472B6] shadow-2xs'
                 : 'text-gray-500 hover:text-[#F472B6] hover:bg-white/60'
-            }`}
+              }`}
           >
             <Sparkles className="w-4 h-4" />
             Luyện Flashcards
           </button>
 
-          <button
+          {/* <button
             onClick={() => router.push('/app/tests')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
               pathname.startsWith('/app/tests')
@@ -126,15 +124,14 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <ClipboardCheck className="w-4 h-4" />
             Luyện đề
-          </button>
+          </button> */}
 
           <button
             onClick={() => setActiveTab('synonyms')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
-              activeTab === 'synonyms'
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${activeTab === 'synonyms'
                 ? 'bg-white text-[#F472B6] shadow-2xs'
                 : 'text-gray-500 hover:text-[#F472B6] hover:bg-white/60'
-            }`}
+              }`}
           >
             <GitCompareArrows className="w-4 h-4" />
             Từ đồng nghĩa
@@ -142,11 +139,10 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <button
             onClick={() => setActiveTab('vocab-manager')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
-              activeTab === 'vocab-manager'
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${activeTab === 'vocab-manager'
                 ? 'bg-white text-[#F472B6] shadow-2xs'
                 : 'text-gray-500 hover:text-[#F472B6] hover:bg-white/60'
-            }`}
+              }`}
           >
             <Layers className="w-4 h-4" />
             Quản Lý Từ Vựng
@@ -225,9 +221,8 @@ export const Navbar: React.FC<NavbarProps> = ({
       >
         <button
           onClick={() => setActiveTab('dashboard')}
-          className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[60px] ${
-            activeTab === 'dashboard' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
-          }`}
+          className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[60px] ${activeTab === 'dashboard' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
+            }`}
           aria-current={activeTab === 'dashboard' ? 'page' : undefined}
         >
           <Home className="w-5 h-5 sm:w-4 sm:h-4" />
@@ -235,9 +230,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         </button>
         <button
           onClick={() => setActiveTab('flashcard')}
-          className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[60px] ${
-            activeTab === 'flashcard' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
-          }`}
+          className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[60px] ${activeTab === 'flashcard' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
+            }`}
           aria-current={activeTab === 'flashcard' ? 'page' : undefined}
         >
           <Sparkles className="w-5 h-5 sm:w-4 sm:h-4" />
@@ -245,9 +239,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         </button>
         <button
           onClick={() => router.push('/app/tests')}
-          className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[60px] ${
-            pathname.startsWith('/app/tests') ? 'text-[#F472B6] font-bold' : 'text-gray-500'
-          }`}
+          className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[60px] ${pathname.startsWith('/app/tests') ? 'text-[#F472B6] font-bold' : 'text-gray-500'
+            }`}
           aria-current={pathname.startsWith('/app/tests') ? 'page' : undefined}
         >
           <ClipboardCheck className="w-5 h-5 sm:w-4 sm:h-4" />
@@ -255,9 +248,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         </button>
         <button
           onClick={() => setActiveTab('synonyms')}
-          className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[60px] ${
-            activeTab === 'synonyms' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
-          }`}
+          className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[60px] ${activeTab === 'synonyms' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
+            }`}
           aria-current={activeTab === 'synonyms' ? 'page' : undefined}
         >
           <GitCompareArrows className="w-5 h-5 sm:w-4 sm:h-4" />
@@ -265,9 +257,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         </button>
         <button
           onClick={() => setActiveTab('vocab-manager')}
-          className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[60px] ${
-            activeTab === 'vocab-manager' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
-          }`}
+          className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[60px] ${activeTab === 'vocab-manager' ? 'text-[#F472B6] font-bold' : 'text-gray-500'
+            }`}
           aria-current={activeTab === 'vocab-manager' ? 'page' : undefined}
         >
           <Layers className="w-5 h-5 sm:w-4 sm:h-4" />
