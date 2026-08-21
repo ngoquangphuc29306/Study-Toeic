@@ -76,6 +76,8 @@ function isRatingResult(data: unknown): data is RatingResult {
   );
 }
 
+const PROGRESS_BATCH_SIZE = 150;
+
 /**
  * Get progress for multiple vocabularies
  * Returns map of vocabulary_id -> progress
@@ -87,24 +89,37 @@ export async function getProgressForVocabularies(
     return new Map();
   }
 
+  const uniqueIds = Array.from(new Set(vocabularyIds));
   const supabase = createClient();
 
-  const { data, error } = await supabase
-    .from('user_vocab_progress')
-    .select('*')
-    .in('vocabulary_id', vocabularyIds);
-
-  if (error) {
-    throwIfUnauthorized(error);
-    console.error('getProgressForVocabularies error:', error);
-    throw new Error('Không thể tải tiến độ học. Vui lòng thử lại.');
+  const batches: string[][] = [];
+  for (let i = 0; i < uniqueIds.length; i += PROGRESS_BATCH_SIZE) {
+    batches.push(uniqueIds.slice(i, i + PROGRESS_BATCH_SIZE));
   }
 
+  const results = await Promise.all(
+    batches.map((batch) =>
+      supabase
+        .from('user_vocab_progress')
+        .select('*')
+        .in('vocabulary_id', batch)
+    )
+  );
+
   const progressMap = new Map<string, ProgressRecord>();
-  if (data) {
-    (data as ProgressRecord[]).forEach((record) => {
-      progressMap.set(record.vocabulary_id, record as ProgressRecord);
-    });
+
+  for (const { data, error } of results) {
+    if (error) {
+      throwIfUnauthorized(error);
+      console.error('getProgressForVocabularies error:', error);
+      throw new Error('Không thể tải tiến độ học. Vui lòng thử lại.');
+    }
+
+    if (data) {
+      (data as ProgressRecord[]).forEach((record) => {
+        progressMap.set(record.vocabulary_id, record as ProgressRecord);
+      });
+    }
   }
 
   return progressMap;
