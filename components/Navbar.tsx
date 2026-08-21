@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Sparkles, Flame, Home, Layers, GitCompareArrows } from 'lucide-react';
+import { Sparkles, Flame, Home, Layers, GitCompareArrows, ClipboardCheck } from 'lucide-react';
 import { StudyStats } from '../lib/types';
 import { SignOutButton } from './auth/sign-out-button';
 import { getCurrentProfile } from '@/services/profileService';
@@ -113,6 +113,19 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <Sparkles className="w-4 h-4" />
             Luyện Flashcards
+          </button>
+
+          <button
+            onClick={() => router.push('/app/tests')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+              pathname.startsWith('/app/tests')
+                ? 'bg-white text-[#F472B6] shadow-2xs'
+                : 'text-gray-500 hover:text-[#F472B6] hover:bg-white/60'
+            }`}
+            aria-current={pathname.startsWith('/app/tests') ? 'page' : undefined}
+          >
+            <ClipboardCheck className="w-4 h-4" />
+            Luyện đề
           </button>
 
           <button
@@ -229,6 +242,16 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <Sparkles className="w-5 h-5 sm:w-4 sm:h-4" />
           <span className="text-[10px] sm:text-xs">Flashcard</span>
+        </button>
+        <button
+          onClick={() => router.push('/app/tests')}
+          className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl min-w-[60px] ${
+            pathname.startsWith('/app/tests') ? 'text-[#F472B6] font-bold' : 'text-gray-500'
+          }`}
+          aria-current={pathname.startsWith('/app/tests') ? 'page' : undefined}
+        >
+          <ClipboardCheck className="w-5 h-5 sm:w-4 sm:h-4" />
+          <span className="text-[10px] sm:text-xs">Luyện đề</span>
         </button>
         <button
           onClick={() => setActiveTab('synonyms')}
