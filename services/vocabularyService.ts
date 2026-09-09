@@ -27,6 +27,7 @@ import { VocabularyValidationError } from './vocabularyErrors';
  */
 export async function getVocabularies(topicId?: string, authenticatedUserId?: string): Promise<Vocabulary[]> {
   const supabase = createClient();
+  const pageSize = 1000;
 
   try {
     if (!authenticatedUserId) {
@@ -37,25 +38,38 @@ export async function getVocabularies(topicId?: string, authenticatedUserId?: st
       }
     }
 
-    let query = supabase
-      .from('vocabularies')
-      .select('id, topic_id, user_id, word, phonetic_uk, phonetic_us, part_of_speech, meaning, example, example_translation, synonyms, collocations, audio_url, note, created_at, updated_at')
-      .order('created_at', { ascending: true });
+    const vocabularies: Vocabulary[] = [];
+    let offset = 0;
 
-    // Apply topic filter if provided and not 'all'
-    if (topicId && topicId !== 'all') {
-      query = query.eq('topic_id', topicId);
+    // PostgREST applies the API max_rows setting to every response. Keep
+    // requesting explicit pages so users can safely exceed 1,000 vocabularies.
+    while (true) {
+      let query = supabase
+        .from('vocabularies')
+        .select('id, topic_id, user_id, word, phonetic_uk, phonetic_us, part_of_speech, meaning, example, example_translation, synonyms, collocations, audio_url, note, created_at, updated_at')
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(offset, offset + pageSize - 1);
+
+      if (topicId && topicId !== 'all') {
+        query = query.eq('topic_id', topicId);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        throwIfUnauthorized(error);
+        console.error('Supabase getVocabularies error:', error.message);
+        throw new Error('Không thể tải từ vựng. Vui lòng thử lại.');
+      }
+
+      const page = (data ?? []) as Vocabulary[];
+      vocabularies.push(...page);
+      if (page.length < pageSize) break;
+      offset += pageSize;
     }
 
-    const { data, error } = await query;
-
-    if (error) {
-      throwIfUnauthorized(error);
-      console.error('Supabase getVocabularies error:', error.message);
-      throw new Error('Không thể tải từ vựng. Vui lòng thử lại.');
-    }
-
-    return data || [];
+    return vocabularies;
   } catch (err) {
     if (isUnauthorizedError(err)) throw err;
     console.error('getVocabularies exception:', err);
