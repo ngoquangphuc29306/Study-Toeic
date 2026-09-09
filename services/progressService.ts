@@ -88,22 +88,26 @@ export async function getProgressForVocabularies(
   }
 
   const supabase = createClient();
-
-  const { data, error } = await supabase
-    .from('user_vocab_progress')
-    .select('*')
-    .in('vocabulary_id', vocabularyIds);
-
-  if (error) {
-    throwIfUnauthorized(error);
-    console.error('getProgressForVocabularies error:', error);
-    throw new Error('Không thể tải tiến độ học. Vui lòng thử lại.');
-  }
-
+  const batchSize = 500;
   const progressMap = new Map<string, ProgressRecord>();
-  if (data) {
-    (data as ProgressRecord[]).forEach((record) => {
-      progressMap.set(record.vocabulary_id, record as ProgressRecord);
+
+  // Keep the IN filters bounded as the vocabulary list grows. This also
+  // avoids oversized request URLs and remains below the API row limit.
+  for (let offset = 0; offset < vocabularyIds.length; offset += batchSize) {
+    const batch = vocabularyIds.slice(offset, offset + batchSize);
+    const { data, error } = await supabase
+      .from('user_vocab_progress')
+      .select('*')
+      .in('vocabulary_id', batch);
+
+    if (error) {
+      throwIfUnauthorized(error);
+      console.error('getProgressForVocabularies error:', error);
+      throw new Error('Không thể tải tiến độ học. Vui lòng thử lại.');
+    }
+
+    (data as ProgressRecord[] | null)?.forEach((record) => {
+      progressMap.set(record.vocabulary_id, record);
     });
   }
 
