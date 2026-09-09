@@ -76,6 +76,8 @@ function isRatingResult(data: unknown): data is RatingResult {
   );
 }
 
+const PROGRESS_BATCH_SIZE = 150;
+
 /**
  * Get progress for multiple vocabularies
  * Returns map of vocabulary_id -> progress
@@ -87,6 +89,7 @@ export async function getProgressForVocabularies(
     return new Map();
   }
 
+  const uniqueIds = Array.from(new Set(vocabularyIds));
   const supabase = createClient();
   const batchSize = 500;
   const progressMap = new Map<string, ProgressRecord>();
