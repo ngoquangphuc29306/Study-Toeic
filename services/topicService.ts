@@ -25,7 +25,7 @@ import { TopicHasVocabulariesError } from './topicErrors';
  * @param collectionId - Optional collection filter
  * @returns Array of Topics with computed vocabulary counts from Supabase
  */
-export async function getTopics(collectionId?: string, authenticatedUserId?: string): Promise<Topic[]> {
+export async function getTopics(collectionId?: string, authenticatedUserId?: string, skipVocabCount?: boolean): Promise<Topic[]> {
   const supabase = createClient();
 
   try {
@@ -56,6 +56,18 @@ export async function getTopics(collectionId?: string, authenticatedUserId?: str
     }
 
     const topics = (data || []) as Topic[];
+
+    // Performance: When called from loadAppDataSnapshot, vocab counts are
+    // computed from the already-loaded vocabularies array, making this extra
+    // query redundant (it fetches all 4000+ vocab rows just to count).
+    if (skipVocabCount) {
+      return topics.map(topic => ({
+        ...topic,
+        total_words: 0,
+        mastered_words: 0,
+        learning_words: 0,
+      }));
+    }
 
     // Compute vocabulary counts from Supabase
     // Use a single query to count vocabularies for all topics
