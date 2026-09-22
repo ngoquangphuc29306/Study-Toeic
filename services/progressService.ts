@@ -97,7 +97,7 @@ export async function getProgressForVocabularies(
     const batch = vocabularyIds.slice(offset, offset + batchSize);
     const { data, error } = await supabase
       .from('user_vocab_progress')
-      .select('*')
+      .select('vocabulary_id, status, review_count, again_count, last_reviewed_at, next_review_at, interval_hours')
       .in('vocabulary_id', batch);
 
     if (error) {

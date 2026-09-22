@@ -11,11 +11,26 @@ export interface VocabularyProgressCounts {
 }
 
 export function deriveStudyStats(vocabularies: Vocabulary[]): StudyStats {
+  // Performance: Single pass instead of 3 separate .filter() calls
+  let masteredCount = 0;
+  let learningCount = 0;
+  let newCount = 0;
+
+  for (const vocabulary of vocabularies) {
+    if (vocabulary.status === 'mastered') {
+      masteredCount++;
+    } else if (vocabulary.status === 'learning') {
+      learningCount++;
+    } else {
+      newCount++;
+    }
+  }
+
   return {
     totalWords: vocabularies.length,
-    masteredCount: vocabularies.filter((vocabulary) => vocabulary.status === 'mastered').length,
-    learningCount: vocabularies.filter((vocabulary) => vocabulary.status === 'learning').length,
-    newCount: vocabularies.filter((vocabulary) => vocabulary.status === 'new' || !vocabulary.status).length,
+    masteredCount,
+    learningCount,
+    newCount,
     dailyStreak: 0,
     todayStudiedCount: 0,
   };

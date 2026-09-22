@@ -112,9 +112,9 @@ export async function deleteCollection(colId: string): Promise<void> {
 
 // --- TOPIC / SECTION METHODS (Phase 2D: Migrated to Supabase) ---
 
-export async function getTopics(collectionId?: string, authenticatedUserId?: string): Promise<Topic[]> {
+export async function getTopics(collectionId?: string, authenticatedUserId?: string, skipVocabCount?: boolean): Promise<Topic[]> {
   try {
-    return await getTopicsFromSupabase(collectionId, authenticatedUserId);
+    return await getTopicsFromSupabase(collectionId, authenticatedUserId, skipVocabCount);
   } catch (err) {
     console.error('getTopics error:', err);
     throw err;

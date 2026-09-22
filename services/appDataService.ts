@@ -48,12 +48,14 @@ export async function loadAppDerivedData(authenticatedUserId: string): Promise<A
  * snapshot instead of fetching the same resources independently.
  */
 export async function loadAppDataSnapshot(authenticatedUserId: string): Promise<AppDataSnapshot> {
-  const [collections, topics, vocabularies] = await Promise.all([
+  // Performance: Run all 4 fetches in parallel instead of fetching derived data
+  // sequentially after the core snapshot. This eliminates a ~1-2s waterfall.
+  const [collections, topics, vocabularies, derived] = await Promise.all([
     withSessionRetry(() => getCollections(authenticatedUserId)),
-    withSessionRetry(() => getTopics(undefined, authenticatedUserId)),
+    withSessionRetry(() => getTopics(undefined, authenticatedUserId, true)),
     withSessionRetry(() => getVocabByTopic('all', authenticatedUserId)),
+    loadAppDerivedData(authenticatedUserId),
   ]);
-  const derived = await loadAppDerivedData(authenticatedUserId);
 
   const composedCollections = collections.map((collection) => {
     const collectionTopicIds = new Set(

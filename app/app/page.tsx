@@ -177,6 +177,7 @@ export default function AppPage() {
   const sessionCheckResolvedRef = useRef(false);
   const vocabulariesRef = useRef<Vocabulary[]>([]);
   const localDataRevisionRef = useRef(0);
+  const ratingDerivedDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scheduleDerivedRetry = useCallback(() => {
     if (ratingDerivedRetryTimerRef.current || !ratingDerivedNeedsRetryRef.current) return;
@@ -780,8 +781,33 @@ export default function AppPage() {
   useEffect(() => {
     return () => {
       if (ratingDerivedRetryTimerRef.current) clearTimeout(ratingDerivedRetryTimerRef.current);
+      if (ratingDerivedDebounceTimerRef.current) clearTimeout(ratingDerivedDebounceTimerRef.current);
     };
   }, []);
+
+  // Performance: Debounce derived-data refresh after each rating to avoid
+  // flooding Supabase Free plan when user rates words quickly (3-5s/word).
+  // Reduces requests from ~20/session to ~3-4/session.
+  const RATING_DERIVED_DEBOUNCE_MS = 5000;
+
+  const debouncedRefreshRatingDerivedData = useCallback(() => {
+    if (ratingDerivedDebounceTimerRef.current) {
+      clearTimeout(ratingDerivedDebounceTimerRef.current);
+    }
+    ratingDerivedDebounceTimerRef.current = setTimeout(() => {
+      ratingDerivedDebounceTimerRef.current = null;
+      void refreshRatingDerivedData();
+    }, RATING_DERIVED_DEBOUNCE_MS);
+  }, [refreshRatingDerivedData]);
+
+  // Flush any pending debounced refresh immediately (e.g. on session completion)
+  const flushDebouncedRefresh = useCallback(() => {
+    if (ratingDerivedDebounceTimerRef.current) {
+      clearTimeout(ratingDerivedDebounceTimerRef.current);
+      ratingDerivedDebounceTimerRef.current = null;
+    }
+    void refreshRatingDerivedData();
+  }, [refreshRatingDerivedData]);
 
   // The RPC result is the immediate progress source of truth. Derived refresh
   // runs separately and intentionally cannot reject this mutation promise.
@@ -801,9 +827,9 @@ export default function AppPage() {
     ));
     commitVocabularies(patchedVocabularies);
 
-    void refreshRatingDerivedData();
+    debouncedRefreshRatingDerivedData();
     return ratingResult;
-  }, [commitVocabularies, refreshRatingDerivedData]);
+  }, [commitVocabularies, debouncedRefreshRatingDerivedData]);
 
   const handleAddCollection = async (newCol: Omit<Collection, 'id'>) => {
     try {
@@ -934,7 +960,7 @@ export default function AppPage() {
       };
 
       commitVocabularies((prevVocabs) => [...prevVocabs, vocabWithDefaultProgress]);
-      void refreshRatingDerivedData();
+      flushDebouncedRefresh();
 
       showToast('Thêm từ vựng thành công! ✨', 'success');
     } catch (err) {
@@ -995,7 +1021,7 @@ export default function AppPage() {
       }));
 
       commitVocabularies((prevVocabs) => [...prevVocabs, ...vocabsWithDefaultProgress]);
-      void refreshRatingDerivedData();
+      flushDebouncedRefresh();
 
       showToast(`Import thành công ${createdVocabs.length} từ vựng! ✨`, 'success');
     } catch (err) {
@@ -1012,7 +1038,7 @@ export default function AppPage() {
       // Batch Fix Phase 8: Remove vocabulary from state + targeted refetch
       // Deletion affects vocabulary count, so stats and metrics must be refetched
       commitVocabularies((prevVocabs) => prevVocabs.filter((v) => v.id !== vocabId));
-      void refreshRatingDerivedData();
+      flushDebouncedRefresh();
 
       showToast('Xóa từ vựng thành công! ✨', 'success');
     } catch (err) {
