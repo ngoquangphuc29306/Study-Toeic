@@ -1,10 +1,12 @@
+import { useMemo } from 'react';
 import { ArrowLeft, Check, Play, SlidersHorizontal } from 'lucide-react';
 import type { Collection, Topic } from '../../../lib/types';
 import type { SynonymPracticeFilters, SynonymPracticeItem, SynonymPracticeMode } from '../types';
-import { getEligibleCountByMode } from '../services/synonymPracticeService';
+import { getEligibleSynonymItems, getFilteredSynonymItems } from '../services/synonymPracticeService';
 
 interface SynonymPracticeSetupProps {
   items: SynonymPracticeItem[];
+  eligibleItems?: SynonymPracticeItem[];
   topics: Topic[];
   collections: Collection[];
   mode: SynonymPracticeMode;
@@ -23,9 +25,10 @@ const modeLabels: Record<SynonymPracticeMode, { title: string; description: stri
   typing: { title: 'Gõ đáp án', description: 'Tự gõ một synonym bạn nhớ được.', tone: 'amber' },
 };
 
-export function SynonymPracticeSetup({ items, topics, collections, mode, filters, questionCount, onFiltersChange, onQuestionCountChange, onStart, onBack }: SynonymPracticeSetupProps) {
-  const filteredItems = items.filter((item) => (filters.collectionId === 'all' || item.collectionId === filters.collectionId) && (filters.topicId === 'all' || item.topicId === filters.topicId));
-  const eligibleCount = getEligibleCountByMode(mode, filteredItems);
+export function SynonymPracticeSetup({ items, eligibleItems, topics, collections, mode, filters, questionCount, onFiltersChange, onQuestionCountChange, onStart, onBack }: SynonymPracticeSetupProps) {
+  const collectionItems = items.filter((item) => filters.collectionId === 'all' || item.collectionId === filters.collectionId);
+  const filteredItems = useMemo(() => getFilteredSynonymItems(items, filters.collectionId, filters.topicId), [items, filters.collectionId, filters.topicId]);
+  const eligibleCount = useMemo(() => (eligibleItems ?? getEligibleSynonymItems(mode, filteredItems)).length, [eligibleItems, mode, filteredItems]);
   const selectedCount = mode === 'matching' ? (eligibleCount >= 2 ? 1 : 0) : Math.min(questionCount, eligibleCount);
   const matchingTopics = topics.filter((topic) => filters.collectionId === 'all' || topic.collection_id === filters.collectionId);
   const selectedMode = modeLabels[mode];
@@ -38,14 +41,22 @@ export function SynonymPracticeSetup({ items, topics, collections, mode, filters
   return (
     <section className="mx-auto max-w-3xl space-y-6">
       <div className="flex items-center gap-3">
-        <button type="button" onClick={onBack} className="inline-flex shrink-0 items-center gap-2 rounded-2xl border border-[#FCE7F3] bg-white px-3 py-2.5 text-sm font-bold text-[#5C635D] transition hover:bg-[#FFF9FA] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6]"><ArrowLeft className="h-4 w-4" aria-hidden="true" /><span className="hidden sm:inline">Thoát</span></button>
+        <button type="button" onClick={onBack} aria-label="Thoát" className="inline-flex shrink-0 items-center gap-2 rounded-2xl border border-[#FCE7F3] bg-white px-3 py-2.5 text-sm font-bold text-[#5C635D] transition hover:bg-[#FFF9FA] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6]"><ArrowLeft className="h-4 w-4" aria-hidden="true" /><span className="hidden sm:inline">Thoát</span></button>
         <div><h1 className="text-lg font-extrabold text-[#4A4544] sm:text-xl">Cấu hình phiên luyện tập</h1><p className="text-xs text-[#77716F]">Chọn Section, số câu và bắt đầu mode {selectedMode.title.toLowerCase()}.</p></div>
       </div>
 
       <div className="rounded-3xl border border-[#FCE7F3] bg-white p-5 shadow-sm sm:p-8">
         <div className="flex items-start gap-3"><div className={`rounded-2xl border p-3 ${toneClasses[selectedMode.tone]}`}><SlidersHorizontal className="h-5 w-5" aria-hidden="true" /></div><div><span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-extrabold ${toneClasses[selectedMode.tone]}`}>{selectedMode.title}</span><p className="mt-2 text-sm text-[#77716F]">{selectedMode.description}</p></div></div>
 
-        <div className="mt-7 space-y-3"><label className="block text-xs font-extrabold text-[#4A4544]">Bộ sưu tập<select value={filters.collectionId} onChange={(event) => onFiltersChange({ collectionId: event.target.value, topicId: 'all' })} className="mt-2 w-full appearance-none rounded-2xl border-2 border-[#FCE7F3] bg-white px-4 py-3 text-xs font-bold text-[#4A4544] outline-none transition focus:border-[#F472B6] focus:ring-2 focus:ring-pink-100"><option value="all">Tất cả bộ sưu tập</option>{collections.map((collection) => <option key={collection.id} value={collection.id}>{collection.title}</option>)}</select></label><div><span className="block text-xs font-extrabold text-[#4A4544]">Section / học phần</span><div className="mt-2 flex gap-1.5 overflow-x-auto pb-1"><button type="button" onClick={() => onFiltersChange({ ...filters, topicId: 'all' })} className={`shrink-0 rounded-xl border px-3 py-2 text-xs font-bold transition ${filters.topicId === 'all' ? 'border-[#F472B6] bg-[#F472B6] text-white' : 'border-slate-200 bg-white text-[#5C635D] hover:border-pink-300 hover:bg-[#FFF9FA]'}`}>Tất cả <span className="ml-1 rounded-md bg-black/5 px-1.5 py-0.5">{items.length}</span></button>{matchingTopics.slice(0, 8).map((topic) => <button type="button" key={topic.id} onClick={() => onFiltersChange({ ...filters, topicId: topic.id })} className={`shrink-0 rounded-xl border px-3 py-2 text-xs font-bold transition ${filters.topicId === topic.id ? 'border-[#F472B6] bg-[#F472B6] text-white' : 'border-slate-200 bg-white text-[#5C635D] hover:border-pink-300 hover:bg-[#FFF9FA]'}`}>{topic.title}<span className={`ml-1 rounded-md px-1.5 py-0.5 ${filters.topicId === topic.id ? 'bg-white/20' : 'bg-slate-100 text-slate-500'}`}>{items.filter((item) => item.topicId === topic.id).length}</span></button>)}</div></div></div>
+        <div className="mt-7 space-y-3"><label className="block text-xs font-extrabold text-[#4A4544]">Bộ sưu tập<select value={filters.collectionId} onChange={(event) => onFiltersChange({ collectionId: event.target.value, topicId: 'all' })} className="mt-2 w-full appearance-none rounded-2xl border-2 border-[#FCE7F3] bg-white px-4 py-3 text-xs font-bold text-[#4A4544] outline-none transition focus:border-[#F472B6] focus:ring-2 focus:ring-pink-100"><option value="all">Tất cả bộ sưu tập</option>{collections.map((collection) => <option key={collection.id} value={collection.id}>{collection.title}</option>)}</select></label><div><span className="block text-xs font-extrabold text-[#4A4544]">Section / học phần</span><div className="mt-2 flex gap-1.5 overflow-x-auto pb-1"><button type="button" onClick={() => onFiltersChange({ ...filters, topicId: 'all' })} className={`shrink-0 rounded-xl border px-3 py-2 text-xs font-bold transition ${filters.topicId === 'all' ? 'border-[#F472B6] bg-[#F472B6] text-white' : 'border-slate-200 bg-white text-[#5C635D] hover:border-pink-300 hover:bg-[#FFF9FA]'}`}>Tất cả <span className="ml-1 rounded-md bg-black/5 px-1.5 py-0.5">{collectionItems.length}</span></button>{matchingTopics.slice(0, 8).map((topic) => <button type="button" key={topic.id} onClick={() => onFiltersChange({ ...filters, topicId: topic.id })} className={`shrink-0 rounded-xl border px-3 py-2 text-xs font-bold transition ${filters.topicId === topic.id ? 'border-[#F472B6] bg-[#F472B6] text-white' : 'border-slate-200 bg-white text-[#5C635D] hover:border-pink-300 hover:bg-[#FFF9FA]'}`}>{topic.title}<span className={`ml-1 rounded-md px-1.5 py-0.5 ${filters.topicId === topic.id ? 'bg-white/20' : 'bg-slate-100 text-slate-500'}`}>{collectionItems.filter((item) => item.topicId === topic.id).length}</span></button>)}</div></div></div>
+
+        <label className="mt-3 block text-xs font-extrabold text-[#4A4544]">Chọn từ tất cả học phần
+          <select value={filters.topicId} onChange={(event) => onFiltersChange({ ...filters, topicId: event.target.value })} className="mt-2 w-full rounded-2xl border-2 border-[#FCE7F3] bg-white px-4 py-3 text-xs font-bold text-[#4A4544] outline-none transition focus:border-[#F472B6] focus:ring-2 focus:ring-pink-100">
+            <option value="all">Tất cả học phần ({collectionItems.length})</option>
+            {matchingTopics.map((topic) => <option key={topic.id} value={topic.id}>{topic.title} ({collectionItems.filter((item) => item.topicId === topic.id).length})</option>)}
+          </select>
+        </label>
+        {selectedCount < 1 && <p role="status" className="mt-3 rounded-2xl border border-[#FCE7F3] bg-[#FFF9FA] p-4 text-xs text-[#77716F]">Chưa đủ từ đồng nghĩa trong bộ lọc này để luyện tập. Hãy bổ sung synonym hoặc chọn học phần khác.</p>}
 
         {mode !== 'matching' && <div className="mt-6 space-y-2 border-t border-[#FCE7F3] pt-5"><span className="block text-xs font-extrabold text-[#4A4544]">Số câu</span><div className="grid grid-cols-3 gap-2">{[10, 20, eligibleCount].filter((value, index, values) => value > 0 && values.indexOf(value) === index).map((value) => <button type="button" key={value} onClick={() => onQuestionCountChange(value)} className={`rounded-2xl border px-3 py-3 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] ${questionCount === value ? 'border-[#F472B6] bg-[#FFF1F2] text-[#D95476] shadow-2xs' : 'border-[#FCE7F3] bg-white text-[#77716F] hover:border-[#F4A8B7]'}`}>{value === eligibleCount && value !== 10 && value !== 20 ? 'Tất cả' : value}</button>)}</div></div>}
 

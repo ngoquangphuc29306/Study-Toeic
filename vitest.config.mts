@@ -5,10 +5,11 @@ import { defineConfig } from 'vitest/config';
 const projectRoot = fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig({
+  oxc: { jsx: { runtime: 'automatic' } },
   test: {
     environment: 'node',
     globals: true,
-    include: ['**/*.test.ts'],
+    include: ['**/*.test.{ts,tsx}'],
   },
   resolve: {
     alias: {

@@ -19,7 +19,7 @@ export function SynonymSessionHeader({ title, current, total, tone = 'rose', sco
 
   return (
     <div className="flex items-center justify-between gap-3">
-      <button type="button" onClick={onExit} className="inline-flex shrink-0 items-center gap-1.5 rounded-2xl border border-[#FCE7F3] bg-white px-3 py-2.5 text-xs font-bold text-[#5C635D] transition hover:bg-[#FFF9FA] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6]">
+      <button type="button" onClick={onExit} aria-label="Thoát session" className="inline-flex shrink-0 items-center gap-1.5 rounded-2xl border border-[#FCE7F3] bg-white px-3 py-2.5 text-xs font-bold text-[#5C635D] transition hover:bg-[#FFF9FA] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6]">
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         <span className="hidden sm:inline">Thoát session</span>
       </button>

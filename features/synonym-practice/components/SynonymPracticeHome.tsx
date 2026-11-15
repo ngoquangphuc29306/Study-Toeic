@@ -7,8 +7,8 @@ import type { Collection, Topic, Vocabulary } from '../../../lib/types';
 import { usePrefersReducedMotion } from '../../../hooks/use-prefers-reduced-motion';
 import { motionTokens } from '../../../lib/animation/motionTokens';
 import type { MatchingQuestion, MultipleChoiceQuestion, SelectAllQuestion, SynonymPracticeFilters, SynonymPracticeItem, SynonymPracticeMode, SynonymPracticeResult } from '../types';
-import { buildMatchingQuestion, buildMultipleChoiceQuestions, buildSelectAllQuestions, getFilteredSynonymItems, mapVocabularyToSynonymItems } from '../services/synonymPracticeService';
-import { seededShuffle } from '../utils/shuffle';
+import { buildMatchingQuestion, buildMultipleChoiceQuestions, buildSelectAllQuestions, getEligibleCountByMode, getEligibleSynonymItems, getFilteredSynonymItems, mapVocabularyToSynonymItems } from '../services/synonymPracticeService';
+import { planSessionTargets, recordCompletedTargets, scopeKey, type SessionCoverage } from '../services/sessionProgression';
 import { useToast } from '../../../contexts/ToastContext';
 import { SynonymEmptyState } from './SynonymEmptyState';
 import { SynonymPracticeResults } from './SynonymPracticeResults';
@@ -28,6 +28,18 @@ interface SynonymPracticeProps {
 }
 
 type View = 'home' | 'setup' | 'session' | 'results';
+
+interface SessionData {
+  mode: SynonymPracticeMode;
+  items: SynonymPracticeItem[];
+  multipleChoice?: MultipleChoiceQuestion[];
+  matching?: MatchingQuestion;
+  selectAll?: SelectAllQuestion[];
+  // Only normal sessions carry coverage. Snapshot the start context and actual targets.
+  coverage?: { scope: string; cycle: number; orderIds: string[]; eligibleIds: string[]; targetIds: string[] };
+}
+
+const emptyCoverage: SessionCoverage = { cycle: 0, seenIds: [], orderIds: [] };
 
 const modes: Array<{
   id: SynonymPracticeMode;
@@ -49,14 +61,15 @@ export function SynonymPractice({ vocabularies, topics, collections, selectedTop
   const prefersReducedMotion = usePrefersReducedMotion();
   const rootRef = useRef<HTMLDivElement>(null);
   const items = useMemo(() => mapVocabularyToSynonymItems(vocabularies, topics, collections), [collections, topics, vocabularies]);
-  const initialTopicId = selectedTopicId !== 'all' && items.some((item) => item.topicId === selectedTopicId) ? selectedTopicId : 'all';
+  const initialTopicId = selectedTopicId !== 'all' && topics.some((topic) => topic.id === selectedTopicId) ? selectedTopicId : 'all';
   const [view, setView] = useState<View>('home');
   const [mode, setMode] = useState<SynonymPracticeMode>('multiple-choice');
   const [filters, setFilters] = useState<SynonymPracticeFilters>({ collectionId: 'all', topicId: initialTopicId });
   const [questionCount, setQuestionCount] = useState(10);
   const [result, setResult] = useState<SynonymPracticeResult | null>(null);
   const [sessionKey, setSessionKey] = useState(0);
-  const [sessionData, setSessionData] = useState<{ mode: SynonymPracticeMode; items: SynonymPracticeItem[]; multipleChoice?: MultipleChoiceQuestion[]; matching?: MatchingQuestion; selectAll?: SelectAllQuestion[] } | null>(null);
+  const [sessionData, setSessionData] = useState<SessionData | null>(null);
+  const [coverageByScope, setCoverageByScope] = useState<Record<string, SessionCoverage>>({});
 
   useEffect(() => {
     if (prefersReducedMotion || !rootRef.current) return;
@@ -72,7 +85,21 @@ export function SynonymPractice({ vocabularies, topics, collections, selectedTop
     return () => context.revert();
   }, [prefersReducedMotion, view]);
 
-  const filteredItems = useMemo(() => getFilteredSynonymItems(items, filters.collectionId, filters.topicId), [filters, items]);
+  // Reconcile source edits before rendering; captured sessions/results stay intact.
+  const validCollectionId = filters.collectionId === 'all' || collections.some(collection => collection.id === filters.collectionId)
+    ? filters.collectionId : 'all';
+  const validTopicId = filters.topicId === 'all' || topics.some(topic => topic.id === filters.topicId
+    && (validCollectionId === 'all' || topic.collection_id === validCollectionId)) ? filters.topicId : 'all';
+  if (validCollectionId !== filters.collectionId || validTopicId !== filters.topicId) {
+    setFilters({ collectionId: validCollectionId, topicId: validTopicId });
+  }
+
+  const filteredItems = useMemo(() => getFilteredSynonymItems(items, filters.collectionId, filters.topicId), [filters.collectionId, filters.topicId, items]);
+  const eligibleCounts = useMemo(() => Object.fromEntries(
+    modes.map(({ id }) => [id, getEligibleCountByMode(id, filteredItems)]),
+  ) as Record<SynonymPracticeMode, number>, [filteredItems]);
+  const eligibleItems = useMemo(() => getEligibleSynonymItems(mode, filteredItems), [mode, filteredItems]);
+  const collectionItems = getFilteredSynonymItems(items, filters.collectionId, 'all');
   const matchingTopics = topics.filter((topic) => filters.collectionId === 'all' || topic.collection_id === filters.collectionId);
   const missingSynonyms = vocabularies.filter((vocabulary) => !items.some((item) => item.vocabularyId === vocabulary.id));
   const sectionsWithSynonyms = new Set(items.map((item) => item.topicId).filter(Boolean)).size;
@@ -83,48 +110,83 @@ export function SynonymPractice({ vocabularies, topics, collections, selectedTop
     setView('setup');
   };
 
-  const startSession = (retryItems?: SynonymPracticeItem[]) => {
-    const pool = retryItems || filteredItems;
-    let nextData: typeof sessionData = null;
-
-    if (mode === 'multiple-choice') {
-      const questions = buildMultipleChoiceQuestions(pool, questionCount);
-      if (!questions.length) { showToast('Chưa đủ vocabulary thật để tạo 4 lựa chọn cho mode này.', 'error'); return; }
-      nextData = { mode, items: pool, multipleChoice: questions };
-    } else if (mode === 'matching') {
-      const matching = buildMatchingQuestion(pool, questionCount);
-      if (!matching) { showToast('Cần ít nhất 2 vocabulary có synonym để tạo round nối cặp.', 'error'); return; }
-      nextData = { mode, items: pool, matching };
-    } else if (mode === 'select-all') {
-      const questions = buildSelectAllQuestions(pool, questionCount);
-      if (!questions.length) { showToast('Chưa đủ vocabulary thật để tạo 6-8 lựa chọn cho mode này.', 'error'); return; }
-      nextData = { mode, items: pool, selectAll: questions };
-    } else {
-      const poolSeed = pool.map((item) => item.vocabularyId).join('|');
-      const typingItems = seededShuffle(pool, `typing:${poolSeed}:${questionCount}`).slice(0, questionCount);
-      if (!typingItems.length) { showToast('Chưa có vocabulary đủ điều kiện cho mode gõ đáp án.', 'error'); return; }
-      nextData = { mode, items: typingItems };
-    }
-
+  const openSession = (nextData: SessionData) => {
     setSessionData(nextData);
     setResult(null);
     setSessionKey((current) => current + 1);
     setView('session');
   };
 
-  const startNewSession = () => { setView('setup'); setResult(null); setSessionData(null); };
-  const retryIncorrect = () => {
-    if (!result) return;
-    const incorrectIds = new Set(result.answers.filter((answer) => !answer.isCorrect).map((answer) => answer.vocabularyId));
-    const retryItems = items.filter((item) => incorrectIds.has(item.vocabularyId));
-    if (retryItems.length) startSession(retryItems);
+  const startSession = () => {
+    const scope = { mode, ...filters };
+    const key = scopeKey(scope);
+    const plan = planSessionTargets(eligibleItems, mode === 'matching' ? eligibleItems.length : questionCount, coverageByScope[key] ?? emptyCoverage, scope);
+    if (!plan.targets.length) { showToast('Chưa có vocabulary đủ điều kiện cho mode này.', 'error'); return; }
+    const matching = mode === 'matching' ? buildMatchingQuestion(filteredItems, 8, { targets: plan.targets }) : undefined;
+    if (mode === 'matching' && !matching) { showToast('Cần ít nhất 2 vocabulary có synonym để tạo round nối cặp.', 'error'); return; }
+    const targetIds = new Set(plan.targets.map(item => item.vocabularyId));
+    openSession({
+      mode,
+      items: matching ? matching.pairs.map(pair => pair.item) : plan.targets,
+      matching: matching ?? undefined,
+      multipleChoice: mode === 'multiple-choice' ? buildMultipleChoiceQuestions(filteredItems, plan.targets.length, { targets: plan.targets }) : undefined,
+      selectAll: mode === 'select-all' ? buildSelectAllQuestions(filteredItems, plan.targets.length, { targets: plan.targets }) : undefined,
+      coverage: { scope: key, cycle: plan.cycle, orderIds: plan.orderIds, eligibleIds: eligibleItems.map(item => item.vocabularyId),
+        targetIds: matching ? matching.pairs.map(pair => pair.item.vocabularyId).filter(id => targetIds.has(id)) : [...targetIds] },
+    });
   };
 
-  if (items.length === 0) return <div ref={rootRef} className="synonym-entrance"><SynonymEmptyState onOpenVocabularyManager={onOpenVocabularyManager} /></div>;
-  if (view === 'setup') return <div ref={rootRef} className="synonym-entrance"><SynonymPracticeSetup items={items} topics={topics} collections={collections} mode={mode} filters={filters} questionCount={questionCount} onFiltersChange={setFilters} onQuestionCountChange={setQuestionCount} onStart={() => startSession()} onBack={() => setView('home')} /></div>;
-  if (view === 'results' && result) return <div ref={rootRef} className="synonym-entrance"><SynonymPracticeResults result={result} hasIncorrect={result.answers.some((answer) => !answer.isCorrect)} onRetryIncorrect={retryIncorrect} onNewSession={startNewSession} onHome={() => setView('home')} /></div>;
+  const retry = useMemo<{ data?: SessionData; reason?: string }>(() => {
+    if (!result) return {};
+    const incorrectIds = [...new Set(result.answers.filter(answer => !answer.isCorrect).map(answer => answer.vocabularyId))];
+    if (!incorrectIds.length) return {};
+    const byId = new Map(filteredItems.map(item => [item.vocabularyId, item]));
+    const targets = incorrectIds.flatMap(id => { const item = byId.get(id); return item ? [item] : []; });
+    if (targets.length !== incorrectIds.length) return { reason: 'Không thể ôn lại: một số từ sai không còn trong bộ lọc hiện tại hoặc không còn synonym hợp lệ.' };
+
+    const data: SessionData = { mode: result.mode, items: targets };
+    if (result.mode === 'matching') {
+      // Retry support is restricted to words actually shown in the preceding result.
+      const previousItems = [...new Set(result.answers.map(answer => answer.vocabularyId))]
+        .flatMap(id => { const item = byId.get(id); return item ? [item] : []; });
+      const matching = buildMatchingQuestion(previousItems, 8, { targets });
+      if (!matching || targets.some(target => !matching.pairs.some(pair => pair.item.vocabularyId === target.vocabularyId))) {
+        return { reason: 'Không thể ôn lại: các từ trong kết quả trước không đủ cặp từ và synonym phân biệt.' };
+      }
+      data.matching = matching;
+      data.items = matching.pairs.map(pair => pair.item);
+    } else if (result.mode === 'multiple-choice') {
+      data.multipleChoice = buildMultipleChoiceQuestions(filteredItems, targets.length, { targets });
+      if (data.multipleChoice.length !== targets.length) return { reason: 'Không thể ôn lại: bộ lọc hiện tại không đủ vocabulary để tạo 4 lựa chọn cho mọi câu sai.' };
+    } else if (result.mode === 'select-all') {
+      data.selectAll = buildSelectAllQuestions(filteredItems, targets.length, { targets });
+      if (data.selectAll.length !== targets.length) return { reason: 'Không thể ôn lại: bộ lọc hiện tại không đủ synonym và vocabulary để tạo 6–8 lựa chọn cho mọi câu sai.' };
+    }
+    return { data };
+  }, [filteredItems, result]);
+
+  const startNewSession = () => { setView('setup'); setResult(null); setSessionData(null); };
+  const retryIncorrect = () => {
+    if (retry.data) openSession(retry.data);
+  };
+
+  // Sessions/results use their captured data even if the source pool vanishes.
+  if (items.length === 0 && topics.length === 0 && view === 'home') return <div ref={rootRef} className="synonym-entrance"><SynonymEmptyState onOpenVocabularyManager={onOpenVocabularyManager} /></div>;
+  if (view === 'setup') return <div ref={rootRef} className="synonym-entrance"><SynonymPracticeSetup items={items} eligibleItems={eligibleItems} topics={topics} collections={collections} mode={mode} filters={filters} questionCount={questionCount} onFiltersChange={setFilters} onQuestionCountChange={setQuestionCount} onStart={() => startSession()} onBack={() => setView('home')} /></div>;
+  if (view === 'results' && result) return <div ref={rootRef} className="synonym-entrance"><SynonymPracticeResults result={result} hasIncorrect={result.answers.some((answer) => !answer.isCorrect)} retryAvailable={Boolean(retry.data)} retryUnavailableReason={retry.reason} onRetryIncorrect={retryIncorrect} onNewSession={startNewSession} onHome={() => setView('home')} /></div>;
   if (view === 'session' && sessionData) {
-    const onComplete = (nextResult: SynonymPracticeResult) => { setResult(nextResult); setView('results'); };
+    const onComplete = (nextResult: SynonymPracticeResult) => {
+      const completed = sessionData.coverage;
+      if (completed) {
+        setCoverageByScope(current => ({
+          ...current,
+          [completed.scope]: recordCompletedTargets(current[completed.scope] ?? emptyCoverage, completed.eligibleIds,
+            nextResult.answers.map(answer => answer.vocabularyId).filter(id => completed.targetIds.includes(id)), completed.cycle, completed.orderIds),
+        }));
+      }
+      setResult(nextResult);
+      setView('results');
+    };
     if (sessionData.mode === 'multiple-choice' && sessionData.multipleChoice) return <div key={sessionKey} ref={rootRef} className="synonym-entrance"><MultipleChoiceSession questions={sessionData.multipleChoice} onComplete={onComplete} onExit={() => setView('home')} /></div>;
     if (sessionData.mode === 'matching' && sessionData.matching) return <div key={sessionKey} ref={rootRef} className="synonym-entrance"><MatchingSession question={sessionData.matching} onComplete={onComplete} onExit={() => setView('home')} /></div>;
     if (sessionData.mode === 'select-all' && sessionData.selectAll) return <div key={sessionKey} ref={rootRef} className="synonym-entrance"><SelectAllSynonymsSession questions={sessionData.selectAll} onComplete={onComplete} onExit={() => setView('home')} /></div>;
@@ -158,11 +220,18 @@ export function SynonymPractice({ vocabularies, topics, collections, selectedTop
         <div><h2 className="flex items-center gap-2 text-lg font-bold text-[#4A4544]"><Filter className="h-5 w-5 text-[#F472B6]" aria-hidden="true" /> Chọn Section muốn ôn</h2><p className="mt-1 text-xs text-[#77716F]">Lọc trước để các mode phía dưới tập trung đúng nhóm từ bạn cần luyện.</p></div>
         <div className="grid gap-3 md:grid-cols-12 md:items-center">
           <label className="relative block md:col-span-5"><span className="sr-only">Chọn bộ sưu tập</span><select value={filters.collectionId} onChange={(event) => setFilters({ collectionId: event.target.value, topicId: 'all' })} className="w-full appearance-none rounded-2xl border-2 border-[#FCE7F3] bg-white px-4 py-3 text-xs font-bold text-[#4A4544] outline-none transition focus:border-[#F472B6] focus:ring-2 focus:ring-pink-100"><option value="all">Tất cả bộ sưu tập</option>{collections.map((collection) => <option key={collection.id} value={collection.id}>{collection.title}</option>)}</select></label>
-          <div className="flex gap-1.5 overflow-x-auto pb-1 md:col-span-7" aria-label="Chọn học phần nhanh"><button type="button" onClick={() => setFilters((current) => ({ ...current, topicId: 'all' }))} className={`shrink-0 rounded-xl border px-3 py-2 text-xs font-bold transition ${filters.topicId === 'all' ? 'border-[#F472B6] bg-[#F472B6] text-white' : 'border-slate-200 bg-white text-[#5C635D] hover:border-pink-300 hover:bg-[#FFF9FA]'}`}>Tất cả <span className="ml-1 rounded-md bg-black/5 px-1.5 py-0.5">{items.length}</span></button>{matchingTopics.slice(0, 6).map((topic) => <button type="button" key={topic.id} onClick={() => setFilters((current) => ({ ...current, topicId: topic.id }))} className={`shrink-0 rounded-xl border px-3 py-2 text-xs font-bold transition ${filters.topicId === topic.id ? 'border-[#F472B6] bg-[#F472B6] text-white' : 'border-slate-200 bg-white text-[#5C635D] hover:border-pink-300 hover:bg-[#FFF9FA]'}`}>{topic.title} <span className={`ml-1 rounded-md px-1.5 py-0.5 ${filters.topicId === topic.id ? 'bg-white/20' : 'bg-slate-100 text-slate-500'}`}>{items.filter((item) => item.topicId === topic.id).length}</span></button>)}</div>
+          <div className="flex gap-1.5 overflow-x-auto pb-1 md:col-span-7" aria-label="Chọn học phần nhanh"><button type="button" onClick={() => setFilters((current) => ({ ...current, topicId: 'all' }))} className={`shrink-0 rounded-xl border px-3 py-2 text-xs font-bold transition ${filters.topicId === 'all' ? 'border-[#F472B6] bg-[#F472B6] text-white' : 'border-slate-200 bg-white text-[#5C635D] hover:border-pink-300 hover:bg-[#FFF9FA]'}`}>Tất cả <span className="ml-1 rounded-md bg-black/5 px-1.5 py-0.5">{collectionItems.length}</span></button>{matchingTopics.slice(0, 6).map((topic) => <button type="button" key={topic.id} onClick={() => setFilters((current) => ({ ...current, topicId: topic.id }))} className={`shrink-0 rounded-xl border px-3 py-2 text-xs font-bold transition ${filters.topicId === topic.id ? 'border-[#F472B6] bg-[#F472B6] text-white' : 'border-slate-200 bg-white text-[#5C635D] hover:border-pink-300 hover:bg-[#FFF9FA]'}`}>{topic.title} <span className={`ml-1 rounded-md px-1.5 py-0.5 ${filters.topicId === topic.id ? 'bg-white/20' : 'bg-slate-100 text-slate-500'}`}>{collectionItems.filter((item) => item.topicId === topic.id).length}</span></button>)}</div>
         </div>
+        <label className="block text-xs font-extrabold text-[#4A4544]">Chọn từ tất cả học phần
+          <select value={filters.topicId} onChange={(event) => setFilters((current) => ({ ...current, topicId: event.target.value }))} className="mt-2 w-full rounded-2xl border-2 border-[#FCE7F3] bg-white px-4 py-3 text-xs font-bold text-[#4A4544] outline-none transition focus:border-[#F472B6] focus:ring-2 focus:ring-pink-100">
+            <option value="all">Tất cả học phần ({collectionItems.length})</option>
+            {matchingTopics.map((topic) => <option key={topic.id} value={topic.id}>{topic.title} ({collectionItems.filter((item) => item.topicId === topic.id).length})</option>)}
+          </select>
+        </label>
+        {filteredItems.length === 0 && <p role="status" className="rounded-2xl border border-[#FCE7F3] bg-[#FFF9FA] p-4 text-xs text-[#77716F]">Chưa có từ đồng nghĩa trong bộ lọc này. Hãy bổ sung synonym hoặc chọn học phần khác.</p>}
       </section>
 
-      <section className="space-y-4"><div className="flex items-center justify-between gap-3"><h2 className="flex items-center gap-2 text-lg font-bold text-[#4A4544]"><Sparkles className="h-5 w-5 text-[#F472B6]" aria-hidden="true" /> Chọn mode luyện tập</h2><span className="hidden text-xs font-semibold text-[#77716F] sm:inline">4 cách học</span></div><div className="grid gap-4 md:grid-cols-2">{modes.map(({ id, title, description, icon: Icon, iconClass, badgeClass, tone }) => <article key={id} className="synonym-mode-card group flex flex-col justify-between rounded-3xl border border-[#FCE7F3] bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md"><div><div className="mb-3 flex items-center justify-between"><span className={`rounded-2xl p-3 ${iconClass}`}><Icon className="h-6 w-6" aria-hidden="true" /></span><span className={`rounded-full border px-3 py-1 text-xs font-extrabold ${badgeClass}`}>Có dữ liệu</span></div><h3 className="text-base font-bold text-[#4A4544] transition group-hover:text-[#F472B6]">{title}</h3><p className="mt-1 text-xs leading-relaxed text-[#77716F]">{description}</p><div className="mt-4 flex items-center gap-3 text-xs font-medium text-[#A39A98]"><span>{filteredItems.length} từ theo bộ lọc</span><span aria-hidden="true">•</span><span>Trộn một lần</span></div></div><button type="button" onClick={() => startSetup(id)} className={`mt-6 flex w-full items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-xs font-extrabold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] focus-visible:ring-offset-2 ${tone === 'indigo' ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white' : tone === 'amber' ? 'bg-amber-50 text-amber-700 hover:bg-amber-600 hover:text-white' : 'bg-[#FFF1F2] text-[#F472B6] hover:bg-[#F472B6] hover:text-white'}`}>Thiết lập {title}</button></article>)}</div></section>
+      <section className="space-y-4"><div className="flex items-center justify-between gap-3"><h2 className="flex items-center gap-2 text-lg font-bold text-[#4A4544]"><Sparkles className="h-5 w-5 text-[#F472B6]" aria-hidden="true" /> Chọn mode luyện tập</h2><span className="hidden text-xs font-semibold text-[#77716F] sm:inline">4 cách học</span></div><div className="grid gap-4 md:grid-cols-2">{modes.map(({ id, title, description, icon: Icon, iconClass, badgeClass, tone }) => <article key={id} className="synonym-mode-card group flex flex-col justify-between rounded-3xl border border-[#FCE7F3] bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md"><div><div className="mb-3 flex items-center justify-between"><span className={`rounded-2xl p-3 ${iconClass}`}><Icon className="h-6 w-6" aria-hidden="true" /></span><span className={`rounded-full border px-3 py-1 text-xs font-extrabold ${badgeClass}`}>{eligibleCounts[id] > 0 ? 'Có dữ liệu' : 'Chưa đủ dữ liệu'}</span></div><h3 className="text-base font-bold text-[#4A4544] transition group-hover:text-[#F472B6]">{title}</h3><p className="mt-1 text-xs leading-relaxed text-[#77716F]">{description}</p><div className="mt-4 flex items-center gap-3 text-xs font-medium text-[#A39A98]"><span>{eligibleCounts[id]} từ theo bộ lọc</span><span aria-hidden="true">•</span><span>Trộn một lần</span></div></div><button type="button" onClick={() => startSetup(id)} className={`mt-6 flex w-full items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-xs font-extrabold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6] focus-visible:ring-offset-2 ${tone === 'indigo' ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white' : tone === 'amber' ? 'bg-amber-50 text-amber-700 hover:bg-amber-600 hover:text-white' : 'bg-[#FFF1F2] text-[#F472B6] hover:bg-[#F472B6] hover:text-white'}`}>Thiết lập {title}</button></article>)}</div></section>
 
       {missingSynonyms.length > 0 && <section className="synonym-missing rounded-3xl border border-dashed border-[#F1BFC8] bg-white/80 p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-bold text-[#4A4544]">Các từ chưa có synonym</h2><p className="mt-1 text-sm text-[#77716F]">Bổ sung trực tiếp bằng modal sửa vocabulary hiện tại.</p></div><span className="rounded-full border border-[#FCE7F3] bg-[#FFF1F2] px-3 py-1.5 text-xs font-extrabold text-[#D95476]">{missingSynonyms.length} từ</span></div><div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{missingSynonyms.slice(0, 6).map((vocabulary) => <div key={vocabulary.id} className="flex items-center justify-between gap-3 rounded-xl bg-[#FFF9FA] px-3 py-2.5"><span className="min-w-0 truncate text-sm font-bold text-[#5C635D]">{vocabulary.word}</span><button type="button" onClick={() => onOpenEditVocabulary(vocabulary)} className="shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-[#D95476] hover:bg-[#FFF1F2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F472B6]">Thêm synonym</button></div>)}</div></section>}
     </div>
