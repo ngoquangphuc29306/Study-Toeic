@@ -587,15 +587,17 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
   // Derive Quiz options dynamically using pure seeded shuffle
   const { quizOptions, correctQuizIndex } = useMemo(() => {
-    if (!currentVocab || activeVocabs.length === 0) {
+    if (!currentVocab || !currentVocab.meaning.trim() || activeVocabs.length === 0) {
       return { quizOptions: [], correctQuizIndex: 0 };
     }
     const distractors = activeVocabs
       .filter((v) => v.id !== currentVocab.id)
       .map((v) => v.meaning);
 
-    const seededDistractors = seededShuffle(distractors, currentVocab.id + '_distractors').slice(0, 3);
-    const choices = uniqueQuizLabels([currentVocab.meaning, ...seededDistractors]);
+    // Reserve the correct label before sampling distinct alternatives.
+    const distinctMeanings = uniqueQuizLabels([currentVocab.meaning, ...distractors]);
+    const seededDistractors = seededShuffle(distinctMeanings.slice(1), currentVocab.id + '_distractors').slice(0, 3);
+    const choices = [currentVocab.meaning, ...seededDistractors];
     const shuffled = seededShuffle(choices, currentVocab.id + '_choices');
 
     return {
@@ -1301,6 +1303,12 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isCompleted || !currentVocab || showSettingsModal || showReportModal || showEditModal) return;
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.isComposing || e.repeat) return;
+
+      // Native controls and editable descendants own their keyboard behavior.
+      const interactiveSelector = 'button, input, textarea, select, a[href], summary, [contenteditable]:not([contenteditable="false"]), [role="button"], [role="link"], [role="textbox"], [role="combobox"], [role="listbox"], [role="option"], [role="checkbox"], [role="radio"], [role="switch"], [role="slider"], [role="spinbutton"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="dialog"], [role="alertdialog"], [aria-modal="true"], [tabindex], dialog';
+      const target = e.target instanceof Element ? e.target : null;
+      if (target?.closest(interactiveSelector) || document.activeElement?.closest(interactiveSelector)) return;
 
       if (e.code === 'Space' && subMode === 'flashcard') {
         e.preventDefault();
@@ -1315,11 +1323,6 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
           }
           return nextState;
         });
-      } else if (e.code === 'Tab') {
-        e.preventDefault();
-        if (!ratingSubmitLockRef.current) {
-          setShowRatingButtons(true);
-        }
       } else if (e.code === 'Enter') {
         if (subMode === 'typing' && !typingSubmitted) {
           e.preventDefault();
@@ -1916,7 +1919,9 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
                   disabled={typingSubmitted}
                   onChange={(e) => setTypedInput(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
+                    if (e.key === 'Enter' && !e.defaultPrevented && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !e.nativeEvent.isComposing && !e.repeat) {
+                      e.preventDefault();
+                      e.stopPropagation();
                       if (!typingSubmitted) handleCheckTyping();
                     }
                   }}
