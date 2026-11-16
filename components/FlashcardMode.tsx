@@ -45,7 +45,6 @@ import {
 import { useToast } from '../contexts/ToastContext';
 import { applyRatingToQueue } from '../lib/session/queueTransition';
 import type { StudySessionSnapshot } from '../lib/session/types';
-import { createClient } from '@/lib/supabase/client';
 import { AddVocabModal } from './AddVocabModal';
 import gsap from 'gsap';
 import { motionTokens } from '../lib/animation/motionTokens';
@@ -97,6 +96,7 @@ type VocabularyUpdate = Partial<Pick<Vocabulary,
 >>;
 
 interface FlashcardModeProps {
+  userId: string | null;
   vocabularies: Vocabulary[];
   topics: Topic[];
   selectedTopicId: string;
@@ -116,7 +116,14 @@ interface FlashcardModeProps {
 
 type StudySubMode = 'flashcard' | 'quiz' | 'typing' | 'pronounce';
 
-export const FlashcardMode: React.FC<FlashcardModeProps> = ({
+// Identity changes start a fresh local session and invalidate the old mount's
+// in-flight work, even when both accounts have the same vocabulary IDs.
+export const FlashcardMode: React.FC<FlashcardModeProps> = (props) => (
+  <FlashcardSession key={props.userId} {...props} />
+);
+
+const FlashcardSession: React.FC<FlashcardModeProps> = ({
+  userId,
   vocabularies,
   topics,
   selectedTopicId,
@@ -162,17 +169,6 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
 
   // Edit vocabulary modal state
   const [showEditModal, setShowEditModal] = useState<boolean>(false);
-
-  // Phase 6: Helper to get authenticated user ID
-  const getUserId = useCallback(async (): Promise<string | null> => {
-    try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      return user?.id || null;
-    } catch {
-      return null;
-    }
-  }, []);
 
   const stopRecognition = useCallback(() => {
     recognitionAttemptRef.current += 1;
@@ -254,19 +250,11 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   setStudyQueue([]);
   setIsSessionRestored(false);
 
-  const clearPreviousStudySession = async () => {
-    const userId = await getUserId();
-
-    if (userId) {
-      clearStudySession(userId);
-    }
-  };
-
-  void clearPreviousStudySession();
+  if (userId) clearStudySession(userId);
 }, [
   selectedTopicId,
   initialStatus,
-  getUserId,
+  userId,
 ]);
 
   // Stable timestamp for due-time calculations
@@ -466,8 +454,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     if (isSessionRestored) return;
     if (activeVocabs.length === 0) return;
 
-    const restoreSession = async () => {
-      const userId = await getUserId();
+    const restoreSession = () => {
       if (!userId) {
         // No user, initialize queue from activeVocabs
         setStudyQueue(activeVocabs.map(v => v.id));
@@ -501,7 +488,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     };
 
     restoreSession();
-  }, [activeVocabs, filterTopic, filterStatus, isSessionRestored, getUserId, topicVocabs]);
+  }, [activeVocabs, filterTopic, filterStatus, isSessionRestored, userId, topicVocabs]);
 
   // Phase 6 Fix: Clear session only on explicit completion, not unmount
   // sessionStorage naturally handles tab lifecycle
@@ -833,11 +820,10 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   // Never auto-submit after a remount. If a response was interrupted, restore
   // only the action metadata so the learner can explicitly retry with its key.
   useEffect(() => {
-    let cancelled = false;
     if (!currentVocabId) return;
 
-    void (async () => {
-      const userId = await getUserId();
+    let cancelled = false;
+    queueMicrotask(() => {
       const pendingAction = userId ? loadPendingRatingAction(userId) : null;
       if (cancelled || !pendingAction || pendingAction.vocabularyId !== currentVocabId) return;
 
@@ -848,17 +834,14 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
           ? 'Đánh giá trước đã được lưu nhưng phiên học chưa hoàn tất. Hãy tiếp tục với cùng kết quả.'
           : 'Đánh giá trước chưa được xác nhận. Hãy thử lại với cùng kết quả.'
       );
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentVocabId, getUserId]);
+    });
+    return () => { cancelled = true; };
+  }, [currentVocabId, userId]);
 
   // Handle Progress Rating with SRS. The RPC is committed before the queue so
   // a derived-data refresh can never make this card look like a failed rating.
   const handleRating = useCallback(async (isMastered: boolean, rating?: SrsRating) => {
-    if (!currentVocab || ratingSubmitLockRef.current) return;
+    if (!userId || !currentVocab || ratingSubmitLockRef.current) return;
 
     const srsRating: SrsRating = rating || (isMastered ? 'mastered' : 'good');
     const newStatus = isMastered || srsRating === 'mastered' ? 'mastered' : 'learning';
@@ -891,7 +874,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     setIsSubmitting(true);
     setSubmissionError(null);
 
-    const actionUserId = await getUserId();
+    const actionUserId = userId;
     const retryingAction: PendingRatingAction = {
       ...pendingAction,
       status: 'retrying',
@@ -918,6 +901,8 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       // this resolves, so refresh errors cannot reach this rollback boundary.
       await onUpdateProgress(ratedVocabId, newStatus, srsRating, pendingAction.idempotencyKey);
     } catch (err) {
+      if (!isFlashcardMountedRef.current) return;
+
       // A transport failure may still mean that the RPC committed. Keep the
       // same key in retrying state and do not advance or create a new key.
       const isPermanentContractError =
@@ -948,6 +933,11 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       setIsSubmitting(false);
       return;
     }
+
+    // Never recreate recovery data cleared by logout/account switch, or let an
+    // old action update the replacement session. Its original pending key is
+    // already available for explicit recovery after an ordinary remount.
+    if (!isFlashcardMountedRef.current) return;
 
     // The RPC has now returned a validated success/already_processed result.
     // Keep the key until the local queue/session commit completes so an
@@ -1044,7 +1034,7 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
       ratingSubmitLockRef.current = false;
       setIsSubmitting(false);
     }
-  }, [currentVocab, safeIndex, onUpdateProgress, onStudySessionCompleted, studyQueue, filterTopic, filterStatus, getUserId, prefersReducedMotion, stopRecognition]);
+  }, [currentVocab, safeIndex, onUpdateProgress, onStudySessionCompleted, studyQueue, filterTopic, filterStatus, userId, prefersReducedMotion, stopRecognition]);
 
   // Handle Rating Selection from 4 evaluation buttons
   const handleSelectSrsRating = useCallback((srsRating: SrsRating) => {
@@ -1364,14 +1354,13 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     handleQuizSelect,
   ]);
 
-  const restartSession = async () => {
+  const restartSession = () => {
     setCurrentIndex(0);
     setIsFlipped(false);
     setIsCompleted(false);
     setSessionStats({ mastered: 0, learningVocabularyIds: [], needsReview: 0 });
     setSubMode('flashcard');
     // Phase 6 Fix: Clear session on explicit restart
-    const userId = await getUserId();
     if (userId) {
       clearStudySession(userId);
     }

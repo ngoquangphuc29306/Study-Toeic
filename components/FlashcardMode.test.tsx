@@ -2,11 +2,15 @@
 import { act } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { FlashcardMode } from './FlashcardMode';
+import { loadPendingRatingAction, loadStudySession, savePendingRatingAction, saveStudySession } from '../lib/session/storage';
+import { updateUserProgress } from '../services/vocabService';
+import type { RatingResult } from '../services/progressService';
 import type { Vocabulary } from '../lib/types';
 import { button, change, click, mount } from '../features/synonym-practice/components/test-utils/dom';
 
 vi.mock('../contexts/ToastContext', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
-vi.mock('@/lib/supabase/client', () => ({ createClient: () => ({ auth: { getUser: async () => ({ data: { user: null } }) } }) }));
+const requests = vi.hoisted(() => ({ getUser: vi.fn(), rpc: vi.fn() }));
+vi.mock('@/lib/supabase/client', () => ({ createClient: () => ({ auth: { getUser: requests.getUser }, rpc: requests.rpc }) }));
 vi.mock('../hooks/use-prefers-reduced-motion', () => ({ usePrefersReducedMotion: () => true }));
 vi.mock('gsap', () => ({ default: { context: (callback: () => void) => { callback(); return { revert() {} }; }, set() {} } }));
 
@@ -15,7 +19,7 @@ const onUpdateProgress = vi.fn();
 const vocabs: Vocabulary[] = ['Correct', ...Array(12).fill(' correct '), ...Array(12).fill('Other'), 'Third', 'Fourth'].map((meaning, index) => ({
   id: `v${index}`, word: `word${index}`, meaning, topic_id: 't', part_of_speech: 'noun',
 }));
-const view = (vocabularies = vocabs) => <FlashcardMode vocabularies={vocabularies} topics={[]} selectedTopicId="all" onUpdateProgress={onUpdateProgress} onBackToDashboard={() => {}} onSwitchToSynonyms={() => {}} />;
+const view = (vocabularies = vocabs, userId: string | null = 'user-a') => <FlashcardMode userId={userId} vocabularies={vocabularies} topics={[]} selectedTopicId="all" onUpdateProgress={onUpdateProgress} onBackToDashboard={() => {}} onSwitchToSynonyms={() => {}} />;
 async function key(target: EventTarget, code: string, options: KeyboardEventInit = {}) {
   const event = new KeyboardEvent('keydown', { key: code === 'Space' ? ' ' : code, code, bubbles: true, cancelable: true, ...options });
   await act(async () => { target.dispatchEvent(event); });
@@ -24,7 +28,10 @@ async function key(target: EventTarget, code: string, options: KeyboardEventInit
 const mode = (number: number) => expect(dom.container.textContent).toContain(`Chế độ ${number}/4`);
 beforeEach(async () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
-  onUpdateProgress.mockClear();
+  sessionStorage.clear();
+  requests.getUser.mockReset().mockResolvedValue({ data: { user: { id: 'wrong-user' } } });
+  requests.rpc.mockReset().mockResolvedValue({ data: savedRating, error: null });
+  onUpdateProgress.mockReset().mockImplementation(updateUserProgress);
   dom = await mount(view());
 });
 afterEach(async () => { await dom.unmount(); vi.unstubAllGlobals(); });
@@ -175,4 +182,117 @@ it.each([2, 3])('renders exactly %i real choices for a small distinct pool', asy
   const labels = [...dom.container.querySelectorAll('[data-flash-quiz-option] span.font-semibold')].map(node => node.textContent);
   expect(labels).toHaveLength(size);
   expect(labels.sort()).toEqual(meanings.sort());
+});
+const savedRating: RatingResult = { status: 'success', new_status: 'learning', interval_hours: 24, next_review_at: '2026-11-16T00:00:00Z', review_count: 1, again_count: 0 };
+async function rate(label = 'Tốt') {
+  await key(document.body, 'Space');
+  await click(button(dom.container, 'Đã thuộc'));
+  await click(button(dom.container, new RegExp(`^${label}`)));
+}
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+it('rates with one RPC and zero Auth requests, saving the page user snapshot', async () => {
+  requests.getUser.mockClear();
+  await rate();
+  expect(requests.getUser).not.toHaveBeenCalled();
+  expect(requests.rpc).toHaveBeenCalledTimes(1);
+  expect(requests.rpc).toHaveBeenCalledWith('submit_vocabulary_rating', { p_vocabulary_id: 'v0', p_rating: 'good', p_idempotency_key: expect.any(String) });
+  expect(loadStudySession('user-a')).toMatchObject({ userId: 'user-a', currentIndex: 1 });
+  expect(loadStudySession('wrong-user')).toBeNull();
+  expect(loadPendingRatingAction('user-a')).toBeNull();
+});
+it('keeps a failed save on the same card and explicitly retries the original key', async () => {
+  requests.rpc.mockResolvedValueOnce({ data: null, error: { message: 'offline' } });
+  await rate();
+  expect(loadStudySession('user-a')).toBeNull();
+  const pending = loadPendingRatingAction('user-a');
+  expect(pending).toMatchObject({ vocabularyId: 'v0', rating: 'good', status: 'retrying' });
+  expect(dom.container.textContent).toContain('word0');
+  requests.rpc.mockResolvedValueOnce({ data: { ...savedRating, status: 'already_processed' }, error: null });
+  await click(button(dom.container, 'Thử lại'));
+  expect(requests.rpc).toHaveBeenCalledTimes(2);
+  expect(requests.rpc.mock.calls[1][1].p_idempotency_key).toBe(pending?.idempotencyKey);
+  expect(loadStudySession('user-a')?.currentIndex).toBe(1);
+  expect(loadPendingRatingAction('user-a')).toBeNull();
+  expect(requests.getUser).not.toHaveBeenCalled();
+});
+it.each(['retrying', 'confirmed'] as const)('restores only the page user session and %s action without auto-submitting', async (status) => {
+  await dom.unmount();
+  saveStudySession({ version: 1, userId: 'user-a', mode: 'new', vocabularyIds: ['v1', 'v0'], currentIndex: 0, selectedTopicId: 'all', initialStatus: 'new', startedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  savePendingRatingAction('user-a', { vocabularyId: 'v1', isMastered: false, rating: 'good', idempotencyKey: 'original-key', startedAt: Date.now(), status });
+  savePendingRatingAction('wrong-user', { vocabularyId: 'v1', isMastered: false, rating: 'easy', idempotencyKey: 'foreign-key', startedAt: Date.now(), status });
+  dom = await mount(view());
+  expect(requests.rpc).not.toHaveBeenCalled();
+  expect(dom.container.textContent).toContain('word1');
+  await click(button(dom.container, 'Thử lại'));
+  expect(requests.rpc.mock.calls[0][1]).toMatchObject({ p_vocabulary_id: 'v1', p_rating: 'good', p_idempotency_key: 'original-key' });
+  expect(loadPendingRatingAction('wrong-user')?.idempotencyKey).toBe('foreign-key');
+});
+it.each([['user-b', false], [null, false], ['user-b', true], [null, true]] as const)('ignores an in-flight response after identity becomes %s (failure=%s)', async (nextUser, fails) => {
+  const request = deferred<RatingResult>();
+  onUpdateProgress.mockReturnValueOnce(request.promise);
+  await rate();
+  await dom.render(view(vocabs, nextUser));
+  sessionStorage.clear(); // logout cleanup must not be undone by a late response
+  await act(async () => { if (fails) request.reject(new Error('late failure')); else request.resolve(savedRating); });
+  expect(sessionStorage.length).toBe(0);
+  expect(dom.container.textContent).toContain('word0');
+  expect(dom.container.textContent).not.toContain('late failure');
+  if (nextUser) {
+    await rate();
+    expect(loadStudySession(nextUser)?.currentIndex).toBe(1);
+  }
+});
+it('does not submit or write recovery storage without an authenticated page identity', async () => {
+  await dom.render(view(vocabs, null));
+  await rate();
+  expect(onUpdateProgress).not.toHaveBeenCalled();
+  expect(sessionStorage.length).toBe(0);
+});
+it('keeps an expired-session save pending and retries the same key after reauthentication', async () => {
+  requests.rpc.mockResolvedValueOnce({ data: null, error: { status: 401, code: 'PGRST301', message: 'JWT expired' } });
+  await rate();
+  expect(dom.container.textContent).toContain('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+  expect(loadStudySession('user-a')).toBeNull();
+  const pending = loadPendingRatingAction('user-a');
+  expect(pending).toMatchObject({ vocabularyId: 'v0', status: 'retrying' });
+  await click(button(dom.container, 'Thử lại'));
+  expect(requests.rpc.mock.calls[1][1].p_idempotency_key).toBe(pending?.idempotencyKey);
+  expect(loadStudySession('user-a')?.currentIndex).toBe(1);
+  expect(requests.getUser).not.toHaveBeenCalled();
+});
+it('holds the submission lock until the RPC settles and keeps the original key across remount', async () => {
+  const request = deferred<RatingResult>();
+  onUpdateProgress.mockReturnValueOnce(request.promise);
+  await rate();
+  await key(document.body, 'Space');
+  await key(document.body, 'Digit3');
+  expect(onUpdateProgress).toHaveBeenCalledTimes(1);
+  const pending = loadPendingRatingAction('user-a');
+  await dom.unmount();
+  await act(async () => request.resolve(savedRating));
+  expect(loadPendingRatingAction('user-a')?.idempotencyKey).toBe(pending?.idempotencyKey);
+  dom = await mount(view());
+  expect(onUpdateProgress).toHaveBeenCalledTimes(1);
+  await click(button(dom.container, 'Thử lại'));
+  expect(onUpdateProgress.mock.calls[1][3]).toBe(pending?.idempotencyKey);
+  expect(loadStudySession('user-a')?.currentIndex).toBe(1);
+});
+it('keeps a successful RPC committed when browser recovery storage is unavailable', async () => {
+  const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    await rate();
+    expect(requests.rpc).toHaveBeenCalledTimes(1);
+    expect(dom.container.textContent).toContain('word1');
+    expect(dom.container.textContent).not.toContain('Không thể lưu');
+    expect(loadPendingRatingAction('user-a')).toBeNull();
+  } finally {
+    storage.mockRestore();
+    warning.mockRestore();
+  }
 });

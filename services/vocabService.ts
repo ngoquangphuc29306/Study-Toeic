@@ -259,11 +259,7 @@ export async function updateUserProgress(
 ): Promise<RatingResult> {
   // Phase 5: Submit rating via atomic Supabase RPC
   // Server calculates schedule, updates progress, and inserts review log atomically
-  const userId = await getAuthUserId();
-  if (!userId) {
-    throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
-  }
-
+  // The JWT-authorized RPC owns authentication and per-user authorization.
   const effectiveRating: ProgressSrsRating = rating || (status === 'mastered' ? 'mastered' : 'good');
 
   try {

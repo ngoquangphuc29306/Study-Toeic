@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Upload, FileSpreadsheet, Download, CheckCircle, AlertCircle, Trash2, ArrowRight } from 'lucide-react';
 import { Collection, Topic, Vocabulary } from '../lib/types';
-import { parseExcelFile, downloadExcelTemplate, ParsedVocabRow } from '../lib/excelUtils';
+import type { ParsedVocabRow } from '../lib/excelUtils';
 
 interface ExcelImportModalProps {
   isOpen: boolean;
@@ -77,6 +77,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     setIsParsing(true);
 
     try {
+      const { parseExcelFile } = await import('../lib/excelUtils');
       const rows = await parseExcelFile(uploadedFile);
       if (rows.length === 0) {
         setErrorMsg('File Excel/CSV không chứa dữ liệu từ vựng hợp lệ.');
@@ -87,6 +88,17 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       setErrorMsg('Không thể đọc file. Vui lòng đảm bảo file là định dạng Excel (.xlsx, .xls) hoặc CSV hợp lệ.');
     } finally {
       setIsParsing(false);
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    setErrorMsg(null);
+    try {
+      const { downloadExcelTemplate } = await import('../lib/excelUtils');
+      downloadExcelTemplate();
+    } catch (err: unknown) {
+      console.error(err);
+      setErrorMsg('Không thể tải file mẫu. Vui lòng thử lại.');
     }
   };
 
@@ -192,7 +204,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
           <div className="flex items-center gap-2">
             <button
-              onClick={downloadExcelTemplate}
+              onClick={handleDownloadTemplate}
               className="flex items-center gap-1.5 px-3 sm:px-3.5 py-2 rounded-2xl bg-[#FFF1F2] hover:bg-[#FCE7F3] text-[#F472B6] border border-[#FCE7F3] text-xs font-bold transition-all cursor-pointer"
             >
               <Download className="w-4 h-4" />

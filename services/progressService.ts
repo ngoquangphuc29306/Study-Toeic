@@ -6,7 +6,7 @@
  */
 
 import { createClient } from '@/lib/supabase/client';
-import { throwIfUnauthorized } from '@/lib/supabase/authRetry';
+import { AuthSessionExpiredError, isUnauthorizedError, throwIfUnauthorized } from '@/lib/supabase/authRetry';
 import type { LearningStatus } from '@/lib/types';
 
 export interface ProgressRecord {
@@ -164,8 +164,8 @@ export async function submitVocabularyRating(
     console.error('submitVocabularyRating error:', error);
 
     // Handle specific error cases
-    if (error.message?.includes('Not authenticated')) {
-      throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+    if (isUnauthorizedError(error)) {
+      throw new AuthSessionExpiredError();
     }
     if (error.message?.includes('not found or access denied')) {
       throw new Error('Không tìm thấy từ vựng hoặc bạn không có quyền thao tác.');

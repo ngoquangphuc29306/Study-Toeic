@@ -72,10 +72,7 @@ import {
   exportVocabulariesAsCSV,
   exportBackupAsJSON
 } from '../../services/importExportService';
-import {
-  exportVocabulariesToExcel,
-  type VocabularyExportScope,
-} from '../../lib/excelUtils';
+import type { VocabularyExportScope } from '../../lib/excelUtils';
 import { createRequestCoordinator } from '../../lib/data/requestCoordinator';
 import { isCurrentRequest } from '../../lib/data/requestGeneration';
 import {
@@ -162,6 +159,7 @@ export default function AppPage() {
   const previousUserIdRef = useRef<string | null>(null);
   const authStatusRef = useRef<AuthStatus>('loading');
   const authUserIdRef = useRef<string | null>(null);
+  const ratingIdentityGenerationRef = useRef(0);
   const dataStatusRef = useRef<DataStatus>('idle');
   const lastDataLoadedAtRef = useRef<number | null>(null);
   const hasSuccessfulDataRef = useRef(false);
@@ -520,6 +518,7 @@ export default function AppPage() {
   }, []);
 
   const clearAppData = useCallback((outgoingUserId: string | null) => {
+    ratingIdentityGenerationRef.current += 1;
     if (outgoingUserId) clearStudySession(outgoingUserId);
 
     loadGenerationRef.current += 1;
@@ -780,6 +779,7 @@ export default function AppPage() {
 
   useEffect(() => {
     return () => {
+      ratingIdentityGenerationRef.current += 1;
       if (ratingDerivedRetryTimerRef.current) clearTimeout(ratingDerivedRetryTimerRef.current);
       if (ratingDerivedDebounceTimerRef.current) clearTimeout(ratingDerivedDebounceTimerRef.current);
     };
@@ -817,10 +817,24 @@ export default function AppPage() {
     rating?: SrsRating,
     idempotencyKey?: string
   ): Promise<RatingResult> => {
+    const actionUserId = authUserIdRef.current;
+    const identityGeneration = ratingIdentityGenerationRef.current;
+    if (!actionUserId || authStatusRef.current !== 'authenticated') {
+      throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+    }
+
     // Callers that own a retry lifecycle provide the original key. Legacy or
     // non-retrying callers still get one key per logical mutation invocation.
     const mutationIdempotencyKey = idempotencyKey || crypto.randomUUID();
     const ratingResult = await updateUserProgress(vocabId, status, rating, mutationIdempotencyKey);
+
+    // A completed RPC stays successful, but cannot patch another auth session,
+    // including a sign-out followed by signing back into the same account.
+    if (
+      actionUserId !== authUserIdRef.current ||
+      identityGeneration !== ratingIdentityGenerationRef.current ||
+      authStatusRef.current !== 'authenticated'
+    ) return ratingResult;
 
     const patchedVocabularies = vocabulariesRef.current.map((vocabulary) => (
       vocabulary.id === vocabId ? applyRatingResult(vocabulary, ratingResult) : vocabulary
@@ -1116,11 +1130,12 @@ export default function AppPage() {
     }
   };
 
-  const handleExportExcel = (scope: VocabularyExportScope) => {
+  const handleExportExcel = async (scope: VocabularyExportScope) => {
     if (isExportingExcel) return;
 
     setIsExportingExcel(true);
     try {
+      const { exportVocabulariesToExcel } = await import('../../lib/excelUtils');
       const exportedCount = exportVocabulariesToExcel({
         vocabularies,
         topics,
@@ -1263,6 +1278,7 @@ export default function AppPage() {
 
         {activeTab === 'flashcard' && (
           <FlashcardMode
+            userId={authUserId}
             vocabularies={vocabularies}
             topics={topics}
             selectedTopicId={selectedTopicId}
