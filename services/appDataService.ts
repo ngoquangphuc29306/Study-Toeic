@@ -1,5 +1,6 @@
 import type { Collection, StudyStats, Topic, Vocabulary } from '../lib/types';
 import { deriveStudyStats } from '../lib/srs/deriveProgress';
+import { composeCollectionStats } from '../lib/data/collectionStats';
 import { getCollections, getTopics, getVocabByTopic } from './vocabService';
 import { getDashboardMetrics, getWeekActivity, type DashboardMetrics } from './dashboardService';
 import { withSessionRetry } from '../lib/supabase/authRetry';
@@ -13,14 +14,29 @@ export interface AppDerivedData {
   };
 }
 
-export interface AppDataSnapshot {
+export interface AppCoreData {
   collections: Collection[];
   topics: Topic[];
   vocabularies: Vocabulary[];
   stats: StudyStats;
-  dashboardMetrics: DashboardMetrics | null;
-  weekActivity: Array<{ date: string; count: number }> | null;
-  aggregateErrors: AppDerivedData['aggregateErrors'];
+}
+
+export interface AppDataSnapshot extends AppCoreData, AppDerivedData {}
+
+/** Core readiness is independent of review-log aggregates. */
+export async function loadAppCoreData(authenticatedUserId: string): Promise<AppCoreData> {
+  const [collections, topics, vocabularies] = await Promise.all([
+    withSessionRetry(() => getCollections(authenticatedUserId)),
+    withSessionRetry(() => getTopics(undefined, authenticatedUserId, true)),
+    withSessionRetry(() => getVocabByTopic('all', authenticatedUserId)),
+  ]);
+
+  return {
+    collections: composeCollectionStats(collections, topics, vocabularies),
+    topics,
+    vocabularies,
+    stats: deriveStudyStats(vocabularies),
+  };
 }
 
 /**
@@ -57,19 +73,7 @@ export async function loadAppDataSnapshot(authenticatedUserId: string): Promise<
     loadAppDerivedData(authenticatedUserId),
   ]);
 
-  const composedCollections = collections.map((collection) => {
-    const collectionTopicIds = new Set(
-      topics
-        .filter((topic) => topic.collection_id === collection.id)
-        .map((topic) => topic.id)
-    );
-
-    return {
-      ...collection,
-      total_topics: collectionTopicIds.size,
-      total_words: vocabularies.filter((vocabulary) => collectionTopicIds.has(vocabulary.topic_id)).length,
-    };
-  });
+  const composedCollections = composeCollectionStats(collections, topics, vocabularies);
 
   return {
     collections: composedCollections,

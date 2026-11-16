@@ -23,7 +23,7 @@ vi.mock('../lib/supabase/authRetry', () => ({
   withSessionRetry: <T,>(operation: () => Promise<T>) => operation(),
 }));
 
-import { loadAppDataSnapshot } from './appDataService';
+import { loadAppCoreData, loadAppDataSnapshot } from './appDataService';
 
 describe('loadAppDataSnapshot', () => {
   beforeEach(() => {
@@ -64,6 +64,27 @@ describe('loadAppDataSnapshot', () => {
     expect(snapshot.dashboardMetrics).toBeNull();
     expect(snapshot.weekActivity).toEqual([{ date: '2026-08-04', count: 1 }]);
     expect(snapshot.aggregateErrors.dashboardMetrics).toBeInstanceOf(Error);
+  });
+
+  it('loads composed core data without waiting for or requesting aggregates', async () => {
+    mocks.getDashboardMetrics.mockReturnValue(new Promise(() => undefined));
+    mocks.getWeekActivity.mockReturnValue(new Promise(() => undefined));
+
+    const core = await loadAppCoreData('user-1');
+
+    expect(core.collections[0]).toMatchObject({ id: 'collection-1', total_topics: 1, total_words: 1 });
+    expect(core.vocabularies[0].word).toBe('agenda');
+    expect(core.stats).toMatchObject({ totalWords: 1, newCount: 1 });
+    expect(mocks.getDashboardMetrics).not.toHaveBeenCalled();
+    expect(mocks.getWeekActivity).not.toHaveBeenCalled();
+    expect(mocks.getCollections).toHaveBeenCalledWith('user-1');
+    expect(mocks.getTopics).toHaveBeenCalledWith(undefined, 'user-1', true);
+    expect(mocks.getVocabByTopic).toHaveBeenCalledWith('all', 'user-1');
+  });
+
+  it('rejects a failed core read', async () => {
+    mocks.getVocabByTopic.mockRejectedValue(new Error('core vocabulary failure'));
+    await expect(loadAppCoreData('user-1')).rejects.toThrow('core vocabulary failure');
   });
 
   it('still rejects when core data fails', async () => {

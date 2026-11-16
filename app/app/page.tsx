@@ -60,9 +60,9 @@ import { CollectionHasChildrenError } from '../../services/collectionErrors';
 import { TopicHasVocabulariesError } from '../../services/topicErrors';
 import type { RatingResult } from '../../services/progressService';
 import {
-  loadAppDataSnapshot,
+  loadAppCoreData,
   loadAppDerivedData,
-  type AppDataSnapshot,
+  type AppCoreData,
   type AppDerivedData,
 } from '../../services/appDataService';
 import { createClient } from '@/lib/supabase/client';
@@ -108,10 +108,11 @@ type DataStatus = 'idle' | 'loading' | 'success' | 'error';
 const DATA_STALE_MS = 5 * 60 * 1000;
 const RESUME_DEBOUNCE_MS = 750;
 
-const appDataCoordinator = createRequestCoordinator<AppDataSnapshot>();
-const derivedDataCoordinator = createRequestCoordinator<AppDerivedData>();
-
 export default function AppPage() {
+  const [coreDataCoordinator] = useState(() => createRequestCoordinator<AppCoreData>());
+  const [derivedDataCoordinator] = useState(() => createRequestCoordinator<AppDerivedData>());
+  const mountedRef = useRef(false);
+  const derivedGenerationRef = useRef(0);
   const router = useRouter();
   const { showToast } = useToast();
 
@@ -132,7 +133,7 @@ export default function AppPage() {
     masteredCount: 0,
     learningCount: 0,
     newCount: 0,
-    dailyStreak: 3,
+    dailyStreak: 0,
     todayStudiedCount: 0,
   });
 
@@ -141,8 +142,10 @@ export default function AppPage() {
   const [weekActivity, setWeekActivity] = useState<Array<{ date: string; count: number }>>([]);
   const [isLoadingDashboardMetrics, setIsLoadingDashboardMetrics] = useState(true);
 
-  // Extract authoritative streak for Navbar
-  const currentStreak = dashboardMetrics?.studyStreak ?? 0;
+  const [isLoadingWeekActivity, setIsLoadingWeekActivity] = useState(true);
+
+  // Unknown until the first successful aggregate, including after a failed load.
+  const currentStreak = dashboardMetrics?.studyStreak ?? null;
 
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [isCollectionModalOpen, setIsCollectionModalOpen] = useState<boolean>(false);
@@ -173,12 +176,15 @@ export default function AppPage() {
   const authFailureHandlerRef = useRef<(userId: string) => void>(() => undefined);
   const authRetryBlockedRef = useRef(false);
   const sessionCheckResolvedRef = useRef(false);
+  const initialSessionUserIdRef = useRef<string | null>(null);
+  const authDataLoadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const vocabulariesRef = useRef<Vocabulary[]>([]);
   const localDataRevisionRef = useRef(0);
   const ratingDerivedDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scheduleDerivedRetry = useCallback(() => {
-    if (ratingDerivedRetryTimerRef.current || !ratingDerivedNeedsRetryRef.current) return;
+    if (ratingDerivedRetryTimerRef.current || !ratingDerivedNeedsRetryRef.current ||
+      ratingDerivedRetryAttemptRef.current >= 1 || !mountedRef.current) return;
 
     ratingDerivedRetryAttemptRef.current = 1;
     ratingDerivedRetryTimerRef.current = setTimeout(() => {
@@ -187,103 +193,68 @@ export default function AppPage() {
     }, 3000);
   }, []);
 
-  // Shared app-data refresh for initial load, resume, and mutations.
+  // Core and aggregates start together and commit independently.
   const refreshAppData = useCallback(async () => {
     const currentUserId = authUserIdRef.current;
-    if (authStatusRef.current !== 'authenticated' || !currentUserId) return;
+    if (!mountedRef.current || authStatusRef.current !== 'authenticated' || !currentUserId) return;
 
     const generation = ++loadGenerationRef.current;
+    const identityGeneration = ratingIdentityGenerationRef.current;
     const localRevisionAtRequest = localDataRevisionRef.current;
-    const hadUsableData = hasSuccessfulDataRef.current;
+    const isCurrent = () => mountedRef.current &&
+      identityGeneration === ratingIdentityGenerationRef.current &&
+      isCurrentRequest(
+        { userId: currentUserId, generation },
+        { userId: authUserIdRef.current || '', generation: loadGenerationRef.current }
+      ) && authStatusRef.current === 'authenticated';
+
     dataStatusRef.current = 'loading';
     setDataStatus('loading');
     setDataError(null);
-    if (!hadUsableData) setIsLoadingDashboardMetrics(true);
+    ratingDerivedRetryAttemptRef.current = 0;
+    if (ratingDerivedRetryTimerRef.current) {
+      clearTimeout(ratingDerivedRetryTimerRef.current);
+      ratingDerivedRetryTimerRef.current = null;
+    }
+    // A new refresh must not relabel an older in-flight response as fresh.
+    coreDataCoordinator.clear(currentUserId);
+    const request = coreDataCoordinator.getOrCreate(currentUserId, () => loadAppCoreData(currentUserId));
+    ratingDerivedRefreshRef.current();
 
-    const request = (async () => {
-      try {
-        const snapshot = await appDataCoordinator.getOrCreate(
-          currentUserId,
-          () => loadAppDataSnapshot(currentUserId)
-        );
+    try {
+      const snapshot = await request;
+      if (!isCurrent()) return;
 
-        const aggregateAuthError = Object.values(snapshot.aggregateErrors)
-          .find((error) => isAuthSessionExpiredError(error) || isAuthRetryExhaustedError(error));
-        if (aggregateAuthError) throw aggregateAuthError;
-
-        if (!isCurrentRequest(
-          { userId: currentUserId, generation },
-          { userId: authUserIdRef.current || '', generation: loadGenerationRef.current }
-        ) || authStatusRef.current !== 'authenticated') return;
-
-        const hasLocalChanges = localDataRevisionRef.current !== localRevisionAtRequest;
-        const effectiveVocabularies = hasLocalChanges
-          ? vocabulariesRef.current
-          : snapshot.vocabularies;
-
-        setCollections(snapshot.collections);
-        setTopics(snapshot.topics);
-        vocabulariesRef.current = effectiveVocabularies;
-        setVocabularies(effectiveVocabularies);
-        setStats(hasLocalChanges ? deriveStudyStats(effectiveVocabularies) : snapshot.stats);
-        if (snapshot.dashboardMetrics) {
-          setDashboardMetrics(
-            mergeVocabularyProgressIntoMetrics(snapshot.dashboardMetrics, effectiveVocabularies)
-          );
-        }
-        if (snapshot.weekActivity) {
-          setWeekActivity(snapshot.weekActivity);
-        }
-        if (Object.keys(snapshot.aggregateErrors).length > 0) {
-          console.warn('Core EasyTOEIC data loaded, but some aggregate data is unavailable.', snapshot.aggregateErrors);
-        }
-        hasSuccessfulDataRef.current = true;
-        dataStatusRef.current = 'success';
-        setDataStatus('success');
-        setDataError(null);
-        const loadedAt = Date.now();
-        lastDataLoadedAtRef.current = loadedAt;
-        setLastDataLoadedAt(loadedAt);
-        setIsLoadingDashboardMetrics(false);
-        const hasAggregateErrors = Object.keys(snapshot.aggregateErrors).length > 0;
-        ratingDerivedNeedsRetryRef.current = hasAggregateErrors;
-        if (hasAggregateErrors) {
-          scheduleDerivedRetry();
-        } else {
-          ratingDerivedRetryAttemptRef.current = 0;
-          ratingDerivedWarningShownRef.current = false;
-        }
-      } catch (err) {
-        console.error('Error loading EasyTOEIC data:', err);
-        if (!isCurrentRequest(
-          { userId: currentUserId, generation },
-          { userId: authUserIdRef.current || '', generation: loadGenerationRef.current }
-        ) || authStatusRef.current !== 'authenticated') return;
-
-        if (isAuthSessionExpiredError(err)) {
-          authFailureHandlerRef.current(currentUserId);
-          return;
-        }
-
-        if (isAuthRetryExhaustedError(err)) {
-          authRetryBlockedRef.current = true;
-          dataStatusRef.current = 'error';
-          setDataStatus('error');
-          setDataError(err.message);
-          setIsLoadingDashboardMetrics(false);
-          return;
-        }
-
-        dataStatusRef.current = 'error';
-        setDataStatus('error');
-        setDataError(err instanceof Error ? err.message : 'Unable to load data. Please try again.');
-        // Keep the last successful snapshot. Only sign-out/user-switch reset
-        // is allowed to replace domain arrays with [] (see clearAppData).
-        setIsLoadingDashboardMetrics(false);
+      const hasLocalChanges = localDataRevisionRef.current !== localRevisionAtRequest;
+      const effectiveVocabularies = hasLocalChanges ? vocabulariesRef.current : snapshot.vocabularies;
+      setCollections(snapshot.collections);
+      setTopics(snapshot.topics);
+      vocabulariesRef.current = effectiveVocabularies;
+      setVocabularies(effectiveVocabularies);
+      setStats(hasLocalChanges ? deriveStudyStats(effectiveVocabularies) : snapshot.stats);
+      setDashboardMetrics((previous) => previous
+        ? mergeVocabularyProgressIntoMetrics(previous, effectiveVocabularies)
+        : previous);
+      hasSuccessfulDataRef.current = true;
+      dataStatusRef.current = 'success';
+      setDataStatus('success');
+      setDataError(null);
+      const loadedAt = Date.now();
+      lastDataLoadedAtRef.current = loadedAt;
+      setLastDataLoadedAt(loadedAt);
+    } catch (err) {
+      if (!isCurrent()) return;
+      console.error('Error loading EasyTOEIC data:', err);
+      if (isAuthSessionExpiredError(err)) {
+        authFailureHandlerRef.current(currentUserId);
+        return;
       }
-    })();
-    return request;
-  }, [scheduleDerivedRetry]);
+      if (isAuthRetryExhaustedError(err)) authRetryBlockedRef.current = true;
+      dataStatusRef.current = 'error';
+      setDataStatus('error');
+      setDataError(err instanceof Error ? err.message : 'Unable to load data. Please try again.');
+    }
+  }, [coreDataCoordinator]);
 
   // Phase 2C Fix: Auth state change listener
   // Phase 6 Fix: Track user identity to detect actual user switches
@@ -509,22 +480,34 @@ export default function AppPage() {
       : nextOrUpdater;
 
     localDataRevisionRef.current += 1;
+    derivedGenerationRef.current += 1;
+    if (authUserIdRef.current) derivedDataCoordinator.clear(authUserIdRef.current);
+    // A local mutation invalidates every pre-mutation aggregate and retry.
+    if (ratingDerivedRetryTimerRef.current) {
+      clearTimeout(ratingDerivedRetryTimerRef.current);
+      ratingDerivedRetryTimerRef.current = null;
+    }
+    ratingDerivedRetryAttemptRef.current = 0;
     vocabulariesRef.current = next;
     setVocabularies(next);
     setStats(deriveStudyStats(next));
     setDashboardMetrics((previous) => previous
       ? mergeVocabularyProgressIntoMetrics(previous, next)
       : previous);
-  }, []);
+  }, [derivedDataCoordinator]);
 
   const clearAppData = useCallback((outgoingUserId: string | null) => {
     ratingIdentityGenerationRef.current += 1;
+    initialSessionUserIdRef.current = null;
+    if (authDataLoadTimerRef.current) clearTimeout(authDataLoadTimerRef.current);
+    authDataLoadTimerRef.current = null;
     if (outgoingUserId) clearStudySession(outgoingUserId);
 
     loadGenerationRef.current += 1;
+    derivedGenerationRef.current += 1;
     localDataRevisionRef.current += 1;
     if (outgoingUserId) {
-      appDataCoordinator.clear(outgoingUserId);
+      coreDataCoordinator.clear(outgoingUserId);
       derivedDataCoordinator.clear(outgoingUserId);
     }
     hasSuccessfulDataRef.current = false;
@@ -544,6 +527,11 @@ export default function AppPage() {
     setDashboardMetrics(null);
     setWeekActivity([]);
     setIsLoadingDashboardMetrics(true);
+    setIsLoadingWeekActivity(true);
+    if (ratingDerivedRetryTimerRef.current) clearTimeout(ratingDerivedRetryTimerRef.current);
+    if (ratingDerivedDebounceTimerRef.current) clearTimeout(ratingDerivedDebounceTimerRef.current);
+    ratingDerivedRetryTimerRef.current = null;
+    ratingDerivedDebounceTimerRef.current = null;
     dataStatusRef.current = 'idle';
     setDataStatus('idle');
     setDataError(null);
@@ -554,7 +542,7 @@ export default function AppPage() {
     ratingDerivedRetryAttemptRef.current = 0;
     ratingDerivedWarningShownRef.current = false;
     authRetryBlockedRef.current = false;
-  }, []);
+  }, [coreDataCoordinator, derivedDataCoordinator]);
 
   const handleSessionExpired = useCallback((outgoingUserId: string) => {
     clearAppData(outgoingUserId);
@@ -600,6 +588,7 @@ export default function AppPage() {
   }, [refreshAppData]);
 
   const handleAuthSession = useCallback((event: AuthChangeEvent, session: { user?: { id: string } } | null) => {
+    if (!mountedRef.current) return;
     const currentUserId = session?.user?.id || null;
     const previousUserId = previousUserIdRef.current;
 
@@ -609,6 +598,10 @@ export default function AppPage() {
     // already been restored by getSession(). Only SIGNED_OUT is authoritative
     // for clearing an already authenticated user.
     if (event !== 'SIGNED_OUT' && !currentUserId && authUserIdRef.current) return;
+    // Subscription and getSession restore the same logical initial load.
+    // Genuine refreshes still start fresh requests with their own generations.
+    if (event === 'INITIAL_SESSION' && currentUserId &&
+      initialSessionUserIdRef.current === currentUserId) return;
 
     if (event === 'SIGNED_OUT' || !currentUserId) {
       if (event === 'SIGNED_OUT' || sessionCheckResolvedRef.current) {
@@ -635,7 +628,12 @@ export default function AppPage() {
 
     // Keep the auth callback lightweight; wait until session storage settles.
     if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
-      setTimeout(() => void refreshAppData(), 0);
+      initialSessionUserIdRef.current = currentUserId;
+      if (authDataLoadTimerRef.current) clearTimeout(authDataLoadTimerRef.current);
+      authDataLoadTimerRef.current = setTimeout(() => {
+        authDataLoadTimerRef.current = null;
+        void refreshAppData();
+      }, 0);
     } else if (event === 'TOKEN_REFRESHED') {
       scheduleResumeRefresh();
     }
@@ -643,6 +641,7 @@ export default function AppPage() {
 
   useEffect(() => {
     let isMounted = true;
+    mountedRef.current = true;
     let authRetryTimer: ReturnType<typeof setTimeout> | null = null;
     const supabase = createClient();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
@@ -667,10 +666,18 @@ export default function AppPage() {
     void resolveInitialSession();
     return () => {
       isMounted = false;
+      mountedRef.current = false;
+      initialSessionUserIdRef.current = null;
+      if (authDataLoadTimerRef.current) clearTimeout(authDataLoadTimerRef.current);
+      authDataLoadTimerRef.current = null;
+      loadGenerationRef.current += 1;
+      derivedGenerationRef.current += 1;
+      coreDataCoordinator.clearAll();
+      derivedDataCoordinator.clearAll();
       if (authRetryTimer) clearTimeout(authRetryTimer);
       subscription.unsubscribe();
     };
-  }, [handleAuthSession, router]);
+  }, [coreDataCoordinator, derivedDataCoordinator, handleAuthSession, router]);
 
   useEffect(() => {
     const handleVisibilityOrFocus = () => {
@@ -694,9 +701,19 @@ export default function AppPage() {
   // study session; aggregates are eventually consistent and must never reject it.
   const refreshRatingDerivedData = useCallback(async (): Promise<void> => {
     const currentUserId = authUserIdRef.current;
-    if (authStatusRef.current !== 'authenticated' || !currentUserId) return;
+    if (!mountedRef.current || authStatusRef.current !== 'authenticated' || !currentUserId) return;
 
-    const generation = loadGenerationRef.current;
+    const generation = ++derivedGenerationRef.current;
+    const identityGeneration = ratingIdentityGenerationRef.current;
+    const localRevisionAtRequest = localDataRevisionRef.current;
+    const isCurrent = () => mountedRef.current &&
+      identityGeneration === ratingIdentityGenerationRef.current &&
+      localRevisionAtRequest === localDataRevisionRef.current &&
+      isCurrentRequest(
+        { userId: currentUserId, generation },
+        { userId: authUserIdRef.current || '', generation: derivedGenerationRef.current }
+      ) && authStatusRef.current === 'authenticated';
+    derivedDataCoordinator.clear(currentUserId);
     const request = derivedDataCoordinator.getOrCreate(
       currentUserId,
       () => loadAppDerivedData(currentUserId)
@@ -704,21 +721,20 @@ export default function AppPage() {
 
     try {
       const snapshot = await request;
+      if (!isCurrent()) return;
       const aggregateAuthError = Object.values(snapshot.aggregateErrors)
         .find((error) => isAuthSessionExpiredError(error) || isAuthRetryExhaustedError(error));
       if (aggregateAuthError) throw aggregateAuthError;
-      if (!isCurrentRequest(
-        { userId: currentUserId, generation },
-        { userId: authUserIdRef.current || '', generation: loadGenerationRef.current }
-      ) || authStatusRef.current !== 'authenticated') return;
 
       if (snapshot.dashboardMetrics) {
-        setDashboardMetrics(
-          mergeVocabularyProgressIntoMetrics(snapshot.dashboardMetrics, vocabulariesRef.current)
-        );
+        setDashboardMetrics(hasSuccessfulDataRef.current
+          ? mergeVocabularyProgressIntoMetrics(snapshot.dashboardMetrics, vocabulariesRef.current)
+          : snapshot.dashboardMetrics);
+        setIsLoadingDashboardMetrics(false);
       }
       if (snapshot.weekActivity) {
         setWeekActivity(snapshot.weekActivity);
+        setIsLoadingWeekActivity(false);
       }
 
       const hasAggregateErrors = Object.keys(snapshot.aggregateErrors).length > 0;
@@ -738,10 +754,7 @@ export default function AppPage() {
         }
       }
     } catch (error) {
-      if (!isCurrentRequest(
-        { userId: currentUserId, generation },
-        { userId: authUserIdRef.current || '', generation: loadGenerationRef.current }
-      ) || authStatusRef.current !== 'authenticated') return;
+      if (!isCurrent()) return;
 
       if (isAuthSessionExpiredError(error)) {
         authFailureHandlerRef.current(currentUserId);
@@ -769,7 +782,7 @@ export default function AppPage() {
       // Retry once in the background. Further retries happen on focus/resume.
       scheduleDerivedRetry();
     }
-  }, [scheduleDerivedRetry, showToast]);
+  }, [derivedDataCoordinator, scheduleDerivedRetry, showToast]);
 
   useEffect(() => {
     ratingDerivedRefreshRef.current = () => {
@@ -998,6 +1011,7 @@ export default function AppPage() {
             : vocabulary
         )
       );
+      flushDebouncedRefresh();
 
       showToast(
         'Cập nhật từ vựng thành công! ✨',
@@ -1265,6 +1279,7 @@ export default function AppPage() {
             dashboardMetrics={dashboardMetrics}
             weekActivity={weekActivity}
             isLoadingMetrics={isLoadingDashboardMetrics}
+            isLoadingWeekActivity={isLoadingWeekActivity}
             onSelectTopicForFlashcard={handleSelectTopicForFlashcard}
             onSelectTopicForSynonyms={handleSelectTopicForSynonyms}
             onOpenCollectionModal={() => {

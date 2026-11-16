@@ -19,7 +19,7 @@ vi.mock('@/lib/supabase/client', () => ({ createClient: () => ({ auth: {
   getSession: async () => ({ data: { session: { user: { id: 'user-a' } } }, error: null }),
 } }) }));
 vi.mock('../../contexts/ToastContext', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
-vi.mock('../../services/appDataService', () => ({ loadAppDataSnapshot: mocks.snapshot, loadAppDerivedData: mocks.derived }));
+vi.mock('../../services/appDataService', () => ({ loadAppCoreData: mocks.snapshot, loadAppDataSnapshot: mocks.snapshot, loadAppDerivedData: mocks.derived }));
 vi.mock('../../services/vocabService', () => ({ updateUserProgress: mocks.update }));
 vi.mock('../../features/review-reminder', () => ({ useReviewReminder: () => ({}), ReviewReminderPopup: () => null }));
 vi.mock('../../components/Navbar', () => ({ Navbar: () => null }));

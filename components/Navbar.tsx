@@ -13,7 +13,7 @@ interface NavbarProps {
   activeTab: 'dashboard' | 'flashcard' | 'synonyms' | 'vocab-manager';
   setActiveTab: (tab: 'dashboard' | 'flashcard' | 'synonyms' | 'vocab-manager') => void;
   stats: StudyStats;
-  currentStreak: number; // Phase 9.8: Authoritative streak from dashboardMetrics
+  currentStreak: number | null; // Null until the authoritative aggregate succeeds.
   onOpenSqlModal: () => void;
   onOpenAddModal: () => void;
 }
@@ -154,7 +154,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Daily Streak Badge */}
           <div className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 bg-[#FFF1F2] border border-[#FCE7F3] rounded-2xl text-[11px] sm:text-xs font-bold text-[#F472B6]">
             <Flame className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#F472B6] fill-[#F472B6] animate-pulse shrink-0" />
-            <span className="whitespace-nowrap">{currentStreak}</span>
+            <span className="whitespace-nowrap" aria-label="Chuỗi ngày học tập" aria-busy={currentStreak === null}>
+              {currentStreak === null
+                ? <span className="inline-block h-3 w-4 rounded bg-gray-200 animate-pulse" aria-hidden="true" />
+                : currentStreak}
+            </span>
           </div>
 
           {/* Account Button - Mobile (avatar only) */}

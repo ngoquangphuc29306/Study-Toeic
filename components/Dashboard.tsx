@@ -49,6 +49,7 @@ interface DashboardProps {
   dashboardMetrics: DashboardMetrics | null; // Phase 9.8: Passed from parent
   weekActivity: Array<{ date: string; count: number }>; // Phase 9.8: Passed from parent
   isLoadingMetrics: boolean; // Phase 9.8: Passed from parent
+  isLoadingWeekActivity?: boolean;
   onSelectTopicForFlashcard: (topicId: string, initialStatus?: FlashcardInitialFilter) => void;
   onSelectTopicForSynonyms: (topicId: string) => void;
   onOpenCollectionModal: () => void;
@@ -66,6 +67,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   dashboardMetrics,
   weekActivity,
   isLoadingMetrics,
+  isLoadingWeekActivity = isLoadingMetrics,
   onSelectTopicForFlashcard,
   onSelectTopicForSynonyms,
   onOpenCollectionModal,
@@ -486,7 +488,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 ? 'bg-orange-50 text-orange-600 border-orange-200'
                 : 'bg-gray-50 text-gray-500 border-gray-200'
             }`}>
-              {(dashboardMetrics?.studyStreak || 0) > 0 ? '🔥 Hoạt động' : '❄️ Bắt đầu'}
+              {isLoadingMetrics
+                ? <span className="inline-block h-3 w-16 rounded bg-gray-200 animate-pulse" aria-hidden="true" />
+                : (dashboardMetrics?.studyStreak || 0) > 0 ? '🔥 Hoạt động' : '❄️ Bắt đầu'}
             </span>
           </div>
 
@@ -503,7 +507,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <span className="text-base sm:text-lg font-bold text-gray-500">ngày liên tiếp</span>
               </div>
               <p className="text-xs text-gray-500 font-medium leading-relaxed">
-                {(dashboardMetrics?.studyStreak || 0) > 0
+                {isLoadingMetrics
+                  ? <span className="inline-block h-3 w-48 rounded bg-gray-200 animate-pulse" aria-hidden="true" />
+                  : (dashboardMetrics?.studyStreak || 0) > 0
                   ? `Xuất sắc! Bạn đã duy trì thói quen học tập liên tục ${dashboardMetrics?.studyStreak} ngày.`
                   : 'Học hoặc ôn từ vựng hôm nay để thắp sáng ngọn lửa học tập!'}
               </p>
@@ -511,17 +517,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
 
           {/* Weekly Tracker Strip (Mon -> Sun) */}
-          <div className="pt-3 border-t border-[#FCE7F3]">
+          <div className="pt-3 border-t border-[#FCE7F3]" aria-label="Lịch tuần này" aria-busy={isLoadingWeekActivity}>
             <div className="flex items-center justify-between text-[10px] sm:text-xs font-bold text-gray-400 mb-2">
               <span>Lịch tuần này</span>
-              <span className="text-[#ED4F8E] font-semibold">{studiedDaysThisWeekCount}/7</span>
+              <span className="text-[#ED4F8E] font-semibold">{isLoadingWeekActivity
+                ? <span className="inline-block h-3 w-6 rounded bg-gray-200 animate-pulse" aria-hidden="true" />
+                : `${studiedDaysThisWeekCount}/7`}</span>
             </div>
             <div className="grid grid-cols-7 gap-1 sm:gap-1.5 text-center">
               {weekDays.map((day) => (
                 <div
                   key={day.dateStr}
                   className={`p-1.5 sm:p-2 rounded-xl sm:rounded-2xl flex flex-col items-center justify-between gap-0.5 sm:gap-1 transition-all ${
-                    day.isStudied
+                    isLoadingWeekActivity
+                      ? 'bg-gray-200 animate-pulse text-transparent'
+                      : day.isStudied
                       ? 'bg-gradient-to-b from-orange-400 to-[#ED4F8E] text-white shadow-xs font-bold'
                       : day.isToday
                       ? 'bg-[#FFF1F2] border-2 border-[#ED4F8E] text-[#ED4F8E] font-extrabold'
@@ -530,7 +540,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 >
                   <span className="text-[9px] sm:text-[10px] tracking-wider uppercase opacity-80">{day.label}</span>
                   <div className="my-0.5 flex items-center justify-center">
-                    {day.isStudied ? (
+                    {isLoadingWeekActivity ? (
+                      <span className="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
+                    ) : day.isStudied ? (
                       <Flame className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-white text-white" />
                     ) : day.isToday ? (
                       <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-[#ED4F8E] animate-ping" />
@@ -598,23 +610,27 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <span>Từ mới</span>
               </div>
 
-              <div className="text-center py-1 sm:py-2 space-y-1.5 sm:space-y-2">
-                <div className="text-2xl sm:text-4xl font-extrabold text-gray-900">
+              <div className="text-center py-1 sm:py-2 space-y-1.5 sm:space-y-2" aria-label="Từ mới hôm nay" aria-busy={isLoadingMetrics}>
+                {isLoadingMetrics ? (
+                  <div className="h-10 sm:h-12 w-32 sm:w-40 mx-auto rounded-lg bg-gray-200 animate-pulse" aria-hidden="true" />
+                ) : <div className="text-2xl sm:text-4xl font-extrabold text-gray-900">
                   {newWordsCount}
                   <span className="text-sm sm:text-lg font-bold text-gray-400">/{dailyGoal}</span>
-                </div>
+                </div>}
 
                 {/* Progress Bar */}
                 <div className="w-full h-1.5 sm:h-2 bg-[#FCE7F3] rounded-full overflow-hidden max-w-xs mx-auto">
                   <div
                     data-dashboard-progress
-                    style={{ width: `${newWordsPercent}%` }}
-                    className="h-full bg-gradient-to-r from-[#ED4F8E] to-[#F472B6] rounded-full transition-all duration-500"
+                    style={{ width: isLoadingMetrics ? '100%' : `${newWordsPercent}%` }}
+                    className={isLoadingMetrics ? 'h-full bg-gray-200 animate-pulse rounded-full' : 'h-full bg-gradient-to-r from-[#ED4F8E] to-[#F472B6] rounded-full transition-all duration-500'}
                   />
                 </div>
 
                 <div className="text-[10px] sm:text-xs text-gray-500 font-medium">
-                  {newWordsPercent}% hoàn thành
+                  {isLoadingMetrics
+                    ? <span className="inline-block h-3 w-20 rounded bg-gray-200 animate-pulse" aria-hidden="true" />
+                    : `${newWordsPercent}% hoàn thành`}
                 </div>
               </div>
             </div>
