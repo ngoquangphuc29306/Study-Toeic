@@ -5,7 +5,8 @@ import { FlashcardMode } from './FlashcardMode';
 import { loadPendingRatingAction, loadStudySession, savePendingRatingAction, saveStudySession } from '../lib/session/storage';
 import { updateUserProgress } from '../services/vocabService';
 import type { RatingResult } from '../services/progressService';
-import type { Vocabulary } from '../lib/types';
+import type { FlashcardInitialFilter, Vocabulary } from '../lib/types';
+import type { StudySessionSnapshot } from '../lib/session/types';
 import { button, change, click, mount } from '../features/synonym-practice/components/test-utils/dom';
 
 vi.mock('../contexts/ToastContext', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
@@ -34,7 +35,7 @@ beforeEach(async () => {
   onUpdateProgress.mockReset().mockImplementation(updateUserProgress);
   dom = await mount(view());
 });
-afterEach(async () => { await dom.unmount(); vi.unstubAllGlobals(); });
+afterEach(async () => { await dom.unmount(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 it('leaves focused native button Enter to its click action instead of cycling exercise', async () => {
   await key(document.body, 'Space');
@@ -265,12 +266,10 @@ it('keeps an expired-session save pending and retries the same key after reauthe
   expect(loadStudySession('user-a')?.currentIndex).toBe(1);
   expect(requests.getUser).not.toHaveBeenCalled();
 });
-it('holds the submission lock until the RPC settles and keeps the original key across remount', async () => {
+it('keeps the original unresolved rating key across remount', async () => {
   const request = deferred<RatingResult>();
   onUpdateProgress.mockReturnValueOnce(request.promise);
   await rate();
-  await key(document.body, 'Space');
-  await key(document.body, 'Digit3');
   expect(onUpdateProgress).toHaveBeenCalledTimes(1);
   const pending = loadPendingRatingAction('user-a');
   await dom.unmount();
@@ -281,6 +280,32 @@ it('holds the submission lock until the RPC settles and keeps the original key a
   await click(button(dom.container, 'Thử lại'));
   expect(onUpdateProgress.mock.calls[1][3]).toBe(pending?.idempotencyKey);
   expect(loadStudySession('user-a')?.currentIndex).toBe(1);
+});
+it('locks two synchronous rating clicks to one pending action and one confirmed transition', async () => {
+  const request = deferred<RatingResult>();
+  onUpdateProgress.mockReturnValueOnce(request.promise);
+  await key(document.body, 'Space');
+  await click(button(dom.container, 'Đã thuộc'));
+  const good = button(dom.container, /^Tốt/);
+  let firstPending: ReturnType<typeof loadPendingRatingAction> = null;
+  await act(async () => {
+    good.click();
+    firstPending = loadPendingRatingAction('user-a');
+    // Both clicks reach the real rating control before React commits disabled state.
+    expect(good.disabled).toBe(false);
+    good.click();
+  });
+  expect(onUpdateProgress).toHaveBeenCalledTimes(1);
+  expect(firstPending).toMatchObject({ vocabularyId: 'v0', rating: 'good', status: 'retrying' });
+  expect(loadPendingRatingAction('user-a')).toEqual(firstPending);
+  expect(onUpdateProgress.mock.calls[0][3]).toBe(loadPendingRatingAction('user-a')?.idempotencyKey);
+  expect(loadStudySession('user-a')).toBeNull();
+  expect(dom.container.querySelector('h2')?.textContent).toBe('word0');
+  await act(async () => request.resolve(savedRating));
+  expect(onUpdateProgress).toHaveBeenCalledTimes(1);
+  expect(dom.container.querySelector('h2')?.textContent).toBe('word1');
+  expect(loadStudySession('user-a')).toMatchObject({ currentIndex: 1, vocabularyIds: vocabs.map(vocab => vocab.id) });
+  expect(loadPendingRatingAction('user-a')).toBeNull();
 });
 it('keeps a successful RPC committed when browser recovery storage is unavailable', async () => {
   const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
@@ -295,4 +320,342 @@ it('keeps a successful RPC committed when browser recovery storage is unavailabl
     storage.mockRestore();
     warning.mockRestore();
   }
+});
+
+const sessionSnapshot = (overrides: Partial<StudySessionSnapshot> = {}): StudySessionSnapshot => ({
+  version: 1, userId: 'user-a', mode: 'new', vocabularyIds: ['v2', 'v1', 'v0'],
+  currentIndex: 1, selectedTopicId: 'all', initialStatus: 'new',
+  startedAt: '2026-11-16T00:00:00Z', updatedAt: '2026-11-16T00:00:00Z', ...overrides,
+});
+const contextView = (pool: Vocabulary[], initialStatus: FlashcardInitialFilter = 'new', selectedTopicId = 'all', onStudySessionCompleted = vi.fn()) => (
+  <FlashcardMode userId="user-a" vocabularies={pool} topics={[]} selectedTopicId={selectedTopicId}
+    initialStatus={initialStatus} onUpdateProgress={onUpdateProgress} onBackToDashboard={() => {}}
+    onSwitchToSynonyms={() => {}} onStudySessionCompleted={onStudySessionCompleted} />
+);
+
+it.each([
+  { name: 'saved index', overrides: {}, word: 'word1' },
+  { name: 'deleted IDs and bounded high index', overrides: { vocabularyIds: ['deleted', 'v2', 'v1'], currentIndex: 99 }, word: 'word1' },
+  { name: 'negative index displayed at first card', overrides: { currentIndex: -3 }, word: 'word2' },
+  { name: 'empty queue', overrides: { vocabularyIds: [] }, word: 'word0' },
+  { name: 'no surviving IDs', overrides: { vocabularyIds: ['deleted'] }, word: 'word0' },
+  { name: 'topic mismatch', overrides: { selectedTopicId: 'other' }, word: 'word0' },
+  { name: 'status mismatch', overrides: { initialStatus: 'mastered' as const }, word: 'word0' },
+])('restores or starts a fresh session: $name', async ({ overrides, word }) => {
+  await dom.unmount();
+  saveStudySession(sessionSnapshot(overrides));
+  dom = await mount(view());
+  expect(dom.container.querySelector('h2')?.textContent).toBe(word);
+  expect(onUpdateProgress).not.toHaveBeenCalled();
+});
+
+it('keeps the stored queue and visible card unchanged until success, then commits the same transition', async () => {
+  await dom.unmount();
+  const snapshot = sessionSnapshot();
+  saveStudySession(snapshot);
+  dom = await mount(view());
+  const request = deferred<RatingResult>();
+  onUpdateProgress.mockReturnValueOnce(request.promise);
+  await rate();
+  expect(dom.container.querySelector('h2')?.textContent).toBe('word1');
+  expect(loadStudySession('user-a')).toEqual(snapshot);
+  expect(loadPendingRatingAction('user-a')).toMatchObject({ vocabularyId: 'v1', rating: 'good' });
+  await act(async () => request.resolve(savedRating));
+  expect(dom.container.querySelector('h2')?.textContent).toBe('word0');
+  expect(loadStudySession('user-a')).toMatchObject({ vocabularyIds: ['v2', 'v1', 'v0'], currentIndex: 2 });
+  expect(dom.container.textContent).not.toContain('Đánh giá mức độ thuộc:');
+});
+
+it('completes only after confirmation, clears recovery, and restarts with fresh statistics', async () => {
+  await dom.unmount();
+  const completed = vi.fn();
+  dom = await mount(contextView(vocabs.slice(0, 1), 'new', 'all', completed));
+  const request = deferred<RatingResult>();
+  onUpdateProgress.mockReturnValueOnce(request.promise);
+  await rate();
+  expect(completed).not.toHaveBeenCalled();
+  expect(dom.container.textContent).not.toContain('Hoàn Thành Phiên Học');
+  await act(async () => request.resolve(savedRating));
+  expect(completed).toHaveBeenCalledTimes(1);
+  expect(dom.container.textContent).toContain('Hoàn Thành Phiên Học');
+  expect(loadStudySession('user-a')).toBeNull();
+  expect(loadPendingRatingAction('user-a')).toBeNull();
+  await click(button(dom.container, 'Luyện Lại Session Này'));
+  mode(1);
+  expect(dom.container.querySelector('h2')?.textContent).toBe('word0');
+  await rate();
+  expect(completed).toHaveBeenCalledTimes(2);
+  expect(dom.container.textContent).toContain('1 Từ');
+  expect(dom.container.textContent).not.toContain('2 Từ');
+});
+
+it.each(['topic', 'status'] as const)('resets queue, mode and snapshot on external %s change', async kind => {
+  const pool = [vocabs[0], { ...vocabs[1], topic_id: 'other' }, { ...vocabs[2], status: 'mastered' as const }];
+  await dom.render(contextView(pool));
+  await rate();
+  await key(document.body, 'Enter');
+  mode(2);
+  await dom.render(contextView(pool, kind === 'status' ? 'mastered' : 'new', kind === 'topic' ? 'other' : 'all'));
+  mode(1);
+  expect(dom.container.querySelector('h2')?.textContent).toBe(kind === 'topic' ? 'word1' : 'word2');
+  expect(loadStudySession('user-a')).toBeNull();
+  expect(dom.container.querySelectorAll('[data-flash-quiz-option]')).toHaveLength(0);
+});
+
+it.each([
+  ['topic', true, false], ['topic', true, true],
+  ['status', true, false], ['status', true, true],
+  ['topic', false, false], ['topic', false, true],
+  ['status', false, false], ['status', false, true],
+] as const)('preserves replacement %s context across deferred rating (same ID=%s, failure=%s)', async (kind, sameId, fails) => {
+  const pool: Vocabulary[] = [vocabs[0], { ...vocabs[1], topic_id: 'other' }, { ...vocabs[2], status: 'mastered' }];
+  const completed = vi.fn();
+  await dom.render(contextView(pool, 'new', 'all', completed));
+  const request = deferred<RatingResult>();
+  onUpdateProgress.mockReturnValueOnce(request.promise);
+  await rate();
+  const pending = loadPendingRatingAction('user-a');
+  expect(pending).toMatchObject({ vocabularyId: 'v0', rating: 'good', status: 'retrying' });
+  const nextTopic = kind === 'topic' ? (sameId ? 't' : 'other') : 'all';
+  const nextStatus = kind === 'status' ? (sameId ? 'all' : 'mastered') : 'new';
+  const nextWord = sameId ? 'word0' : kind === 'topic' ? 'word1' : 'word2';
+  await dom.render(contextView(pool, nextStatus, nextTopic, completed));
+  expect(dom.container.querySelector('h2')?.textContent).toBe(nextWord);
+  expect(loadStudySession('user-a')).toBeNull();
+  await act(async () => {
+    if (fails) request.reject(new Error('deferred transport failure'));
+    else request.resolve(savedRating);
+  });
+  // A response for the old context must not advance or persist the replacement
+  // session, even when both contexts happen to display the same vocabulary ID.
+  expect.soft(dom.container.querySelector('h2')?.textContent).toBe(nextWord);
+  const settledSnapshot = loadStudySession('user-a');
+  expect.soft(settledSnapshot, `Old response wrote snapshot: ${JSON.stringify(settledSnapshot)}`).toBeNull();
+  expect.soft(completed).not.toHaveBeenCalled();
+  expect.soft(loadPendingRatingAction('user-a')).toEqual({ ...pending, status: fails ? 'retrying' : 'confirmed' });
+  expect.soft(onUpdateProgress).toHaveBeenCalledTimes(1);
+});
+
+it.each(['topic', 'status'] as const)('does not complete a replacement %s session when the old final-card rating resolves', async kind => {
+  const pool: Vocabulary[] = [vocabs[0], { ...vocabs[1], topic_id: 'other', status: 'mastered' }];
+  const completed = vi.fn();
+  await dom.render(contextView(pool, kind === 'topic' ? 'all' : 'new', kind === 'topic' ? 't' : 'all', completed));
+  const request = deferred<RatingResult>();
+  onUpdateProgress.mockReturnValueOnce(request.promise);
+  await rate();
+  const pending = loadPendingRatingAction('user-a');
+  await dom.render(contextView(pool, 'all', 'all', completed));
+  expect(dom.container.querySelector('h2')?.textContent).toBe('word0');
+  await act(async () => request.resolve(savedRating));
+  expect.soft(completed).not.toHaveBeenCalled();
+  expect.soft(dom.container.querySelector('h2')?.textContent).toBe('word0');
+  expect.soft(dom.container.textContent).not.toContain('Hoàn Thành Phiên Học');
+  expect.soft(loadStudySession('user-a')).toBeNull();
+  expect.soft(loadPendingRatingAction('user-a')).toEqual({ ...pending, status: 'confirmed' });
+});
+
+it.each(['topic', 'status'] as const)('does not commit a pending success after a %s A-to-B-to-A round trip', async kind => {
+  const pool = vocabs.slice(0, 3);
+  const completed = vi.fn();
+  await dom.render(contextView(pool, 'new', 'all', completed));
+  const request = deferred<RatingResult>();
+  onUpdateProgress.mockReturnValueOnce(request.promise);
+  await rate();
+  const pending = loadPendingRatingAction('user-a');
+  expect(pending).toMatchObject({ vocabularyId: 'v0', rating: 'good', status: 'retrying' });
+
+  // Both replacement contexts retain v0: neither ID nor final filter equality
+  // identifies the generation that originally submitted this rating.
+  await dom.render(contextView(pool, kind === 'status' ? 'all' : 'new', kind === 'topic' ? 't' : 'all', completed));
+  await dom.render(contextView(pool, 'new', 'all', completed));
+  expect(dom.container.querySelector('h2')?.textContent).toBe('word0');
+  expect(loadStudySession('user-a')).toBeNull();
+  expect(onUpdateProgress).toHaveBeenCalledTimes(1);
+  expect(loadPendingRatingAction('user-a')).toEqual(pending);
+
+  await act(async () => request.resolve(savedRating));
+  expect(dom.container.querySelector('h2')?.textContent).toBe('word0');
+  expect(loadStudySession('user-a')).toBeNull();
+  expect(loadPendingRatingAction('user-a')).toEqual({ ...pending, status: 'confirmed' });
+  expect(completed).not.toHaveBeenCalled();
+  expect(onUpdateProgress).toHaveBeenCalledTimes(1);
+  expect(button(dom.container, 'Thử lại').disabled).toBe(false);
+});
+
+it.each([
+  ['topic', false], ['status', false],
+  ['topic', true], ['status', true],
+] as const)('recovers a stale %s rating with an explicit same-key retry (failure=%s)', async (kind, fails) => {
+  const pool: Vocabulary[] = [vocabs[0], vocabs[1], { ...vocabs[2], topic_id: 'other', status: 'mastered' }];
+  const completed = vi.fn();
+  await dom.render(contextView(pool, 'new', 'all', completed));
+  const request = deferred<RatingResult>();
+  onUpdateProgress.mockReturnValueOnce(request.promise);
+  await rate();
+  const pending = loadPendingRatingAction('user-a');
+  expect(pending).toMatchObject({ vocabularyId: 'v0', rating: 'good', status: 'retrying' });
+  expect(pending?.idempotencyKey).toEqual(expect.any(String));
+
+  await dom.render(contextView(pool, kind === 'status' ? 'mastered' : 'new', kind === 'topic' ? 'other' : 'all', completed));
+  await act(async () => {
+    if (fails) request.reject(new Error('deferred context transport failure'));
+    else request.resolve(savedRating);
+  });
+  expect(loadPendingRatingAction('user-a')).toEqual({ ...pending, status: fails ? 'retrying' : 'confirmed' });
+  expect(loadStudySession('user-a')).toBeNull();
+  expect(completed).not.toHaveBeenCalled();
+  expect(onUpdateProgress).toHaveBeenCalledTimes(1);
+
+  // Recover within the mounted component, returning to the rated vocabulary.
+  // Context restoration itself must never issue a second mutation.
+  await dom.render(contextView(pool, 'new', 'all', completed));
+  expect(dom.container.querySelector('h2')?.textContent).toBe('word0');
+  expect(loadStudySession('user-a')).toBeNull();
+  expect(onUpdateProgress).toHaveBeenCalledTimes(1);
+  expect(loadPendingRatingAction('user-a')).toEqual({ ...pending, status: fails ? 'retrying' : 'confirmed' });
+  const retry = button(dom.container, 'Thử lại');
+  expect(retry.disabled).toBe(false);
+
+  requests.rpc.mockResolvedValueOnce({ data: { ...savedRating, status: 'already_processed' }, error: null });
+  await click(retry);
+  expect(onUpdateProgress).toHaveBeenCalledTimes(2);
+  expect(onUpdateProgress.mock.calls[1]).toEqual(onUpdateProgress.mock.calls[0]);
+  expect(requests.rpc).toHaveBeenCalledTimes(1);
+  expect(requests.rpc).toHaveBeenCalledWith('submit_vocabulary_rating', {
+    p_vocabulary_id: 'v0', p_rating: 'good', p_idempotency_key: pending?.idempotencyKey,
+  });
+  expect(dom.container.querySelector('h2')?.textContent).toBe('word1');
+  expect(loadStudySession('user-a')).toMatchObject({
+    vocabularyIds: ['v0', 'v1'], currentIndex: 1, selectedTopicId: 'all', initialStatus: 'new',
+  });
+  expect(loadPendingRatingAction('user-a')).toBeNull();
+  expect(completed).not.toHaveBeenCalled();
+  expect(requests.getUser).not.toHaveBeenCalled();
+});
+
+it.each<{ status: FlashcardInitialFilter; ids: string[] }>([
+  { status: 'new', ids: ['v0', 'v6'] },
+  { status: 'due', ids: ['v2', 'v3'] },
+  { status: 'learning', ids: ['v2', 'v3', 'v5'] },
+  { status: 'mastered', ids: ['v4'] },
+  { status: 'all', ids: ['v3', 'v2', 'v5', 'v7', 'v1', 'v0', 'v6', 'v4'] },
+])('preserves $status selection and ordering at a fixed mount time', async ({ status, ids }) => {
+  await dom.unmount();
+  vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-16T12:00:00Z'));
+  const pool: Vocabulary[] = [
+    vocabs[0],
+    { ...vocabs[1], status: 'learning', next_review_at: '2026-11-18T00:00:00Z' },
+    { ...vocabs[2], status: 'learning', next_review_at: '2026-11-16T12:00:00Z' },
+    { ...vocabs[3], status: 'learning', next_review_at: '2026-11-15T00:00:00Z' },
+    { ...vocabs[4], status: 'mastered' },
+    { ...vocabs[5], status: 'learning', next_review_at: null },
+    { ...vocabs[6], status: 'new' },
+    { ...vocabs[7], status: 'learning', next_review_at: '2026-11-17T00:00:00Z' },
+    { ...vocabs[8], topic_id: 'excluded' },
+  ];
+  dom = await mount(contextView(pool, status, 't'));
+  for (const id of ids) {
+    expect(dom.container.querySelector('h2')?.textContent).toBe(pool.find(vocab => vocab.id === id)?.word);
+    await rate();
+  }
+  expect(dom.container.textContent).toContain('Hoàn Thành Phiên Học');
+  expect(onUpdateProgress.mock.calls.map(call => call[0])).toEqual(ids);
+});
+
+class FakeRecognition {
+  static instances: FakeRecognition[] = [];
+  onstart: (() => void) | null = null;
+  onresult: ((event: { results: { transcript: string }[][] }) => void) | null = null;
+  onerror: ((event: { error: string }) => void) | null = null;
+  onend: (() => void) | null = null;
+  start = vi.fn();
+  stop = vi.fn();
+  abort = vi.fn();
+  constructor() { FakeRecognition.instances.push(this); }
+}
+async function pronunciationMode() {
+  await key(document.body, 'Enter');
+  await key(document.body, 'Enter');
+  // Typing Enter checks the answer; Chưa nhớ advances to pronunciation.
+  await key(document.body, 'Enter');
+  await click(button(dom.container, 'Chưa nhớ'));
+  mode(4);
+}
+async function startRecognition() {
+  const prompt = [...dom.container.querySelectorAll('p')].find(node => node.textContent === 'Nhấn để nói')!;
+  await click(prompt.parentElement!.querySelector('button')!);
+  return FakeRecognition.instances.at(-1)!;
+}
+
+it.each([
+  ['word0', 'Chính xác!'], ['different', 'Chưa đúng'], ['', 'Không nghe thấy giọng nói'],
+])('shows pronunciation result for transcript %j without submitting a rating', async (transcript, feedback) => {
+  vi.stubGlobal('SpeechRecognition', FakeRecognition);
+  await pronunciationMode();
+  const recognition = await startRecognition();
+  await act(async () => recognition.onstart?.());
+  expect(dom.container.textContent).toContain('Đang nghe...');
+  await act(async () => recognition.onresult?.({ results: [[{ transcript }]] }));
+  expect(dom.container.textContent).toContain(feedback);
+  expect(onUpdateProgress).not.toHaveBeenCalled();
+});
+
+it.each([
+  ['not-allowed', 'Không thể dùng microphone'], ['no-speech', 'Không nghe thấy giọng nói'], ['network', 'Không thể nhận diện'],
+])('renders pronunciation error %s with an explicit retry', async (error, feedback) => {
+  vi.stubGlobal('SpeechRecognition', FakeRecognition);
+  await pronunciationMode();
+  const recognition = await startRecognition();
+  await act(async () => recognition.onerror?.({ error }));
+  expect(dom.container.textContent).toContain(feedback);
+  await click(button(dom.container, 'Thử lại'));
+  expect(FakeRecognition.instances.at(-1)).not.toBe(recognition);
+  expect(onUpdateProgress).not.toHaveBeenCalled();
+});
+
+it('shows unsupported pronunciation without inventing a successful result', async () => {
+  vi.stubGlobal('SpeechRecognition', undefined);
+  vi.stubGlobal('webkitSpeechRecognition', undefined);
+  await pronunciationMode();
+  await startRecognition();
+  expect(dom.container.textContent).toContain('Chưa hỗ trợ');
+  expect(dom.container.textContent).not.toContain('Chính xác!');
+  expect(onUpdateProgress).not.toHaveBeenCalled();
+});
+
+it('cancels recognition on mode exit and ignores callbacks from the abandoned attempt', async () => {
+  vi.stubGlobal('SpeechRecognition', FakeRecognition);
+  await pronunciationMode();
+  const recognition = await startRecognition();
+  const lateResult = recognition.onresult!;
+  const lateError = recognition.onerror!;
+  const lateStart = recognition.onstart!;
+  const lateEnd = recognition.onend!;
+  await key(document.body, 'Enter');
+  mode(1);
+  expect(recognition.abort).toHaveBeenCalledTimes(1);
+  const staleCallbacks = [
+    lateStart, () => lateResult({ results: [[{ transcript: 'stale transcript' }]] }),
+    () => lateError({ error: 'not-allowed' }), lateEnd,
+  ];
+  for (const callback of staleCallbacks) {
+    await act(async () => callback());
+    // Check before any mode change can erase the effect of a stale result.
+    mode(1);
+    expect(dom.container.querySelector('h2')?.textContent).toBe('word0');
+    expect(dom.container.textContent).not.toContain('Chưa nhớ');
+    expect(dom.container.querySelector<HTMLButtonElement>('[title="Đánh dấu đã thuộc"]')?.disabled).toBe(true);
+  }
+  await pronunciationMode();
+  const replacement = await startRecognition();
+  await act(async () => replacement.onstart?.());
+  for (const callback of staleCallbacks) {
+    await act(async () => callback());
+    expect(dom.container.textContent).toContain('Đang nghe...');
+    expect(dom.container.textContent).not.toContain('stale transcript');
+    expect(dom.container.textContent).not.toContain('Không thể dùng microphone');
+  }
+  await act(async () => replacement.onresult?.({ results: [[{ transcript: 'word0' }]] }));
+  expect(dom.container.textContent).toContain('Chính xác!');
+  expect(onUpdateProgress).not.toHaveBeenCalled();
 });

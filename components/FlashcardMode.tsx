@@ -28,31 +28,21 @@ import {
 import confetti from 'canvas-confetti';
 import { FlashcardInitialFilter, Vocabulary, Topic } from '../lib/types';
 import { SrsRating } from '../services/vocabService';
-import {
-  IdempotencyConflictError,
-  LegacyIdempotencyResultError,
-  type RatingResult,
-} from '../services/progressService';
-import {
-  saveStudySession,
-  loadStudySession,
-  clearStudySession,
-  savePendingRatingAction,
-  loadPendingRatingAction,
-  clearPendingRatingAction,
-  type PendingRatingAction,
-} from '../lib/session/storage';
+import type { RatingResult } from '../services/progressService';
 import { useToast } from '../contexts/ToastContext';
-import { applyRatingToQueue } from '../lib/session/queueTransition';
-import type { StudySessionSnapshot } from '../lib/session/types';
+import { useFlashcardSession } from '../hooks/useFlashcardSession';
+import { useFlashcardRating } from '../hooks/useFlashcardRating';
 import { AddVocabModal } from './AddVocabModal';
 import gsap from 'gsap';
 import { motionTokens } from '../lib/animation/motionTokens';
 import { usePrefersReducedMotion } from '../hooks/use-prefers-reduced-motion';
 import { isVocabularyDue } from '../features/review-reminder';
 import { evaluatePronunciation } from '../lib/pronunciation/evaluatePronunciation';
-import { seededShuffle } from '../lib/quiz/seededShuffle';
-import { uniqueQuizLabels } from '../lib/quiz/labels';
+import { createFlashcardQuizOptions } from '../lib/quiz/flashcardOptions';
+import { QuizExercise } from './flashcard/QuizExercise';
+import { TypingExercise } from './flashcard/TypingExercise';
+import { PronunciationExercise } from './flashcard/PronunciationExercise';
+import { FlashcardExercise } from './flashcard/FlashcardExercise';
 
 type PronunciationStatus =
   | 'idle'
@@ -136,22 +126,13 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
   onEditVocabulary,
 }) => {
   const { showToast } = useToast();
-  const [filterTopic, setFilterTopic] = useState<string>(selectedTopicId || 'all');
-  const [filterStatus, setFilterStatus] = useState<FlashcardInitialFilter>(initialStatus || 'new');
-  const [sessionStats, setSessionStats] = useState({
-    mastered: 0,
-    learningVocabularyIds: [] as string[],
-    needsReview: 0,
-  });
-  const [subMode, setSubMode] = useState<StudySubMode>('flashcard');
-  const [currentIndex, setCurrentIndex] = useState<number>(0);
-
-  // Phase 6: State-based study queue (vocabulary IDs)
-  const [studyQueue, setStudyQueue] = useState<string[]>([]);
-  const [isSessionRestored, setIsSessionRestored] = useState<boolean>(false);
+  const session = useFlashcardSession({ userId, vocabularies, selectedTopicId, initialStatus, onCompleted: onStudySessionCompleted });
+  const { filterTopic, filterStatus, sessionStats, subMode, currentIndex, isCompleted,
+    topicVocabulary: topicVocabs, activeVocabulary: activeVocabs, safeIndex, currentVocabulary: currentVocab,
+    nowMs, setSubMode } = session;
+  const currentVocabId = currentVocab?.id;
 
   const [isFlipped, setIsFlipped] = useState<boolean>(false);
-  const [isCompleted, setIsCompleted] = useState<boolean>(false);
   const cardTransitionRef = useRef<HTMLDivElement>(null);
   const completionRef = useRef<HTMLDivElement>(null);
   const typingInputRef = useRef<HTMLInputElement>(null);
@@ -238,27 +219,13 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
     initialStatus,
   };
 
-  setFilterTopic(selectedTopicId || 'all');
-  setFilterStatus(initialStatus || 'new');
-  setSessionStats({ mastered: 0, learningVocabularyIds: [], needsReview: 0 });
-
-  setCurrentIndex(0);
   setIsFlipped(false);
-  setIsCompleted(false);
-  setSubMode('flashcard');
-
-  setStudyQueue([]);
-  setIsSessionRestored(false);
-
-  if (userId) clearStudySession(userId);
 }, [
   selectedTopicId,
   initialStatus,
   userId,
 ]);
 
-  // Stable timestamp for due-time calculations
-  const [nowMs] = useState(() => Date.now());
 
   // Evaluation / Rating Buttons State
   const [showRatingButtons, setShowRatingButtons] = useState<boolean>(false);
@@ -348,12 +315,6 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
     queueMicrotask(resetInteractionState);
   }, [currentIndex, subMode, stopRecognition]);
 
-  // Topic-filtered list
-  const topicVocabs = useMemo(() => {
-    if (filterTopic === 'all') return vocabularies;
-    return vocabularies.filter((v) => v.topic_id === filterTopic);
-  }, [vocabularies, filterTopic]);
-
   // Counts by status
   const { newCount, dueCount, masteredCount, totalCount } = useMemo(() => {
     let n = 0, due = 0, m = 0;
@@ -386,129 +347,6 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
   const remainingCountLabel = filterStatus === 'new' ? 'Từ mới' : 'Còn lại';
   const remainingCountShortLabel = filterStatus === 'new' ? 'Mới' : 'Còn';
 
-  // Filter & sort list based on topic and status
-  const activeVocabs = useMemo(() => {
-    // Phase 6: If session restored and queue exists, use queue order
-    if (isSessionRestored && studyQueue.length > 0) {
-      const vocabMap = new Map(topicVocabs.map(v => [v.id, v]));
-      return studyQueue
-        .map(id => vocabMap.get(id))
-        .filter((v): v is Vocabulary => v !== undefined);
-    }
-
-    // Initial queue building (no session restore)
-    if (filterStatus === 'new') {
-      return topicVocabs.filter((v) => !v.status || v.status === 'new');
-    }
-    if (filterStatus === 'mastered') {
-      return topicVocabs.filter((v) => v.status === 'mastered');
-    }
-    if (filterStatus === 'due') {
-      return topicVocabs.filter((v) => isVocabularyDue(v, nowMs));
-    }
-    if (filterStatus === 'learning') {
-      // Only include words in 'learning' status that are ACTUALLY due for review (next_review_at <= now)
-      return topicVocabs.filter((v) => v.status === 'learning' && (!v.next_review_at || new Date(v.next_review_at).getTime() <= nowMs));
-    }
-
-    // When filterStatus === 'all': Order: Từ đến hạn -> Từ chưa đến hạn -> Từ mới -> Từ đã thuộc
-    const dueWords: Vocabulary[] = [];
-    const notDueWords: Vocabulary[] = [];
-    const newWords: Vocabulary[] = [];
-    const masteredWords: Vocabulary[] = [];
-
-    topicVocabs.forEach((v) => {
-      if (v.status === 'learning') {
-        const isDue = isVocabularyDue(v, nowMs);
-        if (isDue) {
-          dueWords.push(v);
-        } else {
-          notDueWords.push(v);
-        }
-      } else if (v.status === 'mastered') {
-        masteredWords.push(v);
-      } else {
-        newWords.push(v);
-      }
-    });
-
-    // Sort dueWords: earliest next_review_at first (most overdue first)
-    dueWords.sort((a, b) => {
-      const timeA = a.next_review_at ? new Date(a.next_review_at).getTime() : 0;
-      const timeB = b.next_review_at ? new Date(b.next_review_at).getTime() : 0;
-      return timeA - timeB;
-    });
-
-    // Sort notDueWords: earliest next_review_at first (closest to due time)
-    notDueWords.sort((a, b) => {
-      const timeA = a.next_review_at ? new Date(a.next_review_at).getTime() : 0;
-      const timeB = b.next_review_at ? new Date(b.next_review_at).getTime() : 0;
-      return timeA - timeB;
-    });
-
-    return [...dueWords, ...notDueWords, ...newWords, ...masteredWords];
-  }, [topicVocabs, filterStatus, nowMs, isSessionRestored, studyQueue]);
-
-  // Phase 6: Session restore on mount
-  useEffect(() => {
-    if (isSessionRestored) return;
-    if (activeVocabs.length === 0) return;
-
-    const restoreSession = () => {
-      if (!userId) {
-        // No user, initialize queue from activeVocabs
-        setStudyQueue(activeVocabs.map(v => v.id));
-        setIsSessionRestored(true);
-        return;
-      }
-
-      const snapshot = loadStudySession(userId);
-
-      // Check if snapshot matches current session context
-      if (
-        snapshot &&
-        snapshot.selectedTopicId === filterTopic &&
-        snapshot.initialStatus === filterStatus
-      ) {
-        // Validate vocabulary IDs still exist
-        const vocabMap = new Map(topicVocabs.map(v => [v.id, v]));
-        const validIds = snapshot.vocabularyIds.filter(id => vocabMap.has(id));
-
-        if (validIds.length > 0) {
-          setStudyQueue(validIds);
-          setCurrentIndex(Math.min(snapshot.currentIndex, validIds.length - 1));
-          setIsSessionRestored(true);
-          return;
-        }
-      }
-
-      // No valid snapshot, initialize from activeVocabs
-      setStudyQueue(activeVocabs.map(v => v.id));
-      setIsSessionRestored(true);
-    };
-
-    restoreSession();
-  }, [activeVocabs, filterTopic, filterStatus, isSessionRestored, userId, topicVocabs]);
-
-  // Phase 6 Fix: Clear session only on explicit completion, not unmount
-  // sessionStorage naturally handles tab lifecycle
-  // Unmount cleanup removed to allow refresh recovery
-
-  // Safe index: clamp currentIndex to valid range when activeVocabs changes
-  const safeIndex = useMemo(() => {
-    if (activeVocabs.length === 0) return 0;
-    if (currentIndex >= activeVocabs.length) return activeVocabs.length - 1;
-    if (currentIndex < 0) return 0;
-    return currentIndex;
-  }, [currentIndex, activeVocabs.length]);
-
-  // Use safe index directly, sync state in next render to avoid cascading updates
-  const currentVocab = activeVocabs[safeIndex];
-  const currentVocabId = currentVocab?.id;
-  const currentVocabIdRef = useRef<string | undefined>(currentVocabId);
-  useEffect(() => {
-    currentVocabIdRef.current = currentVocabId;
-  }, [currentVocabId]);
   const audioWord = currentVocab?.word;
   const audioVocabularyId = currentVocab?.id;
 
@@ -573,25 +411,10 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
   // Sync currentIndex after render completes if it was out of bounds
 
   // Derive Quiz options dynamically using pure seeded shuffle
-  const { quizOptions, correctQuizIndex } = useMemo(() => {
-    if (!currentVocab || !currentVocab.meaning.trim() || activeVocabs.length === 0) {
-      return { quizOptions: [], correctQuizIndex: 0 };
-    }
-    const distractors = activeVocabs
-      .filter((v) => v.id !== currentVocab.id)
-      .map((v) => v.meaning);
-
-    // Reserve the correct label before sampling distinct alternatives.
-    const distinctMeanings = uniqueQuizLabels([currentVocab.meaning, ...distractors]);
-    const seededDistractors = seededShuffle(distinctMeanings.slice(1), currentVocab.id + '_distractors').slice(0, 3);
-    const choices = [currentVocab.meaning, ...seededDistractors];
-    const shuffled = seededShuffle(choices, currentVocab.id + '_choices');
-
-    return {
-      quizOptions: shuffled,
-      correctQuizIndex: shuffled.indexOf(currentVocab.meaning),
-    };
-  }, [currentVocab, activeVocabs]);
+  const { options: quizOptions, correctAnswerIndex: correctQuizIndex } = useMemo(
+    () => createFlashcardQuizOptions(currentVocab, activeVocabs),
+    [currentVocab, activeVocabs],
+  );
 
   useEffect(() => {
     if (!quizAnswered || selectedQuizIndex === null || !cardTransitionRef.current) return;
@@ -808,260 +631,66 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
     return '';
   };
 
-  // Submission state for atomic RPC
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [submissionError, setSubmissionError] = useState<string | null>(null);
-
-  // Synchronous ref lock for duplicate submission prevention
-  const ratingSubmitLockRef = useRef<boolean>(false);
-  const pendingRatingActionRef = useRef<PendingRatingAction | null>(null);
-  const [hasPendingRatingRetry, setHasPendingRatingRetry] = useState(false);
-
-  // Never auto-submit after a remount. If a response was interrupted, restore
-  // only the action metadata so the learner can explicitly retry with its key.
-  useEffect(() => {
-    if (!currentVocabId) return;
-
-    let cancelled = false;
-    queueMicrotask(() => {
-      const pendingAction = userId ? loadPendingRatingAction(userId) : null;
-      if (cancelled || !pendingAction || pendingAction.vocabularyId !== currentVocabId) return;
-
-      pendingRatingActionRef.current = pendingAction;
-      setHasPendingRatingRetry(true);
-      setSubmissionError(
-        pendingAction.status === 'confirmed'
-          ? 'Đánh giá trước đã được lưu nhưng phiên học chưa hoàn tất. Hãy tiếp tục với cùng kết quả.'
-          : 'Đánh giá trước chưa được xác nhận. Hãy thử lại với cùng kết quả.'
-      );
-    });
-    return () => { cancelled = true; };
-  }, [currentVocabId, userId]);
-
-  // Handle Progress Rating with SRS. The RPC is committed before the queue so
-  // a derived-data refresh can never make this card look like a failed rating.
-  const handleRating = useCallback(async (isMastered: boolean, rating?: SrsRating) => {
-    if (!userId || !currentVocab || ratingSubmitLockRef.current) return;
-
-    const srsRating: SrsRating = rating || (isMastered ? 'mastered' : 'good');
-    const newStatus = isMastered || srsRating === 'mastered' ? 'mastered' : 'learning';
-    const existingPendingAction = pendingRatingActionRef.current;
-
-    // A transport failure may still have reached the RPC. Do not let a second
-    // rating create a new review log until this logical action is retried with
-    // its original idempotency key.
-    if (
-      existingPendingAction &&
-      (existingPendingAction.vocabularyId !== currentVocab.id || existingPendingAction.rating !== srsRating)
-    ) {
-      setSubmissionError('Đánh giá trước chưa được xác nhận. Hãy thử lại đánh giá đó trước.');
-      setHasPendingRatingRetry(true);
-      return;
-    }
-
-    const pendingAction = existingPendingAction || {
-      vocabularyId: currentVocab.id,
-      isMastered,
-      rating: srsRating,
-      idempotencyKey: crypto.randomUUID(),
-      startedAt: Date.now(),
-      status: 'pending' as const,
-    };
-    pendingRatingActionRef.current = pendingAction;
-
-    // 1. Acquire synchronous lock and disable buttons (prevent double-click/double-submit)
-    ratingSubmitLockRef.current = true;
-    setIsSubmitting(true);
-    setSubmissionError(null);
-
-    const actionUserId = userId;
-    const retryingAction: PendingRatingAction = {
-      ...pendingAction,
-      status: 'retrying',
-    };
-    pendingRatingActionRef.current = retryingAction;
-    if (actionUserId) {
-      savePendingRatingAction(actionUserId, retryingAction);
-    }
-
-    // 2. Calculate queue transition IMMEDIATELY (before any await)
-    const transition = applyRatingToQueue(
-      srsRating,
-      studyQueue,
-      safeIndex,
-      currentVocab.id
-    );
-
-    const ratedVocabId = currentVocab.id;
-
-    // ✅ FLASH BUG FIX: Reset flip state SYNCHRONOUSLY before index change
-    // This prevents Card B from rendering with Card A's isFlipped state
-    try {
-      // Submit only the mutation. Parent refreshes aggregates best-effort after
-      // this resolves, so refresh errors cannot reach this rollback boundary.
-      await onUpdateProgress(ratedVocabId, newStatus, srsRating, pendingAction.idempotencyKey);
-    } catch (err) {
-      if (!isFlashcardMountedRef.current) return;
-
-      // A transport failure may still mean that the RPC committed. Keep the
-      // same key in retrying state and do not advance or create a new key.
-      const isPermanentContractError =
-        err instanceof IdempotencyConflictError || err instanceof LegacyIdempotencyResultError;
-      if (isPermanentContractError) {
-        // A permanent contract error must not survive as a retrying action.
-        // Clear both layers so the learner can explicitly start a new action
-        // with a fresh key; the queue remains untouched in this catch branch.
-        pendingRatingActionRef.current = null;
-        if (actionUserId) clearPendingRatingAction(actionUserId);
-      } else {
-        pendingRatingActionRef.current = retryingAction;
-        if (actionUserId) {
-          savePendingRatingAction(actionUserId, retryingAction);
-        }
+  const onRatingCommitted = useCallback((
+    _action: { vocabularyId: string; rating: SrsRating; isMastered: boolean },
+    prepared: import('../hooks/useFlashcardSession').PreparedRating,
+  ): boolean => {
+    if (!prepared.isCurrent()) return false;
+    stopRecognition();
+    setPronunciationStatus('idle');
+    setIsFlipped(false);
+    setHasRevealedAnswer(false);
+    if (!prepared.isComplete) shouldAnimateCardRef.current = true;
+    if (!prepared.commit()) return false;
+    if (prepared.isComplete && !prefersReducedMotion) {
+      try {
+        confetti({
+          particleCount: 100,
+          spread: 70,
+          origin: { y: 0.6 },
+          colors: ['#ED4F8E', '#F472B6', '#FCE7F3', '#3B82F6', '#10B981'],
+        });
+      } catch {
+        // Fallback
       }
-      const message = err instanceof IdempotencyConflictError
-        ? 'Khóa đánh giá không còn hợp lệ cho thao tác này. Hãy thực hiện đánh giá mới.'
-        : err instanceof LegacyIdempotencyResultError
-          ? 'Kết quả của thao tác cũ không thể khôi phục. Hãy thực hiện đánh giá mới.'
-          : err instanceof Error
-            ? err.message
-            : 'Không thể lưu kết quả. Vui lòng thử lại.';
-      setSubmissionError(message);
-      setHasPendingRatingRetry(!isPermanentContractError);
-      console.error('handleRating error:', err);
-      ratingSubmitLockRef.current = false;
-      setIsSubmitting(false);
-      return;
     }
+    return true;
+  }, [prefersReducedMotion, stopRecognition]);
 
-    // Never recreate recovery data cleared by logout/account switch, or let an
-    // old action update the replacement session. Its original pending key is
-    // already available for explicit recovery after an ordinary remount.
-    if (!isFlashcardMountedRef.current) return;
-
-    // The RPC has now returned a validated success/already_processed result.
-    // Keep the key until the local queue/session commit completes so an
-    // unmount cannot lose the recovery record.
-    const confirmedAction: PendingRatingAction = {
-      ...retryingAction,
-      status: 'confirmed',
-    };
-    pendingRatingActionRef.current = confirmedAction;
-    if (actionUserId) {
-      savePendingRatingAction(actionUserId, confirmedAction);
-    }
-
-    // A response from an old mounted action must not overwrite a newer card.
-    // The confirmed record remains available for the next mount to retry with
-    // the same key and receive already_processed.
-    if (!isFlashcardMountedRef.current || currentVocabIdRef.current !== ratedVocabId) {
-      ratingSubmitLockRef.current = false;
-      setIsSubmitting(false);
-      return;
-    }
-
-    try {
-      // Reset the visual state immediately before the committed queue advance.
-      // This keeps the next card from inheriting the previous card's back face.
-      stopRecognition();
-      setPronunciationStatus('idle');
-      setIsFlipped(false);
-      setHasRevealedAnswer(false);
-      if (!transition.isComplete) {
-        shouldAnimateCardRef.current = true;
-        setStudyQueue(transition.queue);
-        setCurrentIndex(transition.currentIndex);
-      }
-      setSessionStats((prev) => ({
-        mastered: isMastered || srsRating === 'mastered' ? prev.mastered + 1 : prev.mastered,
-        learningVocabularyIds:
-          !isMastered && srsRating !== 'mastered' && !prev.learningVocabularyIds.includes(ratedVocabId)
-            ? [...prev.learningVocabularyIds, ratedVocabId]
-            : prev.learningVocabularyIds,
-        needsReview: !isMastered && srsRating !== 'mastered' ? prev.needsReview + 1 : prev.needsReview,
-      }));
-
-      // Save session snapshot only after the server-confirmed queue transition.
-      if (transition.isComplete) {
-        // Final card: Show completion ONLY after save succeeds
-        setIsCompleted(true);
-        onStudySessionCompleted?.();
-        setStudyQueue(transition.queue);
-        setCurrentIndex(transition.currentIndex);
-
-        if (actionUserId) {
-          clearStudySession(actionUserId);
-        }
-        if (!prefersReducedMotion) {
-          try {
-            confetti({
-              particleCount: 100,
-              spread: 70,
-              origin: { y: 0.6 },
-              colors: ['#ED4F8E', '#F472B6', '#FCE7F3', '#3B82F6', '#10B981'],
-            });
-          } catch {
-            // Fallback
-          }
-        }
-      } else if (actionUserId && transition.queue.length > 0) {
-        // Save session with exact transition result
-        const snapshot: StudySessionSnapshot = {
-          version: 1,
-          userId: actionUserId,
-          mode: filterStatus === 'new' ? 'new' : 'review',
-          vocabularyIds: transition.queue,
-          currentIndex: transition.currentIndex,
-          selectedTopicId: filterTopic,
-          initialStatus: filterStatus,
-          startedAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        saveStudySession(snapshot);
-      }
-
-      pendingRatingActionRef.current = null;
-      setHasPendingRatingRetry(false);
-      if (actionUserId) clearPendingRatingAction(actionUserId);
-    } catch (err) {
-      // The mutation is already confirmed. Never expose this as an RPC
-      // failure or allow a new key; keep the confirmed record for recovery.
-      console.error('Confirmed rating local commit error:', err);
-      setSubmissionError('Đã lưu đánh giá. Phiên học sẽ được khôi phục khi bạn thử lại.');
-      setHasPendingRatingRetry(true);
-    } finally {
-      // 8. Release lock and re-enable buttons only after save completes (or fails)
-      ratingSubmitLockRef.current = false;
-      setIsSubmitting(false);
-    }
-  }, [currentVocab, safeIndex, onUpdateProgress, onStudySessionCompleted, studyQueue, filterTopic, filterStatus, userId, prefersReducedMotion, stopRecognition]);
+  const rating = useFlashcardRating({
+    userId,
+    vocabularyId: currentVocabId,
+    onUpdateProgress,
+    prepareRating: session.prepareRating,
+    onCommitted: onRatingCommitted,
+  });
+  const { isSubmitting, submissionError, hasPendingRatingRetry, isLocked, retry, dismissError } = rating;
+  const handleRating = rating.submit;
 
   // Handle Rating Selection from 4 evaluation buttons
   const handleSelectSrsRating = useCallback((srsRating: SrsRating) => {
-    if (ratingSubmitLockRef.current) return;
+    if (isLocked()) return;
     playRatingFeedback();
     setShowRatingButtons(false);
     const isMastered = srsRating === 'mastered';
     handleRating(isMastered, srsRating);
     setSubMode('flashcard');
-  }, [handleRating, playRatingFeedback]);
+  }, [handleRating, isLocked, playRatingFeedback, setSubMode]);
 
   const retryPendingRating = useCallback(() => {
-    const pendingAction = pendingRatingActionRef.current;
-    if (!pendingAction || ratingSubmitLockRef.current || pendingAction.vocabularyId !== currentVocab?.id) return;
     setShowRatingButtons(false);
-    void handleRating(pendingAction.isMastered, pendingAction.rating);
-  }, [currentVocab?.id, handleRating]);
+    void retry();
+  }, [retry]);
 
   const handleBackToDashboard = useCallback(() => {
-    if (ratingSubmitLockRef.current) return;
+    if (isLocked()) return;
     onBackToDashboard();
-  }, [onBackToDashboard]);
+  }, [isLocked, onBackToDashboard]);
 
   // Handle "Chưa nhớ" -> Immediately transition to next exercise step
   const handleNotRemembered = useCallback(() => {
     // Block during rating submission to prevent state corruption
-    if (ratingSubmitLockRef.current) return;
+    if (isLocked()) return;
 
     setShowRatingButtons(false);
 
@@ -1088,11 +717,11 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
     } else if (subMode === 'typing') {
       setSubMode('pronounce');
     }
-  }, [subMode, stopRecognition]);
+  }, [isLocked, subMode, stopRecognition, setSubMode]);
 
   // Handle Delete current vocabulary item
   const handleDeleteCurrentVocab = useCallback(() => {
-    if (ratingSubmitLockRef.current || !currentVocab) return;
+    if (isLocked() || !currentVocab) return;
 
     const confirmed = window.confirm(
       `Bạn có chắc chắn muốn xóa từ vựng "${currentVocab.word}" khỏi bài học này?`
@@ -1104,19 +733,17 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
       onDeleteVocabulary(currentVocab.id);
     }
 
-    if (currentIndex >= activeVocabs.length - 1) {
-      setCurrentIndex(Math.max(0, activeVocabs.length - 2));
-    }
-  }, [currentVocab, onDeleteVocabulary, currentIndex, activeVocabs.length]);
+    session.removeCurrentAfterDelete();
+  }, [currentVocab, isLocked, onDeleteVocabulary, session]);
 
   // Handle Quiz selection
   const handleQuizSelect = useCallback((idx: number) => {
-    if (quizAnswered || ratingSubmitLockRef.current) return;
+    if (quizAnswered || isLocked()) return;
     setSelectedQuizIndex(idx);
     setQuizAnswered(true);
     // Mark answer as revealed after user selects an option
     setHasRevealedAnswer(true);
-  }, [quizAnswered]);
+  }, [isLocked, quizAnswered]);
 
   // Handle edit vocabulary
   const handleEditCurrentVocab = useCallback(
@@ -1125,7 +752,7 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
       e.stopPropagation();
 
       if (
-        ratingSubmitLockRef.current ||
+        isLocked() ||
         isSubmitting ||
         !currentVocab ||
         !onEditVocabulary
@@ -1135,7 +762,7 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
 
       setShowEditModal(true);
     },
-    [currentVocab, isSubmitting, onEditVocabulary]
+    [currentVocab, isLocked, isSubmitting, onEditVocabulary]
   );
 
   const handleSaveEdit = useCallback(
@@ -1154,7 +781,7 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
 
   // Handle Typing Check
   const handleCheckTyping = useCallback(() => {
-    if (!currentVocab || typingSubmitted || ratingSubmitLockRef.current) return;
+    if (!currentVocab || typingSubmitted || isLocked()) return;
     const cleanInput = typedInput.trim().toLowerCase();
     const cleanWord = currentVocab.word.trim().toLowerCase();
     const correct = cleanInput === cleanWord;
@@ -1162,7 +789,7 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
     setTypingSubmitted(true);
     // Mark answer as revealed after checking typing result
     setHasRevealedAnswer(true);
-  }, [currentVocab, typingSubmitted, typedInput]);
+  }, [currentVocab, isLocked, typingSubmitted, typedInput]);
 
   const handleStopRecording = useCallback(() => {
     stopRecognition();
@@ -1174,7 +801,7 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
   // and evaluatePronunciation confirms it. Technical failures never fall back
   // to a correct result.
   const handleStartRecording = () => {
-    if (ratingSubmitLockRef.current || !currentVocab || isRecording) return;
+    if (isLocked() || !currentVocab || isRecording) return;
 
     stopRecognition();
     setTranscriptText('');
@@ -1319,7 +946,7 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
           handleCheckTyping();
         } else if (subMode === 'typing' && typingSubmitted) {
           e.preventDefault();
-          if (!ratingSubmitLockRef.current) {
+          if (!isLocked()) {
             setShowRatingButtons(true);
           }
         } else {
@@ -1348,6 +975,7 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
     autoPlayAudio,
     quizOptions.length,
     handleRating,
+    isLocked,
     handleNotRemembered,
     playPronunciation,
     handleCheckTyping,
@@ -1355,18 +983,8 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
   ]);
 
   const restartSession = () => {
-    setCurrentIndex(0);
+    session.restart();
     setIsFlipped(false);
-    setIsCompleted(false);
-    setSessionStats({ mastered: 0, learningVocabularyIds: [], needsReview: 0 });
-    setSubMode('flashcard');
-    // Phase 6 Fix: Clear session on explicit restart
-    if (userId) {
-      clearStudySession(userId);
-    }
-    // Reinitialize queue
-    setStudyQueue([]);
-    setIsSessionRestored(false);
   };
 
   // Empty queue guard - render before accessing currentVocab
@@ -1393,8 +1011,7 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
           {filterStatus === 'new' && totalCount > 0 && (
             <button
               onClick={() => {
-                setSessionStats({ mastered: 0, learningVocabularyIds: [], needsReview: 0 });
-                setFilterStatus('all');
+                session.selectStatus('all');
               }}
               className="px-5 py-2.5 bg-[#FFF1F2] text-[#ED4F8E] font-bold rounded-2xl text-xs cursor-pointer border border-[#FCE7F3] hover:bg-[#FFE4E6] transition-colors"
             >
@@ -1405,8 +1022,7 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
           {(filterStatus === 'learning' || filterStatus === 'due') && totalCount > 0 && (
             <button
               onClick={() => {
-                setSessionStats({ mastered: 0, learningVocabularyIds: [], needsReview: 0 });
-                setFilterStatus('all');
+                session.selectStatus('all');
               }}
               className="px-5 py-2.5 bg-[#FFF1F2] text-[#ED4F8E] font-bold rounded-2xl text-xs cursor-pointer border border-[#FCE7F3] hover:bg-[#FFE4E6] transition-colors"
             >
@@ -1503,6 +1119,20 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
 
   const currentStepIndex = modeSteps.findIndex((s) => s.id === subMode);
 
+  const handleFlipCard = () => {
+    setIsFlipped((prev) => {
+      const nextState = !prev;
+      if (nextState) {
+        // Mark answer as revealed when flipping to back side
+        setHasRevealedAnswer(true);
+        if (autoPlayAudio) {
+          playPronunciation(currentVocab.word);
+        }
+      }
+      return nextState;
+    });
+  };
+
   return (
     <div className="max-w-3xl mx-auto space-y-4 sm:space-y-5 pb-8 sm:pb-12 px-4 sm:px-0">
       {/* Top Header Navigation */}
@@ -1587,7 +1217,7 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
-                if (ratingSubmitLockRef.current) return;
+                if (isLocked()) return;
                 if (!hasRevealedAnswer) return;
                 if (currentVocab.status === 'mastered') return;
                 handleRating(true, 'mastered');
@@ -1653,435 +1283,39 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
 
         {/* SUB-MODE 1: FLASHCARD */}
         {subMode === 'flashcard' && (
-          <div
-            ref={cardTransitionRef}
-            key={currentVocab?.id}
-            className="relative w-full min-h-[300px] sm:min-h-[320px]"
-          >
-            <div
-            onClick={() => {
-              setIsFlipped((prev) => {
-                const nextState = !prev;
-                if (nextState) {
-                  // Mark answer as revealed when flipping to back side
-                  setHasRevealedAnswer(true);
-                  if (autoPlayAudio) {
-                    playPronunciation(currentVocab.word);
-                  }
-                }
-                return nextState;
-              });
-            }}
-            className="relative w-full min-h-[300px] sm:min-h-[320px] [perspective:1000px] cursor-pointer select-none group"
-            >
-              {/* 3D Rotating Container: CSS owns this transform exclusively. */}
-              <div
-                className={`grid w-full min-h-[300px] sm:min-h-[320px] relative transition-transform duration-500 [transform-style:preserve-3d] ${
-                  isFlipped ? '[transform:rotateY(180deg)]' : '[transform:rotateY(0deg)]'
-                }`}
-              >
-              {/* FRONT SIDE */}
-              <div className="col-start-1 row-start-1 relative w-full min-h-[300px] sm:min-h-[320px] flex flex-col items-center justify-between text-center p-6 sm:p-8 rounded-3xl bg-gradient-to-b from-[#FFFDFE] via-white to-[#FFF5F7] border border-[#FCE7F3] shadow-xs hover:shadow-md transition-shadow backface-hidden overflow-hidden">
-                <div className="space-y-4 my-auto">
-                  <div className="flex items-center justify-center gap-2 flex-wrap">
-                    <h2 className="text-3xl sm:text-5xl font-black text-gray-900 tracking-tight break-words max-w-full">
-                      {currentVocab.word}
-                    </h2>
-                    {showPartOfSpeech && currentVocab.part_of_speech && (
-                      <span className="text-sm font-semibold text-gray-400 italic">
-                        ({currentVocab.part_of_speech})
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Pronunciation phonetics */}
-                  <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
-                    {currentVocab.phonetic_uk && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          playPronunciation(currentVocab.word, 'en-GB');
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#FFF1F2] border border-[#FCE7F3] text-[#ED4F8E] hover:bg-[#FFE4E6] text-xs font-bold transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
-                      >
-                        <Volume2 className="w-3.5 h-3.5" />
-                        <span>UK  {currentVocab.phonetic_uk} </span>
-                      </button>
-                    )}
-
-                    {currentVocab.phonetic_us && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          playPronunciation(currentVocab.word, 'en-US');
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#FFF1F2] border border-[#FCE7F3] text-[#ED4F8E] hover:bg-[#FFE4E6] text-xs font-bold transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
-                      >
-                        <Volume2 className="w-3.5 h-3.5" />
-                        <span>US  {currentVocab.phonetic_us} </span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="pt-2">
-                  <p className="text-xs text-gray-400 font-semibold flex items-center justify-center gap-1.5 animate-pulse bg-white/80 px-3.5 py-1.5 rounded-full border border-[#FCE7F3]">
-                    <RotateCw className="w-3 h-3 text-[#ED4F8E]" />
-                    Nhấn hoặc chạm để xem nghĩa
-                  </p>
-                </div>
-              </div>
-
-              {/* BACK SIDE */}
-              <div className="col-start-1 row-start-1 relative w-full min-h-[300px] sm:min-h-[320px] flex flex-col justify-between text-left p-6 sm:p-8 rounded-3xl bg-gradient-to-b from-[#FFF5F7] via-white to-[#FFF0F5] border border-[#FCE7F3] shadow-xs hover:shadow-md transition-shadow backface-hidden [transform:rotateY(180deg)] overflow-hidden">
-                <div className="space-y-4 my-auto w-full">
-                  <div className="text-center">
-                    <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#ED4F8E] bg-[#FFF1F2] px-3 py-1 rounded-full border border-[#FCE7F3]">
-                      Nghĩa từ vựng
-                    </span>
-                    <h3 className="text-2xl sm:text-3xl font-black text-[#ED4F8E] mt-2 break-words">
-                      {currentVocab.meaning}
-                    </h3>
-                  </div>
-
-                  {/* Example box - controlled by showExamples setting */}
-                  {showExamples && currentVocab.example && (
-                    <div className="p-3.5 rounded-2xl bg-white/90 border border-[#FCE7F3] shadow-2xs space-y-1.5 text-xs">
-                      <div className="flex items-start gap-2.5">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            playPronunciation(currentVocab.example || '');
-                          }}
-                          className="p-1.5 rounded-xl text-white bg-gradient-to-r from-[#ED4F8E] to-[#F472B6] hover:opacity-95 flex-shrink-0 cursor-pointer shadow-2xs mt-0.5 transition-transform hover:scale-105 active:scale-95"
-                          title="Nghe câu ví dụ"
-                        >
-                          <Volume2 className="w-3.5 h-3.5" />
-                        </button>
-                        <div>
-                          <p className="font-bold text-gray-900 italic text-sm leading-relaxed break-words">
-                            &ldquo;{currentVocab.example}&rdquo;
-                          </p>
-                          {currentVocab.example_translation && (
-                            <p className="text-gray-500 font-medium mt-1">
-                              ({currentVocab.example_translation})
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Collocations & Synonyms */}
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    {showCollocations && currentVocab.collocations && (
-                      <span className="px-3 py-1.5 rounded-xl bg-[#E0F2FE] border border-[#BAE6FD] text-[#0284C7] font-bold text-[11px] break-words">
-                        {currentVocab.collocations}
-                      </span>
-                    )}
-                    {showSynonyms && currentVocab.synonyms && (
-                      <span className="px-3 py-1.5 rounded-xl bg-[#F3E8FF] border border-[#E9D5FF] text-[#A855F7] font-bold text-xs sm:text-sm break-words">
-                        Đồng nghĩa: {currentVocab.synonyms}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="text-center pt-2">
-                  <p className="text-[11px] text-gray-400 font-medium">
-                    Chạm để xoay về mặt trước
-                  </p>
-                </div>
-              </div>
-            </div>
-            </div>
-          </div>
+          <FlashcardExercise currentVocab={currentVocab} isFlipped={isFlipped}
+            showPartOfSpeech={showPartOfSpeech} showExamples={showExamples}
+            showCollocations={showCollocations} showSynonyms={showSynonyms}
+            cardTransitionRef={cardTransitionRef} onFlip={handleFlipCard}
+            onPlayPronunciation={playPronunciation} />
         )}
 
         {/* SUB-MODE 2: TRẮC NGHIỆM */}
         {subMode === 'quiz' && (
-          <div className="space-y-6 animate-fadeIn py-2">
-            <div className="text-center space-y-2">
-              <h2 className="text-2xl sm:text-3xl font-black text-gray-900">
-                {currentVocab.word} {showPartOfSpeech && currentVocab.part_of_speech && <span className="text-sm text-gray-400 font-normal">({currentVocab.part_of_speech})</span>}
-              </h2>
-              <div className="flex items-center justify-center gap-3">
-                {currentVocab.phonetic_us && (
-                  <button
-                    onClick={() => playPronunciation(currentVocab.word)}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-[#ED4F8E]"
-                  >
-                    <Volume2 className="w-3.5 h-3.5" />
-                    <span>{currentVocab.phonetic_us}</span>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* 4 Choices */}
-            <div className="grid grid-cols-1 gap-2.5">
-              {quizOptions.map((opt, idx) => {
-                let btnStyle = 'bg-white border-[#FCE7F3] text-gray-800 hover:bg-[#FFF5F7]';
-                let checkIcon = null;
-
-                if (quizAnswered) {
-                  if (idx === correctQuizIndex) {
-                    btnStyle = 'bg-[#D1FAE5] border-[#059669] text-[#059669] font-bold';
-                    checkIcon = <Check className="w-4 h-4 text-[#059669]" />;
-                  } else if (idx === selectedQuizIndex) {
-                    btnStyle = 'bg-[#FFE4E6] border-[#E11D48] text-[#E11D48] font-bold';
-                    checkIcon = <X className="w-4 h-4 text-[#E11D48]" />;
-                  } else {
-                    btnStyle = 'bg-gray-50 border-gray-100 text-gray-400 opacity-50';
-                  }
-                }
-
-                return (
-                  <button
-                    key={idx}
-                    data-flash-quiz-option={idx}
-                    disabled={quizAnswered}
-                    onClick={() => handleQuizSelect(idx)}
-                    className={`w-full p-3.5 rounded-2xl border text-left text-xs sm:text-sm transition-all flex items-center justify-between cursor-pointer ${btnStyle}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="w-6 h-6 rounded-xl bg-[#FFF1F2] text-[#ED4F8E] font-extrabold flex items-center justify-center text-xs flex-shrink-0">
-                        {idx + 1}
-                      </span>
-                      <span className="font-semibold">{opt}</span>
-                    </div>
-                    {checkIcon}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Banner feedback */}
-            {quizAnswered && (
-              <div data-flash-quiz-feedback className={`p-3.5 rounded-2xl text-center text-xs font-extrabold flex items-center justify-center gap-2 ${
-                selectedQuizIndex === correctQuizIndex
-                  ? 'bg-[#D1FAE5] text-[#059669]'
-                  : 'bg-[#FFE4E6] text-[#E11D48]'
-              }`}>
-                {selectedQuizIndex === correctQuizIndex ? (
-                  <>
-                    <Check className="w-4 h-4" />
-                    <span>Chính xác!</span>
-                  </>
-                ) : (
-                  <>
-                    <X className="w-4 h-4" />
-                    <span>Chưa đúng! Nghĩa đúng: &quot;{currentVocab.meaning}&quot;</span>
-                  </>
-                )}
-              </div>
-            )}
-
-            <p className="text-center text-[11px] text-gray-400 font-semibold">
-              1 · 2 · 3 · 4 để chọn
-            </p>
-          </div>
+          <QuizExercise currentVocab={currentVocab} showPartOfSpeech={showPartOfSpeech}
+            quizOptions={quizOptions} correctQuizIndex={correctQuizIndex}
+            selectedQuizIndex={selectedQuizIndex} quizAnswered={quizAnswered}
+            onPlayPronunciation={playPronunciation} onQuizSelect={handleQuizSelect} />
         )}
 
         {/* SUB-MODE 3: GÕ TỪ */}
         {subMode === 'typing' && (
-          <div className="space-y-6 text-center animate-fadeIn py-4">
-            <div className="space-y-1">
-              {showPartOfSpeech && currentVocab.part_of_speech && (
-                <span className="px-3 py-1 rounded-full bg-[#FFF1F2] text-[#ED4F8E] text-[11px] font-bold">
-                  {currentVocab.part_of_speech}
-                </span>
-              )}
-              <h2 className="text-2xl sm:text-3xl font-black text-gray-900 pt-2">
-                {currentVocab.meaning}
-              </h2>
-            </div>
-
-            {/* Input Form */}
-            <div className="max-w-md mx-auto space-y-3">
-              <div className="relative">
-                <input
-                  ref={typingInputRef}
-                  type="text"
-                  placeholder="Gõ từ tiếng Anh..."
-                  value={typedInput}
-                  disabled={typingSubmitted}
-                  onChange={(e) => setTypedInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.defaultPrevented && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !e.nativeEvent.isComposing && !e.repeat) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (!typingSubmitted) handleCheckTyping();
-                    }
-                  }}
-                  className={`w-full p-3.5 pr-12 bg-white border-2 rounded-2xl text-base sm:text-sm font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#F472B6] transition-all ${
-                    typingSubmitted
-                      ? isTypingCorrect
-                        ? 'border-[#059669] bg-[#D1FAE5]/30'
-                        : 'border-[#E11D48] bg-[#FFE4E6]/30'
-                      : 'border-[#FCE7F3]'
-                  }`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowHint(!showHint)}
-                  title="Gợi ý ký tự đầu"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-xl text-gray-400 hover:text-[#ED4F8E] hover:bg-[#FFF1F2] cursor-pointer"
-                >
-                  <Lightbulb className="w-4 h-4" />
-                </button>
-              </div>
-
-              {showHint && (
-                <p className="text-xs text-[#0284C7] font-semibold">
-                  Gợi ý: Từ bắt đầu bằng chữ &ldquo;<strong>{currentVocab.word.charAt(0).toUpperCase()}</strong>&rdquo; ({currentVocab.word.length} ký tự)
-                </p>
-              )}
-
-              {!typingSubmitted ? (
-                <button
-                  onClick={handleCheckTyping}
-                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-[#ED4F8E] to-[#F472B6] text-white font-bold text-xs shadow-2xs hover:opacity-95 transition-all cursor-pointer"
-                >
-                  Kiểm tra
-                </button>
-              ) : (
-                <div ref={typingFeedbackRef} className={`p-3.5 rounded-2xl text-xs font-extrabold flex items-center justify-center gap-2 ${
-                  isTypingCorrect ? 'bg-[#D1FAE5] text-[#059669]' : 'bg-[#FFE4E6] text-[#E11D48]'
-                }`}>
-                  {isTypingCorrect ? (
-                    <>
-                      <Check className="w-4 h-4" />
-                      <span>Chính xác! {currentVocab.word}</span>
-                    </>
-                  ) : (
-                    <>
-                      <X className="w-4 h-4" />
-                      <span>Chưa đúng! Đáp án đúng: {currentVocab.word}</span>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <p className="text-[11px] text-gray-400 font-semibold">
-              Enter để kiểm tra
-            </p>
-          </div>
+          <TypingExercise currentVocab={currentVocab} showPartOfSpeech={showPartOfSpeech}
+            typedInput={typedInput} typingSubmitted={typingSubmitted}
+            isTypingCorrect={isTypingCorrect} showHint={showHint}
+            typingInputRef={typingInputRef} typingFeedbackRef={typingFeedbackRef}
+            onTypedInputChange={setTypedInput} onCheckTyping={handleCheckTyping}
+            onToggleHint={() => setShowHint(!showHint)} />
         )}
 
         {/* SUB-MODE 4: PHÁT ÂM */}
         {subMode === 'pronounce' && (
-          <div className="space-y-6 text-center animate-fadeIn py-4">
-            <div className="space-y-1">
-              <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
-                PHÁT ÂM TỪ NÀY
-              </span>
-              <h2 className="text-2xl sm:text-3xl font-black text-gray-900 pt-1">
-                {currentVocab.meaning}
-              </h2>
-            </div>
-
-            <div className="space-y-4 py-2">
-              {!isRecording && !pronounceSubmitted && (
-                <div className="space-y-3">
-                  <button
-                    onClick={handleStartRecording}
-                    className="w-20 h-20 mx-auto rounded-full bg-[#0284C7] hover:bg-[#0369A1] text-white flex items-center justify-center shadow-lg transition-all cursor-pointer hover:scale-105"
-                  >
-                    <Mic className="w-8 h-8" />
-                  </button>
-                  <p className="text-xs font-bold text-gray-600">Nhấn để nói</p>
-                  <button
-                    onClick={handleNotRemembered}
-                    className="text-xs text-gray-400 hover:text-gray-700 font-medium cursor-pointer"
-                  >
-                    ▷ Bỏ qua chế độ này
-                  </button>
-                </div>
-              )}
-
-              {isRecording && (
-                <div className="space-y-3">
-                  <button
-                    onClick={handleStopRecording}
-                    className="w-20 h-20 mx-auto rounded-full bg-[#E11D48] text-white flex items-center justify-center shadow-lg transition-all animate-pulse cursor-pointer"
-                  >
-                    <div className="w-6 h-6 bg-white rounded-xs" />
-                  </button>
-                  <p className="text-xs font-bold text-[#E11D48]">
-                    Đang nghe... Bấm để dừng
-                  </p>
-                </div>
-              )}
-
-              {pronounceSubmitted && (
-                <div className="space-y-4 max-w-md mx-auto">
-                  <div className={`p-4 rounded-2xl border text-center space-y-2 ${
-                    isPronounceCorrect
-                      ? 'bg-[#D1FAE5]/40 border-[#059669] text-[#059669]'
-                      : 'bg-[#FFE4E6]/40 border-[#E11D48] text-[#E11D48]'
-                  }`}>
-                    <div className="flex items-center justify-center gap-2 text-sm font-black">
-                      {isPronounceCorrect ? (
-                        <>
-                          <Check className="w-5 h-5" />
-                          <span>Chính xác!</span>
-                        </>
-                      ) : (
-                        <>
-                          {isPronunciationTechnicalIssue ? (
-                            <AlertTriangle className="w-5 h-5" />
-                          ) : (
-                            <X className="w-5 h-5" />
-                          )}
-                          <span>{pronunciationFeedback.title}</span>
-                        </>
-                      )}
-                    </div>
-                    {pronunciationFeedback.detail && (
-                      <p className="text-xs text-gray-600 font-medium">
-                        {pronunciationFeedback.detail}
-                      </p>
-                    )}
-                    <p className="text-lg font-black text-gray-900">
-                      {currentVocab.word}
-                    </p>
-                    {transcriptText && !isPronounceCorrect && (
-                      <p className="text-xs text-gray-500 font-medium">
-                        Bạn nói: <span className="font-bold text-[#E11D48]">{transcriptText}</span>
-                      </p>
-                    )}
-                    <button
-                      onClick={() => playPronunciation(currentVocab.word)}
-                      className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0284C7] hover:underline cursor-pointer pt-1"
-                    >
-                      <Volume2 className="w-3.5 h-3.5" />
-                      <span>Nghe phát âm</span>
-                    </button>
-                  </div>
-
-                  {!isPronounceCorrect && (
-                    <div className="flex items-center justify-center gap-2 pt-1">
-                      <button
-                        onClick={handleStartRecording}
-                        className="px-4 py-2 rounded-xl bg-white border border-[#FCE7F3] text-gray-700 font-bold text-xs hover:bg-[#FFF1F2] cursor-pointer"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5 inline mr-1" />
-                        {isPronunciationTechnicalIssue ? 'Thử lại' : 'Nói lại'}
-                      </button>
-                      <button
-                        onClick={handleNotRemembered}
-                        className="px-4 py-2 rounded-xl bg-gray-100 text-gray-600 font-bold text-xs hover:bg-gray-200 cursor-pointer"
-                      >
-                        Bỏ qua
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
+          <PronunciationExercise currentVocab={currentVocab} isRecording={isRecording}
+            pronounceSubmitted={pronounceSubmitted} isPronounceCorrect={isPronounceCorrect}
+            isPronunciationTechnicalIssue={isPronunciationTechnicalIssue}
+            pronunciationFeedback={pronunciationFeedback} transcriptText={transcriptText}
+            onStartRecording={handleStartRecording} onStopRecording={handleStopRecording}
+            onSkip={handleNotRemembered} onPlayPronunciation={playPronunciation} />
         )}
 
       </div>
@@ -2107,7 +1341,7 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
             )}
             <button
               type="button"
-              onClick={() => setSubmissionError(null)}
+              onClick={dismissError}
               className="text-[#E11D48] hover:text-[#BE123C] cursor-pointer"
             >
               <X className="w-4 h-4" />
@@ -2121,7 +1355,7 @@ const FlashcardSession: React.FC<FlashcardModeProps> = ({
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={() => {
-                if (!ratingSubmitLockRef.current) {
+                if (!isLocked()) {
                   setShowRatingButtons(true);
                 }
               }}
